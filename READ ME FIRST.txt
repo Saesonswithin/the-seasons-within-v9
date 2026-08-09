@@ -1,0 +1,13 @@
+THE SEASONS WITHIN — EASY OPEN / ANY INSTALLED PYTHON
+
+1. Extract this ZIP completely.
+2. Open the extracted folder.
+3. Double-click: DOUBLE CLICK TO OPEN THE SEASONS WITHIN.bat
+
+The launcher uses a real Python already installed on the computer (including newer versions such as Python 3.15) and does NOT require Python 3.12 specifically.
+
+It installs the core packages needed to open the platform and then opens:
+http://127.0.0.1:5055
+
+ASTROLOGY NOTE:
+The platform will still open if the local Swiss Ephemeris package does not yet provide a prebuilt wheel for your newest Python version. In that case, the birth-chart calculation screen will remain unavailable until a compatible Swiss Ephemeris package/runtime is connected. Signup, profiles, Stripe-ready billing, Business Network, Business App Builder, Retreats, messages, and the rest of the platform continue to work.

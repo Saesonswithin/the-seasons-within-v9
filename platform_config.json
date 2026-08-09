@@ -1,0 +1,8 @@
+{
+  "stripe_secret_key": "",
+  "stripe_webhook_secret": "",
+  "stripe_zodiac_price_id": "",
+  "stripe_business_price_id": "",
+  "public_base_url": "",
+  "allow_dev_upgrades": true
+}

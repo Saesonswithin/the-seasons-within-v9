@@ -1,0 +1,7 @@
+Flask==3.0.3
+Werkzeug>=3.0,<4
+stripe>=12,<14
+geopy>=2.4,<3
+timezonefinder>=6,<9
+pysweph>=2.10.3.6
+gunicorn>=22,<24

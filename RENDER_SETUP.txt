@@ -1,0 +1,17 @@
+THE SEASONS WITHIN V9 — RENDER SETUP
+
+This is the same V9 app with deployment support added.
+No templates, styling, logo, images, routes, or app features were redesigned.
+
+Render settings:
+Runtime: Python 3
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
+
+The included .python-version requests Python 3.12.
+
+IMPORTANT FOR TESTING:
+This V9 app currently uses a local SQLite database and local uploads.
+On a free Render web service, filesystem changes can be lost on restart/redeploy.
+That is okay for initial viewing/testing, but production should move data/uploads
+to persistent storage before accepting real users or payments.
