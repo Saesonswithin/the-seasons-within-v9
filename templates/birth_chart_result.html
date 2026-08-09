@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block content %}
+<section class="page-shell">
+ <div class="section-kicker">Your Private Astrology Record</div><h1>Your Birth Chart Is Ready</h1>
+ <p class="lead">Calculated from your birth date, time and birthplace. Your raw birth time/location stay private unless you explicitly choose to share them elsewhere.</p>
+ <div class="chart-grid">
+  {% for key,label in [('sun','Sun'),('moon','Moon'),('rising','Rising'),('mercury','Mercury'),('venus','Venus'),('mars','Mars'),('jupiter','Jupiter'),('saturn','Saturn'),('uranus','Uranus'),('neptune','Neptune'),('pluto','Pluto')] %}
+   <div class="chart-placement"><b>{{ label }}</b>{% if key=='rising' and not chart['rising'] %}<span>Exact birth time required</span>{% else %}<span>{{ chart[key] }}{% if degrees.get(key) %} • {{ degrees[key]['degree'] }}°{% endif %}</span>{% endif %}</div>
+  {% endfor %}
+ </div>
+ <h2>Your Element Balance</h2><div class="element-grid">{% for el in ['Fire','Earth','Air','Water'] %}<div><b>{{el}}</b><span>{{balance.get(el,0)}} placements</span></div>{% endfor %}</div>
+ {% if chart['calculation_status']=='partial_no_time' %}<div class="notice">This is a partial chart because exact birth time was not provided. Rising sign and houses are intentionally left unavailable.</div>{% endif %}
+ <div class="action-row"><a class="btn" href="/dating-profile">Build My Zodiac Dater Profile</a><a class="btn secondary" href="/birth-info">Update Birth Information</a></div>
+</section>{% endblock %}

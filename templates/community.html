@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block content %}
+<div class="home-layout">
+  <section class="feed-column">
+    <div class="daily-card"><div class="daily-leaf">❧</div><div><span>DAILY SEASONS WITHIN</span><h2>What season are you embracing within yourself right now?</h2><p>“You are not behind. You are becoming. Trust the season you’re in.”</p></div><div class="daily-sun">☼</div></div>
+    <form class="composer" method="post"><div class="avatar-fallback">{{ current_user['name'][:1] }}</div><textarea name="body" placeholder="Share a thought, reflection, or gratitude..."></textarea><div class="composer-actions"><span>▧ Photo</span><span>▻ Video</span><span>☺ Feeling</span><span>▣ Event</span><button class="btn">Post</button></div></form>
+    <div class="feed-tabs"><b>All Posts</b><span>Following</span><span>Mentions</span></div>
+    {% for post in posts %}<article class="social-post"><div class="post-head">{% if post['photo'] %}<img class="avatar" src="{{ url_for('static', filename=post['photo']) }}">{% else %}<div class="avatar-fallback">{{ post['name'][:1] }}</div>{% endif %}<div><b>{{ post['name'] }}</b>{% if post['name']=='The Seasons Within' %}<em>Creator</em>{% endif %}<small>{{ post['created_at'] }}</small></div><span>•••</span></div><p>{{ post['body'] }}</p>{% if loop.index == 2 %}<img class="post-photo" src="{{ url_for('static', filename='assets/date_sunset.jpg') }}">{% elif loop.index == 3 %}<img class="post-photo" src="{{ url_for('static', filename='assets/date_art.jpg') }}">{% endif %}<div class="post-actions"><span>♥ {{ 14 + loop.index*3 }}</span><span>◌ {{ loop.index+2 }}</span><span>↗</span><span class="save">▱</span></div></article>{% endfor %}
+  </section>
+  <aside class="home-rail">
+    <section class="rail-card"><div class="rail-title"><div><span>FREE COMMUNITY</span><h3>Basic Member Profiles</h3></div><a href="/members">View All</a></div>{% for m in members[:4] %}<a class="member-row" href="/profile/{{m['id']}}"><div class="avatar-fallback">{{m['name'][:1]}}</div><div><b>{{m['name']}}</b><small>{% if m['show_city'] and m['city'] %}{{m['city']}}{% else %}Community member{% endif %}</small><small>{% if m['show_headline'] and m['profile_headline'] %}{{m['profile_headline']}}{% elif m['show_zodiac_basic'] and m['sun'] %}Sun: {{m['sun']}}{% endif %}</small></div><button>View Profile</button></a>{% endfor %}<a class="outline-link" href="/members">Browse All Members</a></section>
+    <a class="feature-link" href="/zodiac"><span class="feature-icon">♡</span><div><b>Zodiac Dater</b><small>Create a profile free. Browse, pass or like.</small></div><strong>›</strong></a>
+    <a class="feature-link" href="/business"><span class="feature-icon">▣</span><div><b>Business Network</b><small>Discover public wellness business apps.</small></div><strong>›</strong></a>
+    <a class="feature-link" href="/retreats"><span class="feature-icon">✿</span><div><b>Retreats</b><small>Private retreats and custom experiences.</small></div><strong>›</strong></a>
+    <a class="feature-link warm" href="/plans"><span class="feature-icon">☆</span><div><b>Membership</b><small>Full profiles, compatibility, date ideas & alerts.</small></div><strong>›</strong></a>
+  </aside>
+</div>
+{% endblock %}
