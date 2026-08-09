@@ -434,7 +434,7 @@ def calculate_birth_chart(user_id):
         planets={"sun":swe.SUN,"moon":swe.MOON,"mercury":swe.MERCURY,"venus":swe.VENUS,"mars":swe.MARS,"jupiter":swe.JUPITER,"saturn":swe.SATURN,"uranus":swe.URANUS,"neptune":swe.NEPTUNE,"pluto":swe.PLUTO}
         placements={}; degrees={}
         for key,body in planets.items():
-            xx,_=swe.calc_ut(jd_ut,body); sign,within=zodiac_from_degree(xx[0]); placements[key]=sign; degrees[key]={"longitude":round(float(xx[0])%360,4),"sign":sign,"degree":within}
+            calc_result=swe.calc_ut(jd_ut,body); xx=calc_result[0]; sign,within=zodiac_from_degree(xx[0]); placements[key]=sign; degrees[key]={"longitude":round(float(xx[0])%360,4),"sign":sign,"degree":within}
         rising=""; cusps=[]
         if time_known:
             house_cusps,ascmc=swe.houses(jd_tt,float(lat),float(lon),b'P'); rising=zodiac_from_degree(ascmc[0])[0]; cusps=[round(float(x),4) for x in house_cusps[1:13]]; degrees["rising"]={"longitude":round(float(ascmc[0])%360,4),"sign":rising,"degree":zodiac_from_degree(ascmc[0])[1]}
