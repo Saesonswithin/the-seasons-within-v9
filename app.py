@@ -53,7 +53,7 @@ def stripe_ready(plan_key=None):
 
 PLANS = {
     "free": {"name": "Meet the Community", "price": "Free", "description": "Create a Basic Community Profile, browse members and join Community Conversations.", "visible": True},
-    "zodiac": {"name": "The Seasons Within Membership", "price": "$19.99/mo", "description": "Unlock full dating profiles, compatibility reports, personalized date ideas, messaging tools and compatible-member alerts.", "visible": True},
+    "zodiac": {"name": "The Seasons Within Membership", "price": "$10.99/mo", "description": "Unlock full dating profiles, compatibility reports, personalized date ideas, messaging tools and compatible-member alerts.", "visible": True},
     "business": {"name": "Business Network", "price": "$29.99/mo", "description": "Monthly business membership with public listing, hosted branded mini-app and marketing tools.", "visible": True},
 }
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -217,41 +217,7 @@ def init_db():
     ensure_column(c, "subscriptions", "price_id", "TEXT DEFAULT ''")
     ensure_column(c, "subscriptions", "checkout_session_id", "TEXT DEFAULT ''")
 
-    # Secure demo accounts. Existing plaintext accounts are automatically upgraded on next login.
-    demo = [
-        ("Avery", "avery@example.com", "zodiac", "Book lover, yoga student and weekend traveler looking for a grounded relationship.", "Atlanta", "Libra", "Pisces", "Leo", "Long-term relationship", "", ""),
-        ("Jordan", "jordan@example.com", "business", "Creative entrepreneur building community-centered brands.", "Detroit", "Gemini", "Capricorn", "Virgo", "", "Brand Strategist", "Find collaborators and referral partners"),
-        ("Morgan", "morgan@example.com", "all_access", "Yoga, travel, business and conscious connection.", "Chicago", "Taurus", "Cancer", "Sagittarius", "Open to dating intentionally", "Wellness Founder", "Partnerships and event collaborations"),
-        ("Nia", "nia@example.com", "zodiac", "Nature walks, live music, meditation and honest conversation.", "Atlanta", "Aquarius", "Libra", "Cancer", "A committed partnership", "", ""),
-        ("Marcus", "marcus@example.com", "zodiac", "Fitness, cooking, family and building a peaceful life.", "Detroit", "Leo", "Taurus", "Capricorn", "Dating with purpose", "", ""),
-    ]
-    for name,email,legacy_plan,bio,city,sun,moon,rising,intention,role,goal in demo:
-        try:
-            cur = c.execute("""INSERT INTO users(name,email,password,plan,bio,city,sun,moon,rising,dating_intention,business_role,business_goal)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (name,email,hash_password("demo"),legacy_plan,bio,city,sun,moon,rising,intention,role,goal))
-            uid = cur.lastrowid
-        except sqlite3.IntegrityError:
-            uid = c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
-        if legacy_plan in ("zodiac", "all_access"):
-            c.execute("INSERT OR IGNORE INTO subscriptions(user_id,membership_type,status) VALUES (?, 'zodiac', 'active')", (uid,))
-        if legacy_plan in ("business", "all_access"):
-            c.execute("INSERT OR IGNORE INTO subscriptions(user_id,membership_type,status) VALUES (?, 'business', 'active')", (uid,))
-
-    # Demo dating profiles make the freemium Zodiac directory feel populated from day one.
-    dating_seed = {
-        "avery@example.com": ("1993-10-12", "Pisces", "Leo", "Scorpio", "Grounded, curious and ready to build something real.", "Long-term • Wellness • Travel"),
-        "morgan@example.com": ("1990-05-08", "Cancer", "Sagittarius", "Aries", "Creative wellness founder who values honesty, adventure and emotional depth.", "Intentional dating • Growth"),
-        "nia@example.com": ("1994-02-04", "Libra", "Cancer", "Sagittarius", "Nature, music, meditation and meaningful conversation are my favorite ways to connect.", "Committed partnership"),
-        "marcus@example.com": ("1989-08-17", "Taurus", "Capricorn", "Libra", "Family-minded, active and building a peaceful life with purpose.", "Dating with purpose"),
-    }
-    for email,(dob,venus,mars,rising2,dbio,dheadline) in dating_seed.items():
-        row=c.execute("SELECT id FROM users WHERE email=?",(email,)).fetchone()
-        if row:
-            c.execute("""UPDATE users SET birth_date=?,dating_18_confirmed=1,venus=?,mars=?,rising=?,dating_bio=?,dating_headline=?,dating_profile_active=1 WHERE id=?""",
-                      (dob,venus,mars,rising2,dbio,dheadline,row[0]))
-            c.execute("""INSERT OR IGNORE INTO birth_data(user_id,birth_date,birth_time,time_known,birth_city,birth_state,birth_country,calculation_status)
-                         VALUES (?,?,?,1,?,?,?,'demo')""", (row[0],dob,"12:00",c.execute("SELECT city FROM users WHERE id=?",(row[0],)).fetchone()[0],"","USA"))
+    # Demo member, dating, and business seed data removed for the live community.
 
     creator_email = "creator@theseasonswithin.local"
     try:
@@ -274,59 +240,7 @@ def init_db():
         ]:
             c.execute("INSERT INTO posts(user_id,body) VALUES (?,?)", (creator_id,body))
 
-    # Seed a few community-member posts so the Home Feed looks like a living network on first launch.
-    community_seed_posts = {
-        "nia@example.com": "Morning reflection: I took a quiet walk before checking my phone today. I’m learning that peace can be part of the plan, not just a break from it.",
-        "morgan@example.com": "This week I’m focusing on consistency instead of intensity — a little movement, a little journaling, and more room to listen to myself.",
-        "marcus@example.com": "Today’s question for the community: what habit has helped you feel more grounded lately? Mine has been cooking dinner without rushing.",
-        "avery@example.com": "I’m in a season of choosing relationships that feel mutual, clear and peaceful. Curious what intentional connection means to everyone else here."
-    }
-    for email, body in community_seed_posts.items():
-        row = c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
-        if row and c.execute("SELECT COUNT(*) FROM posts WHERE user_id=?", (row[0],)).fetchone()[0] == 0:
-            c.execute("INSERT INTO posts(user_id,body) VALUES (?,?)", (row[0], body))
-
-    # Extra mock wellness business owners so the public Business Network feels launch-ready.
-    biz_demo = [
-        ("Sage", "sage@business.demo", "Sound Harmony", "Chicago, IL"),
-        ("Maya", "maya@business.demo", "Nature Vibes", "Asheville, NC"),
-    ]
-    for name,email,bizname,city in biz_demo:
-        try:
-            cur=c.execute("INSERT INTO users(name,email,password,plan,bio,city,is_admin) VALUES (?,?,?,'business',?,?,0)",(name,email,hash_password('demo'),f'Owner of {bizname}',city))
-            uid=cur.lastrowid
-        except sqlite3.IntegrityError:
-            uid=c.execute("SELECT id FROM users WHERE email=?",(email,)).fetchone()[0]
-        c.execute("INSERT OR IGNORE INTO subscriptions(user_id,membership_type,status) VALUES (?, 'business', 'active')",(uid,))
-
-    # Seed public businesses only when the matching demo owner exists.
-    seeds = [
-        ("jordan@example.com","Rise & Flow Yoga","rise-flow-yoga","Flow. Breathe. Connect.","Yoga classes, workshops, private sessions and a welcoming wellness community for all levels.","Yoga","Detroit, MI","hello@riseflow.demo"),
-        ("morgan@example.com","Sacred Soul Reiki","sacred-soul-reiki","Restore. Release. Reconnect.","Private Reiki-inspired relaxation sessions, guided reflection and seasonal wellness circles.","Reiki","Atlanta, GA","hello@sacredsoul.demo"),
-        ("sage@business.demo","Sound Harmony","sound-harmony","Sound. Stillness. Transformation.","Sound baths, meditation experiences and restorative group sessions.","Sound Therapy","Chicago, IL","hello@soundharmony.demo"),
-        ("maya@business.demo","Nature Vibes","nature-vibes","Move outside. Come back to yourself.","Guided nature experiences, mindful hiking and retreat-friendly outdoor activities.","Retreats","Asheville, NC","hello@naturevibes.demo"),
-    ]
-    for email,name,slug,tagline,desc,category,city,contact in seeds:
-        owner = c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
-        if owner:
-            try:
-                c.execute("""INSERT INTO businesses(owner_id,slug,business_name,tagline,description,category,city,contact_email,accent)
-                             VALUES (?,?,?,?,?,?,?,?,?)""", (owner[0],slug,name,tagline,desc,category,city,contact,"#b99ad6"))
-            except sqlite3.IntegrityError:
-                pass
-
-    # Give demo hosted apps realistic offerings.
-    demo_items = {
-        'rise-flow-yoga':[('class','Morning Flow','60 minutes • All levels','$25'),('service','Private Yoga Session','One-to-one personalized session','$80'),('membership','Monthly Wellness Circle','Classes + member content + community','$39/mo')],
-        'sacred-soul-reiki':[('service','60-Minute Reiki Session','Private relaxation and reflection session','$75'),('class','Reiki Reflection Circle','Small-group guided experience','$35'),('membership','Monthly Reiki Community','Monthly session + community content','$29/mo')],
-        'sound-harmony':[('class','Sound Bath','Restorative sound experience','$40'),('event','Evening Sound Journey','90-minute community event','$55'),('membership','Sound & Stillness Membership','Two experiences each month','$49/mo')],
-        'nature-vibes':[('service','Guided Nature Walk','Mindful outdoor experience','$35'),('event','Waterfall Reflection Day','Half-day guided retreat experience','$95'),('membership','Outdoor Wellness Club','Monthly community adventures','$39/mo')]
-    }
-    for slug,items in demo_items.items():
-        b=c.execute('SELECT id FROM businesses WHERE slug=?',(slug,)).fetchone()
-        if b and c.execute('SELECT COUNT(*) FROM business_items WHERE business_id=?',(b[0],)).fetchone()[0]==0:
-            for typ,title,desc,price in items:
-                c.execute('INSERT INTO business_items(business_id,item_type,title,description,price) VALUES (?,?,?,?,?)',(b[0],typ,title,desc,price))
+    # No mock member posts or mock wellness businesses are seeded in the live app.
 
     c.commit(); c.close()
 
@@ -567,8 +481,10 @@ def community():
     if request.method=="POST":
         body=request.form.get("body","").strip()
         if body: c.execute("INSERT INTO posts(user_id,body) VALUES (?,?)",(u["id"],body)); c.commit()
-    posts=c.execute("""SELECT posts.*,users.name,users.photo FROM posts JOIN users ON users.id=posts.user_id WHERE users.suspended=0 ORDER BY posts.id DESC LIMIT 40""").fetchall()
-    members=c.execute("SELECT id,name,photo,profile_headline,bio,city,sun,show_headline,show_city,show_bio,show_zodiac_basic FROM users WHERE suspended=0 ORDER BY is_creator DESC,name LIMIT 24").fetchall()
+    demo_emails=("avery@example.com","jordan@example.com","morgan@example.com","nia@example.com","marcus@example.com","sage@business.demo","maya@business.demo")
+    placeholders=",".join(["?"]*len(demo_emails))
+    posts=c.execute(f"""SELECT posts.*,users.name,users.photo FROM posts JOIN users ON users.id=posts.user_id WHERE users.suspended=0 AND users.email NOT IN ({placeholders}) ORDER BY posts.id DESC LIMIT 40""",demo_emails).fetchall()
+    members=c.execute(f"SELECT id,name,photo,profile_headline,bio,city,sun,show_headline,show_city,show_bio,show_zodiac_basic FROM users WHERE suspended=0 AND email NOT IN ({placeholders}) ORDER BY is_creator DESC,name LIMIT 24",demo_emails).fetchall()
     creator=bool(u["is_creator"] or u["is_admin"]); c.close()
     return render_template("community.html",posts=posts,members=members,creator=creator)
 
@@ -578,7 +494,9 @@ def members():
     u=current_user()
     if not u: return redirect(url_for("login"))
     q=request.args.get("q","").strip()
-    c=conn(); sql="SELECT * FROM users WHERE suspended=0"; params=[]
+    demo_emails=("avery@example.com","jordan@example.com","morgan@example.com","nia@example.com","marcus@example.com","sage@business.demo","maya@business.demo")
+    placeholders=",".join(["?"]*len(demo_emails))
+    c=conn(); sql=f"SELECT * FROM users WHERE suspended=0 AND email NOT IN ({placeholders})"; params=list(demo_emails)
     if q:
         sql+=" AND (name LIKE ? OR city LIKE ? OR bio LIKE ? OR profile_headline LIKE ?)"; params += [f"%{q}%"]*4
     sql+=" ORDER BY is_creator DESC,name"
@@ -722,7 +640,8 @@ def zodiac():
     u=current_user()
     if not u: return redirect(url_for("login"))
     q=request.args.get("q","").strip(); city=request.args.get("city","").strip(); sign=request.args.get("sign","").strip()
-    sql="""SELECT u.* FROM users u WHERE u.dating_profile_active=1 AND u.dating_18_confirmed=1 AND u.suspended=0 AND u.id<>?"""; params=[u["id"]]
+    demo_emails=("avery@example.com","jordan@example.com","morgan@example.com","nia@example.com","marcus@example.com","sage@business.demo","maya@business.demo")
+    sql="""SELECT u.* FROM users u WHERE u.dating_profile_active=1 AND u.dating_18_confirmed=1 AND u.suspended=0 AND u.id<>? AND u.email NOT IN (?,?,?,?,?,?,?)"""; params=[u["id"],*demo_emails]
     if q: sql+=" AND (u.name LIKE ? OR u.dating_bio LIKE ? OR u.dating_intention LIKE ? OR u.dating_headline LIKE ?)"; params += [f"%{q}%"]*4
     if city: sql+=" AND u.city LIKE ?"; params.append(f"%{city}%")
     if sign: sql+=" AND (u.sun LIKE ? OR u.moon LIKE ? OR u.rising LIKE ?)"; params += [f"%{sign}%"]*3
@@ -801,11 +720,14 @@ def notification_read(notification_id):
 
 @app.route("/business")
 def business():
-    u=current_user(); q=request.args.get("q","").strip(); category=request.args.get("category","").strip(); c=conn()
-    own=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone() if u else None
+    u=current_user()
+    if not u: return redirect(url_for("join"))
+    q=request.args.get("q","").strip(); category=request.args.get("category","").strip(); c=conn()
+    own=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone()
+    demo_emails=("jordan@example.com","morgan@example.com","sage@business.demo","maya@business.demo")
     sql="""SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id
            JOIN subscriptions s ON s.user_id=b.owner_id AND s.membership_type='business' AND s.status IN ('active','trialing')
-           WHERE b.status='active' AND u.suspended=0"""; params=[]
+           WHERE b.status='active' AND u.suspended=0 AND u.email NOT IN (?,?,?,?)"""; params=list(demo_emails)
     if q: sql+=" AND (b.business_name LIKE ? OR b.description LIKE ? OR b.city LIKE ?)"; params += [f"%{q}%"]*3
     if category: sql+=" AND b.category LIKE ?"; params.append(f"%{category}%")
     sql+=" ORDER BY b.business_name"; businesses=c.execute(sql,params).fetchall(); c.close()
@@ -867,7 +789,7 @@ def my_business_app():
 def business_app(slug):
     c=conn(); business=c.execute("""SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id
        JOIN subscriptions s ON s.user_id=b.owner_id AND s.membership_type='business' AND s.status IN ('active','trialing')
-       WHERE b.slug=? AND b.status='active'""",(slug,)).fetchone()
+       WHERE b.slug=? AND b.status='active' AND u.email NOT IN ('jordan@example.com','morgan@example.com','sage@business.demo','maya@business.demo')""",(slug,)).fetchone()
     if not business: c.close(); return render_template("business_inactive.html"),503
     items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall(); c.close(); return render_template("business_app.html",business=business,items=items)
 
