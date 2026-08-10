@@ -54,7 +54,7 @@ def stripe_ready(plan_key=None):
 PLANS = {
     "free": {"name": "Meet the Community", "price": "Free", "description": "Create a Basic Community Profile, browse members and join Community Conversations.", "visible": True},
     "zodiac": {"name": "The Seasons Within Membership", "price": "$19.99/mo", "description": "Unlock full dating profiles, compatibility reports, personalized date ideas, messaging tools and compatible-member alerts.", "visible": True},
-    "business": {"name": "Business Network", "price": "$49.99/mo", "description": "Monthly business membership with public listing, hosted branded mini-app and marketing tools.", "visible": True},
+    "business": {"name": "Business Network", "price": "$29.99/mo", "description": "Monthly business membership with public listing, hosted branded mini-app and marketing tools.", "visible": True},
 }
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
