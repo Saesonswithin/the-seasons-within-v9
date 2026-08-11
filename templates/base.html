@@ -16,17 +16,14 @@
     </a>
     <nav class="side-links">
       <a class="{% if request.path == '/community' %}active{% endif %}" href="/community">⌂ <span>Home</span></a>
-      <a class="{% if request.path.startswith('/zodiac') or request.path.startswith('/dating-profile') or request.path.startswith('/compatibility') %}active{% endif %}" href="/zodiac">♡ <span>Zodiac Dater</span></a>
+      <a class="{% if request.path.startswith('/profile/') or request.path.startswith('/edit-profile') %}active{% endif %}" href="/profile/{{ current_user['id'] }}">♙ <span>My Profile</span></a>
       <a class="{% if request.path.startswith('/business') or request.path.startswith('/app/') %}active{% endif %}" href="/business">▣ <span>Business Network</span></a>
       <a class="{% if request.path.startswith('/retreats') %}active{% endif %}" href="/retreats">✿ <span>Retreats</span></a>
-      <a class="{% if request.path.startswith('/messages') %}active{% endif %}" href="/messages">◌ <span>Messages</span></a>
-      <a class="{% if request.path.startswith('/notifications') %}active{% endif %}" href="/notifications">♢ <span>Notifications</span></a>
-      <a class="{% if request.path.startswith('/profile/') or request.path.startswith('/edit-profile') %}active{% endif %}" href="/profile/{{ current_user['id'] }}">♙ <span>My Profile</span></a>
       <a class="{% if request.path.startswith('/plans') or request.path.startswith('/memberships') %}active{% endif %}" href="/plans">☆ <span>Membership</span></a>
     </nav>
     <div class="sidebar-promo">
       <strong>The Seasons Within Membership</strong>
-      <span>Unlock full profiles, compatibility, date ideas and member alerts.</span>
+      <span>Deeper connection, compatibility, date ideas and member experiences.</span>
       {% if membership_statuses.get('zodiac') not in ['active','trialing'] %}<a href="/plans">Become a Member</a>{% else %}<b>Membership Active ✓</b>{% endif %}
     </div>
     <div class="sidebar-bottom"><a href="/logout">Log Out</a></div>
@@ -35,7 +32,7 @@
     <header class="topbar">
       <a href="/community" class="top-brand"><img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt=""><span>The Seasons Within</span></a>
       <form class="global-search" action="/members"><input name="q" placeholder="Search posts, members, or businesses..."><button>⌕</button></form>
-      <div class="top-icons"><a href="/notifications">♢</a><a href="/messages">◌</a><a href="/profile/{{ current_user['id'] }}" class="top-profile"><span class="avatar-fallback small-avatar">{{ current_user['name'][:1] }}</span><b>{{ current_user['name'] }}</b></a></div>
+      <div class="top-icons"><a href="/profile/{{ current_user['id'] }}" class="top-profile"><span class="avatar-fallback small-avatar">{{ current_user['name'][:1] }}</span><b>{{ current_user['name'] }}</b></a></div>
     </header>
     <div class="app-content">
       {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
@@ -44,7 +41,7 @@
   </main>
 </div>
 {% else %}
-<nav class="public-nav"><a href="/" class="brand-link"><img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt=""><span>The Seasons Within</span></a><div><a href="/login">Log In</a><a class="btn" href="/join">Join Free</a></div></nav>
+<nav class="public-nav"><a href="/" class="brand-link"><img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt="The Seasons Within logo"><span>The Seasons Within</span></a><div><a href="/login">Log In</a><a class="btn" href="/join">Join Free</a></div></nav>
 <div class="public-wrap">{% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}{% block public_content %}{% endblock %}{% if self.content()|trim %}<div class="public-page-content">{{ self.content() }}</div>{% endif %}</div>
 {% endif %}
 </body>
