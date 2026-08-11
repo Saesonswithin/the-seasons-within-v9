@@ -1,18 +1,15 @@
 {% extends 'base.html' %}{% block content %}
-<section class="page-shell narrow">
- <div class="section-kicker">Business Network • App Builder</div><h1>{{ 'Edit Your Business App' if business else 'Build Your Business App' }}</h1>
- <p class="lead">Your monthly Business Network plan pays for your public listing, hosted app and marketing presence. Fill this out once; afterward you manage the app from your dashboard.</p>
- <form method="post" enctype="multipart/form-data" class="form-card">
-  <h2>1. Business Identity</h2>
-  <label>Business name<input name="business_name" value="{{ business.business_name if business else '' }}" required></label>
-  <label>Tagline<input name="tagline" value="{{ business.tagline if business else '' }}" placeholder="Flow. Breathe. Connect."></label>
-  <label>Business category<select name="category"><option>{{ business.category if business else 'Wellness' }}</option><option>Yoga</option><option>Reiki</option><option>Sound Therapy</option><option>Massage</option><option>Meditation</option><option>Wellness Coaching</option><option>Retreats</option><option>Natural Wellness</option><option>Healthy Food</option><option>Other</option></select></label>
-  <label>About your business<textarea name="description" rows="5" placeholder="Tell visitors what you offer and who you serve.">{{ business.description if business else '' }}</textarea></label>
-  <h2>2. Contact & Location</h2><div class="two-col"><label>City / service area<input name="city" value="{{ business.city if business else '' }}"></label><label>Website<input name="website" value="{{ business.website if business else '' }}"></label></div>
-  <div class="two-col"><label>Business email<input type="email" name="contact_email" value="{{ business.contact_email if business else '' }}"></label><label>Phone<input name="phone" value="{{ business.phone if business else '' }}"></label></div>
-  <h2>3. Brand Your Hosted App</h2><div class="two-col"><label>Logo<input type="file" name="logo" accept="image/*"></label><label>Cover image<input type="file" name="hero_image" accept="image/*"></label></div>
-  <label>App accent color<input type="color" name="accent" value="{{ business.accent if business else '#b99ad6' }}"></label>
-  <button class="btn" type="submit">Save & Continue to App Content</button>
- </form>
- {% if business %}<div class="business-preview-bar"><a class="btn secondary" href="/business/items">Manage Services & Shop</a><a class="btn secondary" href="/business/my-app">Preview My Hosted App</a><a class="btn secondary" href="/app/{{business.slug}}">Open Public App</a></div>{% endif %}
-</section>{% endblock %}
+<section class="settings-page wide-settings"><div class="simple-head"><span>BUSINESS NETWORK</span><h1>{% if business %}Edit My Business{% else %}List My Business{% endif %}</h1><p>Create a free business profile now. Business Network membership unlocks the hosted app builder.</p></div>
+<form class="settings-card" method="post" enctype="multipart/form-data">
+  <div class="two-fields"><label>Business name<input name="business_name" required value="{{business['business_name'] if business else ''}}"></label><label>Category<input name="category" value="{{business['category'] if business else ''}}" placeholder="Yoga, Reiki, Coaching..."></label></div>
+  <label>Tagline<input name="tagline" value="{{business['tagline'] if business else ''}}"></label><label>Description<textarea name="description">{{business['description'] if business else ''}}</textarea></label>
+  <div class="two-fields"><label>City / Area<input name="city" value="{{business['city'] if business else ''}}"></label><label>Contact email<input name="contact_email" value="{{business['contact_email'] if business else current_user['email']}}"></label></div>
+  <div class="two-fields"><label>Phone<input name="phone" value="{{business['phone'] if business else ''}}"></label><label>Website<input name="website" value="{{business['website'] if business else ''}}"></label></div>
+  <div class="two-fields"><label>Instagram<input name="instagram" value="{{business['instagram'] if business else ''}}"></label><label>Facebook<input name="facebook" value="{{business['facebook'] if business else ''}}"></label></div>
+  <label>Affiliate / outside wellness link<input name="affiliate_url" value="{{business['affiliate_url'] if business else ''}}"></label>
+  <label>Booking link {% if not has_access(current_user,'business') %}<small>— displayed when you upgrade to Business Network</small>{% endif %}<input name="booking_url" value="{{business['booking_url'] if business else ''}}"></label>
+  <div class="two-fields"><label>Logo<input type="file" name="logo" accept="image/*"></label><label>Cover image<input type="file" name="hero_image" accept="image/*"></label></div>
+  <label>Accent color<input name="accent" value="{{business['accent'] if business else '#b99ad6'}}"></label>
+  <button class="btn large">Save Business Profile</button>
+</form></section>
+{% endblock %}

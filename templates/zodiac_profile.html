@@ -1,7 +1,57 @@
 {% extends 'base.html' %}{% block content %}
-<div class="dating-profile-page">
-  <div class="dating-profile-hero"><img src="{{ url_for('static', filename='assets/' + ('jalen.jpg' if member['name'] in ['Marcus','Morgan'] else 'ayla.jpg')) }}"><div class="profile-hero-text"><h1>{{member['name']}}, {{age_from_birth_date(member['birth_date'])}}</h1><p>{{member['sun']}} · {{member['city']}}</p><span>● Online</span></div></div>
-  <div class="profile-main-grid"><section class="profile-copy"><div class="chips"><span>Wellness</span><span>Travel</span><span>Nature</span><span>Music</span></div><h3>About {{member['name'].split()[0]}}</h3><p>{{member['dating_bio'] or member['bio']}}</p><h3>I’m Looking For</h3><p>{{member['dating_intention'] or 'A meaningful, intentional connection.'}}</p><h3>Best Dates for {{member['name'].split()[0]}} <em class="free-chip">Free profile insight</em></h3><div class="date-mini-grid">{% set s=member['sun'] or '' %}{% if s in ['Aries','Leo','Sagittarius'] %}<span>🌅 Sunset hike</span><span>🎶 Live music</span><span>🎨 Creative night</span>{% elif s in ['Taurus','Virgo','Capricorn'] %}<span>☕ Cozy café</span><span>🌿 Botanical garden</span><span>🍽️ Relaxed dinner</span>{% elif s in ['Gemini','Libra','Aquarius'] %}<span>🎭 Art & culture</span><span>🎶 Live music</span><span>☕ Conversation café</span>{% else %}<span>🌊 Waterfront walk</span><span>🧘 Wellness date</span><span>🍽️ Intimate dinner</span>{% endif %}</div></section>
-  <aside class="profile-compat-card"><h3>Compatibility Preview</h3>{% if premium %}{% set result = compatibility_summary(current_user, member) %}<div class="compat-ring"><b>{{result['score']}}%</b><small>{{result['label']}}</small></div><p>Your full membership opens the complete breakdown and personalized date ideas for you two.</p><a class="btn full" href="/compatibility/{{member['id']}}">See Full Compatibility</a>{% else %}<div class="compat-lock">♡</div><p>Become a member to see your compatibility with {{member['name'].split()[0]}}, including emotional connection, communication, chemistry, long-term potential and personalized date ideas.</p><a class="btn full" href="/plans">Unlock Full Compatibility</a>{% endif %}<a class="btn outline full" href="/messages/{{member['id']}}">Message</a></aside></div>
-</div>
+<section class="connection-profile-layout">
+  <main class="connection-profile-main">
+    <div class="profile-header-card card-surface">
+      <div class="profile-media-main">
+        {% if member['dating_photo'] %}<img src="{{media_url(member['dating_photo'])}}">{% else %}<div class="avatar-fallback huge-avatar">{{member['name'][:1]}}</div>{% endif %}
+      </div>
+      <div class="profile-header-copy">
+        <span>CONSCIOUS COORDINATION PROFILE</span>
+        <h1>{{member['name']}}{% if member['birth_date'] %}, {{age_from_birth_date(member['birth_date'])}}{% endif %}</h1>
+        <p>{% if member['show_height'] and member['height'] %}{{member['height']}} • {% endif %}{% if member['show_weight'] and member['weight'] %}{{member['weight']}} • {% endif %}{{member['sun'] or 'Natal profile'}} • {{member['city'] or 'Community'}}</p>
+        <strong>{{member['connection_intentions'] or 'Open to meaningful connections'}}</strong>
+        <div class="profile-actions">
+          {% if viewer['id']==member['id'] %}<a class="btn" href="/dating-profile">Edit My Profile</a>{% else %}
+          <form method="post" action="/like/{{member['id']}}"><button class="btn">{% if liked %}♡ Connected{% else %}♡ Connect{% endif %}</button></form>
+          {% if matched %}<a class="btn outline" href="/messages/{{member['id']}}">Private Text</a><form method="post" action="/video-call/request/{{member['id']}}"><button class="btn outline">Video Call Request</button></form>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if media and premium %}
+    <div class="media-gallery">{% for m in media %}{% if m['media_type']=='photo' %}<img src="{{media_url(m['path'])}}">{% else %}<video controls src="{{media_url(m['path'])}}"></video>{% endif %}{% endfor %}</div>
+    {% endif %}
+
+    <div class="profile-detail-grid">
+      <article class="card-surface"><h2>Journey Story</h2><p>{{member['journey_story'] or member['dating_bio'] or 'This member is still writing their Journey Story.'}}</p><h3>What I'm Looking For</h3><p>{{member['looking_for'] or member['connection_intentions']}}</p><h3>Wellness & Lifestyle</h3><p>{{member['wellness_interests'] or '—'}}</p><p>{{member['lifestyle'] or ''}}</p>{% if member['show_business_interests'] and member['business_interests'] %}<h3>Business & Collaboration</h3><p>{{member['business_interests']}}</p>{% endif %}</article>
+      <article class="card-surface coord-card"><span>YOUR CONSCIOUS COORDINATION</span><div class="compat-big-ring"><b>{{cats['Overall']}}%</b><small>Overall</small></div>{% for label,score in cats.items() if label!='Overall' %}<div class="score-row"><span>{{label}}</span><b>{{score}}%</b><div class="score-bar"><i style="width:{{score}}%"></i></div></div>{% endfor %}<a class="btn outline full" href="/compatibility/{{member['id']}}">{% if premium %}View Full Coordination{% else %}See What Membership Unlocks{% endif %}</a></article>
+    </div>
+
+    <article class="card-surface natal-profile-card"><div class="section-head-row"><div><span>NATAL CHART</span><h2>Placements</h2></div>{% if premium %}<b>Full insight unlocked</b>{% else %}<a href="/plans">Membership unlocks deeper meanings →</a>{% endif %}</div>
+      <div class="placement-detail-grid">{% for label,sign in placements %}<div><b>{{label}}</b><strong>{{sign}}</strong>{% if premium %}<p>{{descriptions[label]}}</p>{% else %}<small>Placement visible • deeper interpretation with Membership</small>{% endif %}</div>{% endfor %}</div>
+      <h3>Strong Connection Energies</h3><div class="chips">{% for sign,score in best_matches %}<span>{{sign}} • {{score}}%</span>{% endfor %}</div>
+      {% if all_planets %}<h3>More Natal Placements</h3><div class="chips">{% for label,sign in all_planets %}<span>{{label}} • {{sign}}</span>{% endfor %}</div>{% endif %}
+      {% if house_signs %}<h3>House Signs</h3><div class="house-grid">{% for house,sign in house_signs %}<span><b>{{house}}</b> {{sign}}</span>{% endfor %}</div>{% endif %}
+    </article>
+
+    <article class="card-surface">
+      <div class="section-head-row"><div><span>CONNECTION IDEAS</span><h2>Ideas for {{member['sun'] or 'this connection'}} energy</h2></div></div>
+      <div class="chips">{% for idea in sign_ideas %}<span>{{idea}}</span>{% endfor %}</div>
+      {% if premium %}
+        <h3>Conscious Coordination Ideas for You Two</h3>
+        <p>Use your strongest compatibility categories to choose experiences that support the kind of relationship you are actually building—love, friendship, business, wellness or collaboration.</p>
+        {% if business_ideas %}<div class="connection-business-ideas">{% for b in business_ideas %}<a href="/app/{{b['slug']}}"><b>{{b['business_name']}}</b><small>{{b['category']}}{% if b['city'] %} • {{b['city']}}{% endif %}</small></a>{% endfor %}</div>{% else %}<p class="muted">Real Business Network experiences will appear here as businesses join.</p>{% endif %}
+      {% else %}
+        <p class="small-note">Free members get general connection ideas. Membership unlocks personalized Conscious Coordination ideas using both natal charts and real Business Network experiences.</p>
+      {% endif %}
+    </article>
+  </main>
+
+  <aside class="more-daters card-surface">
+    <span>EXPLORE MORE CONNECTIONS</span><h2>More Members</h2>
+    {% for m in more %}<a href="/zodiac/profile/{{m['id']}}" class="more-dater-row">{% if m['dating_photo'] %}<img src="{{media_url(m['dating_photo'])}}">{% else %}<div class="avatar-fallback">{{m['name'][:1]}}</div>{% endif %}<div><b>{{m['name']}}</b><small>{{age_from_birth_date(m['birth_date']) if m['birth_date'] else ''}} • {{m['sun'] or ''}} • {{m['city'] or ''}}</small><span>{{m['connection_intentions'] or 'Connection'}}</span></div></a>{% else %}<p class="muted">More real profiles will appear here as members join.</p>{% endfor %}
+    <a class="btn outline full" href="/zodiac">Back to Directory</a>
+  </aside>
+</section>
 {% endblock %}

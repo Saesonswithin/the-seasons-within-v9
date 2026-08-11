@@ -1,17 +1,104 @@
 {% extends 'base.html' %}{% block content %}
-<div class="home-layout">
-  <section class="feed-column">
-    <div class="daily-card"><div class="daily-leaf">❧</div><div><span>DAILY SEASONS WITHIN</span><h2>What season are you embracing within yourself right now?</h2><p>“You are not behind. You are becoming. Trust the season you’re in.”</p></div><div class="daily-sun">☼</div></div>
-    <form class="composer" method="post"><div class="avatar-fallback">{{ current_user['name'][:1] }}</div><textarea name="body" placeholder="Share a thought, reflection, or gratitude..."></textarea><div class="composer-actions"><span>▧ Photo</span><span>▻ Video</span><span>☺ Feeling</span><span>▣ Event</span><button class="btn">Post</button></div></form>
-    <div class="feed-tabs"><b>All Posts</b><span>Following</span><span>Mentions</span></div>
-    {% for post in posts %}<article class="social-post"><div class="post-head">{% if post['photo'] %}<img class="avatar" src="{{ url_for('static', filename=post['photo']) }}">{% else %}<div class="avatar-fallback">{{ post['name'][:1] }}</div>{% endif %}<div><b>{{ post['name'] }}</b>{% if post['name']=='The Seasons Within' %}<em>Creator</em>{% endif %}<small>{{ post['created_at'] }}</small></div><span>•••</span></div><p>{{ post['body'] }}</p>{% if loop.index == 2 %}<img class="post-photo" src="{{ url_for('static', filename='assets/date_sunset.jpg') }}">{% elif loop.index == 3 %}<img class="post-photo" src="{{ url_for('static', filename='assets/date_art.jpg') }}">{% endif %}<div class="post-actions"><span>♥ {{ 14 + loop.index*3 }}</span><span>◌ {{ loop.index+2 }}</span><span>↗</span><span class="save">▱</span></div></article>{% endfor %}
+<div class="conscious-home">
+  <section class="natal-center card-surface">
+    <div class="section-kicker">YOUR SEASONS WITHIN</div>
+    <div class="natal-center-grid">
+      <div>
+        <h1>Your Natal Chart. Your Season. Your Connections.</h1>
+        <p>Conscious Coordination begins with your natal chart and grows through the connections, choices and experiences you explore.</p>
+        <div class="placement-strip">
+          <span><b>Sun</b>{{ current_user['sun'] or '—' }}</span>
+          <span><b>Moon</b>{{ current_user['moon'] or '—' }}</span>
+          <span><b>Rising</b>{{ current_user['rising'] or '—' }}</span>
+          <span><b>Venus</b>{{ current_user['venus'] or '—' }}</span>
+          <span><b>Mars</b>{{ current_user['mars'] or '—' }}</span>
+        </div>
+        <div class="hero-actions"><a class="btn" href="/birth-info">Explore My Natal Chart</a><a class="btn outline" href="/dating-profile">Build My Connection Profile</a></div>
+      </div>
+      <img class="natal-logo" src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt="">
+    </div>
   </section>
-  <aside class="home-rail">
-    <section class="rail-card"><div class="rail-title"><div><span>FREE COMMUNITY</span><h3>Basic Member Profiles</h3></div><a href="/members">View All</a></div>{% for m in members[:4] %}<a class="member-row" href="/profile/{{m['id']}}"><div class="avatar-fallback">{{m['name'][:1]}}</div><div><b>{{m['name']}}</b><small>{% if m['show_city'] and m['city'] %}{{m['city']}}{% else %}Community member{% endif %}</small><small>{% if m['show_headline'] and m['profile_headline'] %}{{m['profile_headline']}}{% elif m['show_zodiac_basic'] and m['sun'] %}Sun: {{m['sun']}}{% endif %}</small></div><button>View Profile</button></a>{% endfor %}<a class="outline-link" href="/members">Browse All Members</a></section>
-    <a class="feature-link" href="/zodiac"><span class="feature-icon">♡</span><div><b>Zodiac Dater</b><small>Create a profile free. Browse, pass or like.</small></div><strong>›</strong></a>
-    <a class="feature-link" href="/business"><span class="feature-icon">▣</span><div><b>Business Network</b><small>Discover public wellness business apps.</small></div><strong>›</strong></a>
-    <a class="feature-link" href="/retreats"><span class="feature-icon">✿</span><div><b>Retreats</b><small>Private retreats and custom experiences.</small></div><strong>›</strong></a>
-    <a class="feature-link warm" href="/plans"><span class="feature-icon">☆</span><div><b>Membership</b><small>Full profiles, compatibility, date ideas & alerts.</small></div><strong>›</strong></a>
-  </aside>
+
+  <section class="today-grid">
+    <article class="today-card moon-card">
+      <span>MOON TODAY</span>
+      <h2>☾ {{ reflection.sky.moon_sign or 'Current Moon' }}</h2>
+      <p>{{ reflection.sky.moon_phase }}{% if reflection.sky.moon_degree %} • {{ reflection.sky.moon_degree }}°{% endif %}</p>
+      {% if reflection.sky.positions %}<div class="sky-mini">{% for planet in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}{% if reflection.sky.positions.get(planet) %}<span><b>{{planet}}</b> {{reflection.sky.positions[planet]['sign']}}</span>{% endif %}{% endfor %}</div>{% endif %}
+      <small>The sky display updates from current planetary positions.</small>
+    </article>
+    <article class="today-card">
+      <span>YOUR DAILY SEASONS WITHIN</span>
+      <h2>☾ Your {{ reflection.natal_moon or 'Natal' }} Moon</h2>
+      <p>{{ reflection.reflection }}</p>
+      <div class="reflection-actions">Journal • Reflect • Share With Community</div>
+      <small>Inspired by your natal chart, the current Moon and your Seasons Within.</small>
+    </article>
+    <article class="today-card season-card">
+      <span>THE SEASON WE'RE IN</span>
+      <h2>{{ reflection.sky.season }}</h2>
+      <p>{{ reflection.season_text }}</p>
+      <div class="mind-body-spirit"><b>Mind</b> What deserves attention? <b>Body</b> What pace feels sustainable? <b>Spirit</b> What are you cultivating?</div>
+    </article>
+  </section>
+
+  <section class="connection-branches">
+    <div class="section-head-row"><div><span>CONSCIOUS COORDINATION</span><h2>How Do You Want to Connect?</h2></div><a href="/zodiac">Explore Connections →</a></div>
+    <div class="branch-grid">
+      <a href="/zodiac?intention=love"><b>♡ Love & Dating</b><span>Intentional romantic connection and compatibility.</span></a>
+      <a href="/zodiac?intention=friendship"><b>♧ Friendship & Community</b><span>Friendship, wellness buddies, travel and activities.</span></a>
+      <a href="/zodiac?intention=business"><b>◇ Business & Collaboration</b><span>Partners, creators, referral connections and projects.</span></a>
+      <a href="/retreats"><b>✦ Retreats & Experiences</b><span>Bring connection into real-world wellness experiences.</span></a>
+    </div>
+  </section>
+
+  <section class="real-section">
+    <div class="section-head-row"><div><span>CONNECTIONS FOR YOU</span><h2>Explore Real Members</h2></div><a href="/zodiac">View All</a></div>
+    {% if daters %}
+    <div class="mini-connection-grid">
+      {% for m in daters %}
+      <a class="mini-connection" href="/zodiac/profile/{{m['id']}}">
+        {% if m['dating_photo'] %}<img src="{{ media_url(m['dating_photo']) }}">{% else %}<div class="avatar-fallback big-avatar">{{m['name'][:1]}}</div>{% endif %}
+        <b>{{m['name']}}{% if m['birth_date'] %}, {{ age_from_birth_date(m['birth_date']) }}{% endif %}</b>
+        <span>{{m['city'] or 'Community'}} • {{m['sun'] or 'Natal profile'}}</span>
+        <small>{{m['connection_intentions'] or 'Open to meaningful connection'}}</small>
+        <strong>{{ coordination_categories(current_user,m)['Overall'] }}% Conscious Coordination</strong>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><h3>Your connections are still growing.</h3><p>Complete your connection profile and tell the community what kinds of connections you are open to.</p><a class="btn" href="/dating-profile">Create My Connection Profile</a></div>
+    {% endif %}
+  </section>
+
+  <section class="real-section">
+    <div class="section-head-row"><div><span>WELLNESS WITHIN THE COMMUNITY</span><h2>Discover Wellness Within the Community</h2></div><a href="/business">Explore Business Network →</a></div>
+    <p class="section-copy">Explore businesses, services, and wellness experiences within The Seasons Within—find what speaks to you, make meaningful connections, and discover new ways to support your wellness journey.</p>
+    {% if businesses %}
+    <div class="home-business-grid">
+      {% for b in businesses %}
+      <a class="home-business-card" href="/app/{{b['slug']}}">
+        {% if b['logo'] %}<img src="{{ media_url(b['logo']) }}">{% else %}<div class="biz-logo-fallback">▣</div>{% endif %}
+        <div><b>{{b['business_name']}}</b><span>{{b['category']}}{% if b['city'] %} • {{b['city']}}{% endif %}</span><small>{{b['tagline'] or b['description']}}</small></div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><h3>Businesses are beginning to join.</h3><p>Real wellness businesses will appear here as they create profiles in The Seasons Within.</p><a class="btn outline" href="/business/setup">List My Business Free</a></div>
+    {% endif %}
+  </section>
+
+  <div class="home-layout new-feed-layout">
+    <section class="feed-column">
+      <div class="section-head-row"><div><span>WITHIN THE COMMUNITY</span><h2>Share Your Journey</h2></div></div>
+      <form class="composer" method="post"><div class="avatar-fallback">{{ current_user['name'][:1] }}</div><textarea name="body" placeholder="Share a thought, reflection, or part of your journey..."></textarea><div class="composer-actions"><button class="btn">Share</button></div></form>
+      {% for post in posts %}<article class="social-post"><div class="post-head">{% if post['photo'] %}<img class="avatar" src="{{ media_url(post['photo']) }}">{% else %}<div class="avatar-fallback">{{ post['name'][:1] }}</div>{% endif %}<div><b>{{ post['name'] }}</b><small>{{ post['created_at'] }}</small></div></div><p>{{post['body']}}</p></article>{% else %}<div class="empty-state"><p>Community posts will appear here as members share their journeys.</p></div>{% endfor %}
+    </section>
+    <aside class="home-rail">
+      <a class="feature-link" href="/zodiac"><span class="feature-icon">♡</span><div><b>Explore Conscious Connections</b><small>Love, friendship, business, wellness and more.</small></div><strong>›</strong></a>
+      <a class="feature-link" href="/notifications"><span class="feature-icon">♢</span><div><b>Conscious Coordination Alerts</b><small>Moon shifts, compatible profiles and connection updates.</small></div><strong>›</strong></a>
+      <a class="feature-link" href="/retreats"><span class="feature-icon">✿</span><div><b>Retreats</b><small>Private retreats and custom experiences.</small></div><strong>›</strong></a>
+    </aside>
+  </div>
 </div>
 {% endblock %}

@@ -1,11 +1,36 @@
 {% extends 'base.html' %}{% block content %}
-<div class="zodiac-shell">
-  <div class="zodiac-head"><div><span class="heart-logo">♡</span><div><h1>Zodiac Dater</h1><p>Conscious dating. Cosmic connection.</p></div></div><a class="btn outline" href="/dating-profile">Create / Edit My Dating Profile</a></div>
-  <div class="dating-tabs"><b>Discover</b><span>Likes You</span><span>Matches</span><a href="/messages">Messages</a></div>
-  <form class="dating-filter" method="get"><input name="q" value="{{q}}" placeholder="Search dating profiles"><input name="city" value="{{city}}" placeholder="City"><input name="sign" value="{{sign}}" placeholder="Sun sign"><button>Filters</button></form>
-  <div class="swipe-grid">
-    {% for m in members %}<article class="swipe-card"><a href="/zodiac/profile/{{m['id']}}" class="swipe-photo">{% set idx=loop.index0 %}<img src="{{ url_for('static', filename='assets/' + ['ayla.jpg','jalen.jpg','serenity.jpg','kai.jpg'][idx % 4]) }}"><span class="online-dot"></span><div class="swipe-overlay"><h2>{{m['name']}}, {{age_from_birth_date(m['birth_date'])}}</h2><p>{{m['sun']}} · {{m['city']}}</p><small>{{m['dating_headline'] or m['dating_intention']}}</small></div></a><div class="swipe-actions"><button title="Pass">✕</button><button title="Save">★</button><a title="Like" href="/zodiac/profile/{{m['id']}}">♥</a></div></article>{% endfor %}
+<section class="zodiac-shell">
+  <div class="zodiac-head"><div><span class="heart-logo">♡</span><div><h1>Conscious Connections</h1><p>Use your natal chart to explore love, friendship, wellness, business and meaningful connection.</p></div></div><a class="btn" href="/dating-profile">Create / Edit My Profile</a></div>
+  <div class="dating-tabs"><b>Discover</b>{% if premium %}<a href="/likes">Likes You</a>{% else %}<span>Likes You • Membership</span>{% endif %}<a href="/profile/{{current_user['id']}}">My Profile</a></div>
+  <form class="dating-filter" method="get">
+    <input name="q" value="{{q}}" placeholder="Search intentions or interests">
+    <input name="city" value="{{city}}" placeholder="Area">
+    <input name="sign" value="{{sign}}" placeholder="Zodiac sign">
+    <input name="intention" value="{{intention}}" placeholder="Love, friendship, business...">
+    <input name="min_age" value="{{min_age}}" type="number" min="18" placeholder="Min age">
+    <input name="max_age" value="{{max_age}}" type="number" min="18" placeholder="Max age">
+    <button>Search</button>
+  </form>
+  {% if members %}
+  <div class="connection-directory-grid">
+    {% for m in members %}
+    <article class="connection-card">
+      <a class="connection-photo" href="/zodiac/profile/{{m['id']}}">
+        {% if m['dating_photo'] %}<img src="{{media_url(m['dating_photo'])}}">{% else %}<div class="avatar-fallback connection-avatar">{{m['name'][:1]}}</div>{% endif %}
+      </a>
+      <div class="connection-card-copy">
+        <h2>{{m['name']}}{% if m['birth_date'] %}, {{age_from_birth_date(m['birth_date'])}}{% endif %}</h2>
+        <p>{% if m['show_height'] and m['height'] %}{{m['height']}} • {% endif %}{% if m['show_weight'] and m['weight'] %}{{m['weight']}} • {% endif %}{{m['sun'] or 'Natal profile'}} • {{m['city'] or 'Community'}}</p>
+        <small>{{m['connection_intentions'] or 'Open to meaningful connections'}}</small>
+        <div class="coord-score"><b>{{compat[m['id']]['Overall']}}%</b> Conscious Coordination</div>
+        {% if not premium and m['id'] in likes_from %}<div class="liked-you-live">♡ This member liked you</div>{% endif %}
+        <div class="biz-buttons"><a class="btn outline" href="/zodiac/profile/{{m['id']}}">View Profile</a><form method="post" action="/like/{{m['id']}}"><button class="btn">♡ Connect</button></form></div>
+      </div>
+    </article>
+    {% endfor %}
   </div>
-  {% if not premium %}<div class="membership-cta"><div><b>More connection is waiting for you.</b><span>Join The Seasons Within Membership to open full profiles, compatibility, personalized date ideas and compatible-member alerts.</span></div><a class="btn" href="/plans">Become a Member</a></div>{% endif %}
-</div>
+  {% else %}
+  <div class="empty-state large-empty"><h2>Your connection community is growing.</h2><p>There are no real member profiles matching these filters yet. Create your profile so future compatible members can discover you.</p><a class="btn" href="/dating-profile">Create My Connection Profile</a></div>
+  {% endif %}
+</section>
 {% endblock %}

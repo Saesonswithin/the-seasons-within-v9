@@ -1,4 +1,21 @@
 {% extends 'base.html' %}{% block content %}
-<div class="hosted-app"><div class="hosted-hero"><img src="{{url_for('static',filename='assets/biz_yoga.jpg')}}"><div class="hosted-overlay"><div class="biz-mark">{{business['business_name'][:2]}}</div><div><span>Hosted inside The Seasons Within</span><h1>{{business['business_name']}}</h1><p>{{business['city']}}</p><b>{{business['tagline']}}</b></div></div></div><div class="hosted-tabs"><a href="#services">Services</a><a href="#classes">Classes</a><a href="#memberships">Memberships</a><a href="#shop">Shop</a><a href="#about">About</a></div><div class="quick-actions"><a>▣ Book</a><a>♡ Memberships</a><a>▻ Online Studio</a><a>▢ Shop</a></div>
-<section id="services"><h2>Offerings</h2><div class="offer-grid">{% for item in items %}<article><span>{{item['item_type']|title}}</span><h3>{{item['title']}}</h3><p>{{item['description']}}</p><strong>{{item['price']}}</strong>{% if item['action_url'] %}<a class="btn" href="{{item['action_url']}}">Book / Buy</a>{% else %}<button class="btn">Learn More</button>{% endif %}</article>{% else %}<article><span>Class</span><h3>Morning Flow</h3><p>60 minutes · All levels</p><strong>$25</strong><button class="btn">Book</button></article><article><span>Private Session</span><h3>Personal Wellness Session</h3><p>One-to-one personalized experience</p><strong>$80</strong><button class="btn">Book</button></article><article><span>Membership</span><h3>Monthly Wellness Circle</h3><p>Classes + member content + community</p><strong>$39/mo</strong><button class="btn">Join</button></article>{% endfor %}</div></section><section id="about" class="about-biz"><h2>About Us</h2><p>{{business['description']}}</p></section></div>
+<section class="business-app-page">
+  <div class="business-app-hero" style="--business-accent:{{business['accent']}}">
+    {% if business['hero_image'] %}<img src="{{media_url(business['hero_image'])}}">{% endif %}
+    <div class="business-app-overlay"><div class="business-app-logo">{% if business['logo'] %}<img src="{{media_url(business['logo'])}}">{% else %}▣{% endif %}</div><div><span>{% if paid %}HOSTED BUSINESS APP{% else %}BUSINESS PROFILE{% endif %}</span><h1>{{business['business_name']}}</h1><p>{{business['tagline']}}</p><small>{{business['category']}}{% if business['city'] %} • {{business['city']}}{% endif %}</small></div></div>
+  </div>
+  <div class="business-app-grid">
+    <main>
+      <article class="card-surface"><h2>About</h2><p>{{business['description']}}</p><div class="business-links">{% if business['website'] %}<a href="{{business['website']}}" target="_blank">Website</a>{% endif %}{% if business['instagram'] %}<a href="{{business['instagram']}}" target="_blank">Instagram</a>{% endif %}{% if business['facebook'] %}<a href="{{business['facebook']}}" target="_blank">Facebook</a>{% endif %}{% if business['affiliate_url'] %}<a href="{{business['affiliate_url']}}" target="_blank">Wellness Link</a>{% endif %}</div></article>
+      {% if paid %}
+      <article class="card-surface"><div class="section-head-row"><div><span>INSIDE THIS BUSINESS APP</span><h2>Services • Classes • Events • Shop</h2></div>{% if business['booking_url'] %}<a class="btn" href="{{business['booking_url']}}" target="_blank">Book</a>{% endif %}</div>{% if items %}<div class="offer-grid">{% for item in items %}<div class="offer-card"><span>{{item['item_type']}}</span><h3>{{item['title']}}</h3><p>{{item['description']}}</p><b>{{item['price']}}</b>{% if item['action_url'] %}<a href="{{item['action_url']}}" target="_blank">Open →</a>{% endif %}</div>{% endfor %}</div>{% else %}<div class="empty-state"><p>This business is building its hosted offerings.</p></div>{% endif %}</article>
+      {% else %}
+      <div class="membership-cta"><div><b>This is a free Business Profile.</b><span>Business Network membership adds a full hosted app with classes, events, shop items, memberships, booking links and content.</span></div></div>
+      {% endif %}
+    </main>
+    <aside>
+      {% if business_coord %}<article class="card-surface coord-card"><span>BUSINESS CONSCIOUS COORDINATION</span><div class="compat-big-ring"><b>{{business_coord['Overall']}}%</b><small>Overall</small></div>{% for label in ['Communication','Business / Creative','Lifestyle','Growth'] %}<div class="score-row"><span>{{label}}</span><b>{{business_coord[label]}}%</b></div>{% endfor %}{% if premium_business_view %}<p>Use these reflections to explore communication, creativity, collaboration and retreat ideas together.</p>{% else %}<a class="btn outline full" href="/plans">Business Network Unlocks Deeper Partnership Ideas</a>{% endif %}</article>{% endif %}
+    </aside>
+  </div>
+</section>
 {% endblock %}

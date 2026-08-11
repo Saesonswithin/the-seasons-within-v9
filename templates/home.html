@@ -1,1 +1,22 @@
-{% extends 'base.html' %}{% block public_content %}<div class="public-landing"><section class="landing-brand"><img src="{{url_for('static',filename='seasons-within-logo.png')}}"><h1>The Seasons Within</h1><h2>Conscious Coordination</h2><p>Meet. Explore. Grow. Consciously Coordinate.</p></section><section class="landing-copy"><span>WELCOME</span><h2>Join the community.</h2><p>Connect with like-minded people, share your journey, explore intentional relationships, discover wellness businesses and design meaningful retreat experiences.</p><a class="btn large" href="/join">Join The Seasons Within</a><a class="btn outline large" href="/login">Log In</a><small>Free community account. Upgrade only for full dating compatibility or a hosted business app.</small></section></div>{% endblock %}
+{% extends 'base.html' %}
+{% block public_content %}
+<section class="public-landing new-public">
+  <div class="landing-brand">
+    <img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt="The Seasons Within">
+    <h1>The Seasons Within</h1><h2>Conscious Coordination</h2>
+  </div>
+  <div class="landing-copy">
+    <span>CONNECT WITH INTENTION</span>
+    <h2>Discover Your Seasons Within.</h2>
+    <p>Your natal chart is the starting point. The Seasons Within helps you explore meaningful connection through friendship, love, wellness, business, collaboration and shared experiences.</p>
+    <a class="btn large" href="/join">Create Your Free Account</a>
+    <a class="btn outline large" href="/login">Log In</a>
+  </div>
+</section>
+<section class="public-preview">
+  <div class="public-preview-card"><b>Conscious Coordination</b><p>Explore how your natal placements correspond with people and experiences.</p></div>
+  <div class="public-preview-card"><b>Wellness Business Network</b><p>Discover wellness professionals and services after you create your free account.</p></div>
+  <div class="public-preview-card"><b>Retreats</b><p>Explore private retreats and experiences designed around connection, wellness and your season.</p></div>
+  <div class="public-preview-card"><b>Explore Conscious Connections</b><p>Friendship, love, business, workout partners, travel, wellness and more.</p></div>
+</section>
+{% endblock %}

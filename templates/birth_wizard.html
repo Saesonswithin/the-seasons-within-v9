@@ -1,22 +1,3 @@
 {% extends 'base.html' %}{% block content %}
-<section class="page-shell narrow">
-  <div class="section-kicker">Zodiac Dater • Real Birth Chart</div>
-  <h1>Build Your Birth Chart</h1>
-  <p class="lead">Enter the information from your birth record. Your exact birth time and coordinates stay private. The app uses them to calculate your chart; you choose what appears on your dating profile.</p>
-  {% if not astro_installed %}<div class="notice">The astrology engine is not installed in this Python copy yet. The one-click launcher included with V9 will install it using Python 3.12.</div>{% endif %}
-  <form method="post" class="form-card">
-    <label>Date of birth<input type="date" name="birth_date" value="{{ birth['birth_date'] if birth else '' }}" required></label>
-    <label class="check-row"><input type="checkbox" name="time_known" value="yes" {% if not birth or birth['time_known'] %}checked{% endif %}> I know my exact birth time</label>
-    <label>Exact birth time<input type="time" name="birth_time" value="{{ birth['birth_time'] if birth else '' }}"></label>
-    <div class="two-col"><label>Birth city<input name="birth_city" value="{{ birth['birth_city'] if birth else '' }}" required></label><label>State / province<input name="birth_state" value="{{ birth['birth_state'] if birth else '' }}"></label></div>
-    <label>Country<input name="birth_country" value="{{ birth['birth_country'] if birth else 'United States' }}" required></label>
-    <details class="advanced-box"><summary>Advanced Birth Location — only if automatic location lookup fails</summary>
-      <p class="small-note">Normally leave these blank. They are here so a chart can still be calculated for a birthplace the automatic locator cannot find.</p>
-      <div class="two-col"><label>Latitude<input type="number" step="0.000001" name="latitude" value="{{ birth['latitude'] if birth and birth['latitude'] is not none else '' }}"></label><label>Longitude<input type="number" step="0.000001" name="longitude" value="{{ birth['longitude'] if birth and birth['longitude'] is not none else '' }}"></label></div>
-      <div class="two-col"><label>Timezone name<input name="timezone" placeholder="America/Detroit" value="{{ birth['timezone'] if birth else '' }}"></label><label>UTC offset at birth<input type="number" step="0.5" name="utc_offset" placeholder="-4" value="{{ birth['utc_offset'] if birth and birth['utc_offset'] is not none else '' }}"></label></div>
-    </details>
-    <div class="notice">If your birth time is unknown, the app will not invent a Rising sign or houses. Time-sensitive placements are clearly marked incomplete.</div>
-    <button class="btn" type="submit">Calculate My Birth Chart</button>
-  </form>
-  {% if chart %}<div class="business-preview-bar"><a class="btn secondary" href="/birth-chart">View My Saved Chart</a><a class="btn secondary" href="/dating-profile">Create / Edit Dating Profile</a></div>{% endif %}
-</section>{% endblock %}
+<section class="settings-page"><div class="simple-head"><span>YOUR SEASONS WITHIN</span><h1>Create / Update My Natal Chart</h1><p>Your natal chart is the foundation of Conscious Coordination. Enter your real birth information so the app can calculate your placements.</p></div><form class="settings-card" method="post"><label>Date of birth<input type="date" name="birth_date" required value="{{birth['birth_date'] if birth else ''}}"></label><label>Time of birth<input type="time" name="birth_time" value="{{birth['birth_time'] if birth else ''}}"></label><label><input type="checkbox" name="time_known" {% if not birth or birth['time_known'] %}checked{% endif %}> I know my exact birth time</label><div class="two-fields"><label>City<input name="birth_city" required value="{{birth['birth_city'] if birth else ''}}"></label><label>State / region<input name="birth_state" value="{{birth['birth_state'] if birth else ''}}"></label></div><label>Country<input name="birth_country" required value="{{birth['birth_country'] if birth else 'USA'}}"></label><details class="advanced-box"><summary>Advanced Birth Location</summary><div class="two-fields"><label>Latitude<input name="latitude" value="{{birth['latitude'] if birth and birth['latitude'] is not none else ''}}"></label><label>Longitude<input name="longitude" value="{{birth['longitude'] if birth and birth['longitude'] is not none else ''}}"></label></div><label>Timezone<input name="timezone" value="{{birth['timezone'] if birth else ''}}" placeholder="America/Detroit"></label><label>UTC offset at birth<input name="utc_offset" value="{{birth['utc_offset'] if birth and birth['utc_offset'] is not none else ''}}"></label></details><button class="btn large">Calculate My Natal Chart</button></form></section>
+{% endblock %}
