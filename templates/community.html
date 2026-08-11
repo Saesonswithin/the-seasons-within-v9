@@ -19,26 +19,13 @@
     </div>
   </section>
 
-  <section class="today-grid">
-    <article class="today-card moon-card">
-      <span>MOON TODAY</span>
-      <h2>☾ {{ reflection.sky.moon_sign or 'Current Moon' }}</h2>
-      <p>{{ reflection.sky.moon_phase }}{% if reflection.sky.moon_degree %} • {{ reflection.sky.moon_degree }}°{% endif %}</p>
-      {% if reflection.sky.positions %}<div class="sky-mini">{% for planet in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}{% if reflection.sky.positions.get(planet) %}<span><b>{{planet}}</b> {{reflection.sky.positions[planet]['sign']}}</span>{% endif %}{% endfor %}</div>{% endif %}
-      <small>The sky display updates from current planetary positions.</small>
-    </article>
-    <article class="today-card">
-      <span>YOUR DAILY SEASONS WITHIN</span>
-      <h2>☾ Your {{ reflection.natal_moon or 'Natal' }} Moon</h2>
-      <p>{{ reflection.reflection }}</p>
-      <div class="reflection-actions">Journal • Reflect • Share With Community</div>
-      <small>Inspired by your natal chart, the current Moon and your Seasons Within.</small>
+  <section class="today-grid simplified-today">
+    <article class="today-card moon-card moon-display-card">
+      <div class="moon-visual {{ (reflection.sky.moon_phase or '')|lower|replace(' ','-') }}"><span>☾</span></div>
+      <div><span>MOON TODAY</span><h2>Moon in {{ reflection.sky.moon_sign or 'the current sky' }}</h2><p>{{ reflection.sky.moon_phase or 'Current lunar phase' }}{% if reflection.sky.moon_degree is not none %} • {{ reflection.sky.moon_degree }}°{% endif %}</p>{% if reflection.sky.positions %}<div class="sky-mini">{% for planet in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}{% if reflection.sky.positions.get(planet) %}<span><b>{{planet}}</b> {{reflection.sky.positions[planet]['sign']}}</span>{% endif %}{% endfor %}</div>{% endif %}<small>Current sky positions update as the planets move.</small></div>
     </article>
     <article class="today-card season-card">
-      <span>THE SEASON WE'RE IN</span>
-      <h2>{{ reflection.sky.season }}</h2>
-      <p>{{ reflection.season_text }}</p>
-      <div class="mind-body-spirit"><b>Mind</b> What deserves attention? <b>Body</b> What pace feels sustainable? <b>Spirit</b> What are you cultivating?</div>
+      <span>SEASONAL REFLECTION</span><h2>{{ reflection.sky.season }}</h2><p>Let this season and the current Moon invite reflection on your pace, relationships and what is asking for conscious attention. Reflective prompts, not predictions.</p><div class="reflection-actions">Journal • Reflect • Share With Community</div><div class="mind-body-spirit"><b>Mind</b> What deserves attention? <b>Body</b> What pace feels sustainable? <b>Spirit</b> What are you cultivating?</div><small>Your personal Seasons Within reflections are delivered through your member notifications.</small>
     </article>
   </section>
 
