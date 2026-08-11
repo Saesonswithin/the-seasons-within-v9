@@ -779,8 +779,18 @@ def inject_globals():
 
 @app.route("/")
 def home():
-    if current_user(): return redirect(url_for("community"))
-    return render_template("home.html")
+    if current_user():
+        return redirect(url_for("community"))
+    c=conn()
+    businesses=c.execute("""SELECT b.*,u.name owner_name,
+           CASE WHEN s.status IN ('active','trialing') THEN 1 ELSE 0 END AS paid_business
+           FROM businesses b JOIN users u ON u.id=b.owner_id
+           LEFT JOIN subscriptions s ON s.user_id=b.owner_id AND s.membership_type='business'
+           WHERE b.status='active' AND u.suspended=0
+           AND u.email NOT LIKE '%@example.com' AND u.email NOT LIKE '%@business.demo'
+           ORDER BY paid_business DESC,b.created_at DESC LIMIT 12""").fetchall()
+    c.close()
+    return render_template("home.html", businesses=businesses, sky=current_sky())
 
 
 @app.route("/join", methods=["GET","POST"])
@@ -1274,12 +1284,10 @@ def notification_read(notification_id):
 @app.route("/business")
 def business():
     u=current_user()
-    if not u:
-        return redirect(url_for("login"))
     q=request.args.get("q","").strip()
     category=request.args.get("category","").strip()
     c=conn()
-    own=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone()
+    own=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone() if u else None
     sql="""SELECT b.*,u.name owner_name,
            CASE WHEN s.status IN ('active','trialing') THEN 1 ELSE 0 END AS paid_business
            FROM businesses b JOIN users u ON u.id=b.owner_id
