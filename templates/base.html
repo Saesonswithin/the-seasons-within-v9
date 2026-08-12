@@ -2,56 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}The Seasons Within{% endblock %}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>The Seasons Within</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="{% if current_user %}member-app{% else %}public-site{% endif %}">
-{% if current_user %}
-<div class="app-shell">
-  <aside class="sidebar">
-    <a class="sidebar-brand" href="/community">
-      <img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt="The Seasons Within logo">
-      <div><strong>The Seasons Within</strong><small>Conscious Coordination</small></div>
+<body>
+<header class="app-shell-header">
+  <div class="app-shell-inner">
+    <a class="app-brand" href="{{ url_for('home') if me else url_for('public_home') }}">
+      <img class="app-brand-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="The Seasons Within">
+      <div class="app-brand-copy"><strong>The Seasons Within</strong><span>Conscious Coordination</span></div>
     </a>
-    <nav class="side-links">
-      <a class="{% if request.path == '/community' %}active{% endif %}" href="/community">⌂ <span>Home</span></a>
-      <a class="{% if request.path.startswith('/profile/') or request.path.startswith('/edit-profile') %}active{% endif %}" href="/profile/{{ current_user['id'] }}">♙ <span>My Profile</span></a>
-      <a class="{% if request.path.startswith('/business') or request.path.startswith('/app/') %}active{% endif %}" href="/business">▣ <span>Business Network</span></a>
-      <a class="{% if request.path.startswith('/retreats') %}active{% endif %}" href="/retreats">✿ <span>Retreats</span></a>
-      <a class="{% if request.path.startswith('/plans') or request.path.startswith('/memberships') %}active{% endif %}" href="/plans">☆ <span>Membership</span></a>
+    <nav class="primary-nav" aria-label="Primary navigation">
+      <a href="{{ url_for('home') if me else url_for('public_home') }}" class="{% if request.endpoint in ['home','community','public_home'] %}active{% endif %}">Home</a>
+      {% if me %}<a href="{{ url_for('profile') }}" class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}">My Profile</a>{% endif %}
+      <a href="{{ url_for('business') }}" class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}">Business Network</a>
+      <a href="{{ url_for('retreats') }}" class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}">Retreats</a>
+      <a href="{{ url_for('membership') }}" class="{% if request.endpoint == 'membership' %}active{% endif %}">Membership</a>
     </nav>
-    <div class="sidebar-promo">
-      <strong>Connect With Intention. Discover Your Seasons Within.</strong>
-      <span>Use Conscious Coordination to explore love, friendship, business, wellness and collaboration.</span>
-      <a href="/birth-info">My Natal Chart</a>
+    <div class="account-actions">
+      {% if me %}
+      <a class="profile-pill" href="{{ url_for('profile') }}">
+        {% if me.photo %}<img src="{{ media_url(me.photo) }}" alt="">{% else %}<span class="profile-initial">{{ me.name[:1] }}</span>{% endif %}
+        <span>{{ me.name }}</span>
+      </a>
+      <a class="quiet-link desktop-only" href="{{ url_for('logout') }}">Log Out</a>
+      {% else %}
+      <a class="quiet-link desktop-only" href="{{ url_for('login') }}">Log In</a>
+      <a class="shell-btn desktop-only" href="{{ url_for('join') }}">Join Free</a>
+      {% endif %}
     </div>
-    <div class="sidebar-bottom"><a href="/logout">Log Out</a></div>
-  </aside>
-  <main class="app-main">
-    <header class="topbar">
-      <a href="/community" class="top-brand"><img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt=""><span>The Seasons Within</span></a>
-      <form class="global-search" action="/members"><input name="q" placeholder="Search members or businesses..."><button>⌕</button></form>
-      <div class="top-icons">
-        <a class="top-alert" href="/notifications">♢{% if unread_notifications %}<em>{{ unread_notifications }}</em>{% endif %}</a>
-        <a href="/profile/{{ current_user['id'] }}" class="top-profile"><span class="avatar-fallback small-avatar">{{ current_user['name'][:1] }}</span><b>{{ current_user['name'] }}</b></a>
-      </div>
-    </header>
-    <div class="app-content">
-      {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
-      {% block content %}{% endblock %}
-    </div>
-  </main>
-</div>
-{% else %}
-<nav class="public-nav">
-  <a href="/" class="brand-link"><img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt=""><span>The Seasons Within</span></a>
-  <div><a href="/login">Log In</a><a class="btn" href="/join">Join Free</a></div>
+  </div>
+</header>
+{% with msgs=get_flashed_messages() %}{% if msgs %}<div class="flash-wrap">{% for m in msgs %}<div class="flash-message">{{ m }}</div>{% endfor %}</div>{% endif %}{% endwith %}
+<main class="app-page">{% block content %}{% endblock %}</main>
+<nav class="mobile-bottom-nav" aria-label="Mobile navigation">
+  <a href="{{ url_for('home') if me else url_for('public_home') }}" class="{% if request.endpoint in ['home','community','public_home'] %}active{% endif %}"><span>⌂</span><small>Home</small></a>
+  {% if me %}<a href="{{ url_for('profile') }}" class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}"><span>◉</span><small>Profile</small></a>{% endif %}
+  <a href="{{ url_for('business') }}" class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}"><span>◇</span><small>Business</small></a>
+  <a href="{{ url_for('retreats') }}" class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"><span>✦</span><small>Retreats</small></a>
+  <a href="{{ url_for('membership') }}" class="{% if request.endpoint == 'membership' %}active{% endif %}"><span>♡</span><small>Membership</small></a>
 </nav>
-<div class="public-wrap">
-  {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
-  {% block public_content %}{% endblock %}
-  {% if self.content()|trim %}<div class="public-page-content">{{ self.content() }}</div>{% endif %}
-</div>
-{% endif %}
-</body></html>
+</body>
+</html>
