@@ -1,23 +1,315 @@
 {% extends 'base.html' %}
 {% block public_content %}
+
+{% set sky = sky|default({
+  'moon_phase': '',
+  'moon_sign': '',
+  'moon_degree': none,
+  'positions': {},
+  'season': 'Current Season'
+}) %}
+
 <section class="market-landing">
+
   <header class="market-hero">
     <img src="{{ url_for('static', filename='seasons-within-logo.png') }}" alt="The Seasons Within">
-    <div><span>THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p>Browse wellness businesses, practitioners, services and hosted apps. The Seasons Within is free to explore and free for businesses to create a basic listing.</p><div class="hero-actions"><a class="btn" href="/business">Browse All Businesses</a><a class="btn outline" href="/join">Join the Community Free</a></div></div>
-  </header>
-  <form class="business-search public-market-search" action="/business" method="get"><input name="q" placeholder="Search businesses, services, classes or wellness experiences..."><button>⌕</button></form>
-  <div class="category-pills"><a href="/business">All</a><a href="/business?category=Yoga">Yoga</a><a href="/business?category=Reiki">Reiki</a><a href="/business?category=Massage">Massage</a><a href="/business?category=Sound">Sound Therapy</a><a href="/business?category=Coaching">Coaching</a><a href="/business?category=Retreat">Retreats</a></div>
 
-  <div class="section-head-row"><div><span>BUSINESS NETWORK</span><h2>Businesses & Apps Within The Seasons Within</h2></div><a href="/business">View All →</a></div>
-  {% if businesses %}<div class="business-grid real-business-grid">{% for b in businesses %}<article class="biz-card no-mock"><div class="biz-logo-area">{% if b['logo'] %}<img src="{{media_url(b['logo'])}}">{% else %}<div class="biz-logo-fallback">▣</div>{% endif %}</div><div><h3>{{b['business_name']}}</h3><p>{{b['category']}}{% if b['city'] %} • {{b['city']}}{% endif %}</p><small>{{b['tagline'] or b['description']}}</small><div class="biz-buttons"><a class="btn outline" href="/app/{{b['slug']}}">{{ 'Open App' if b['paid_business'] else 'View Business' }}</a><span class="{{'paid-app-badge' if b['paid_business'] else 'free-listing-badge'}}">{{'Hosted App' if b['paid_business'] else 'Free Listing'}}</span></div></div></article>{% endfor %}</div>{% else %}<div class="empty-state large-empty"><h2>Businesses are beginning to join The Seasons Within.</h2><p>Real wellness businesses will appear here as they create profiles. No mock businesses are displayed.</p></div>{% endif %}
+    <div>
+      <span>THE SEASONS WITHIN</span>
+
+      <h1>Discover Wellness Within the Community</h1>
+
+      <p>
+        Browse wellness businesses, practitioners, services and hosted apps.
+        The Seasons Within is free to explore and free for businesses to create
+        a basic listing.
+      </p>
+
+      <div class="hero-actions">
+        <a class="btn" href="/business">Browse All Businesses</a>
+        <a class="btn outline" href="/join">Join the Community Free</a>
+      </div>
+    </div>
+  </header>
+
+
+  <form class="business-search public-market-search" action="/business" method="get">
+    <input
+      name="q"
+      placeholder="Search businesses, services, classes or wellness experiences..."
+    >
+    <button>⌕</button>
+  </form>
+
+
+  <div class="category-pills">
+    <a href="/business">All</a>
+    <a href="/business?category=Yoga">Yoga</a>
+    <a href="/business?category=Reiki">Reiki</a>
+    <a href="/business?category=Massage">Massage</a>
+    <a href="/business?category=Sound">Sound Therapy</a>
+    <a href="/business?category=Coaching">Coaching</a>
+    <a href="/business?category=Retreat">Retreats</a>
+  </div>
+
+
+  <div class="section-head-row">
+    <div>
+      <span>BUSINESS NETWORK</span>
+      <h2>Businesses & Apps Within The Seasons Within</h2>
+    </div>
+
+    <a href="/business">View All →</a>
+  </div>
+
+
+  {% if businesses %}
+
+  <div class="business-grid real-business-grid">
+
+    {% for b in businesses %}
+
+    <article class="biz-card no-mock">
+
+      <div class="biz-logo-area">
+
+        {% if b['logo'] %}
+
+        <img src="{{ media_url(b['logo']) }}">
+
+        {% else %}
+
+        <div class="biz-logo-fallback">▣</div>
+
+        {% endif %}
+
+      </div>
+
+
+      <div>
+
+        <h3>{{ b['business_name'] }}</h3>
+
+        <p>
+          {{ b['category'] }}
+
+          {% if b['city'] %}
+          • {{ b['city'] }}
+          {% endif %}
+        </p>
+
+        <small>
+          {{ b['tagline'] or b['description'] }}
+        </small>
+
+
+        <div class="biz-buttons">
+
+          <a class="btn outline" href="/app/{{ b['slug'] }}">
+            {{ 'Open App' if b['paid_business'] else 'View Business' }}
+          </a>
+
+          <span class="{{ 'paid-app-badge' if b['paid_business'] else 'free-listing-badge' }}">
+            {{ 'Hosted App' if b['paid_business'] else 'Free Listing' }}
+          </span>
+
+        </div>
+
+      </div>
+
+    </article>
+
+    {% endfor %}
+
+  </div>
+
+
+  {% else %}
+
+  <div class="empty-state large-empty">
+
+    <h2>
+      Businesses are beginning to join The Seasons Within.
+    </h2>
+
+    <p>
+      Real wellness businesses will appear here as they create profiles.
+      No mock businesses are displayed.
+    </p>
+
+  </div>
+
+  {% endif %}
+
+
 
   <section class="public-sky-card">
-    <div class="moon-visual {{ (sky.moon_phase or '')|lower|replace(' ','-') }}"><span>☾</span></div>
-    <div><span class="section-kicker">MOON TODAY</span><h2>Moon in {{sky.moon_sign or 'the current sky'}}</h2><p><b>{{sky.moon_phase or 'Current lunar phase'}}</b>{% if sky.moon_degree is not none %} • {{sky.moon_degree}}°{% endif %}</p><p>A moment to notice the emotional atmosphere, your pace and what is asking for conscious attention. This is a reflection, not a prediction.</p>{% if sky.positions %}<div class="sky-mini">{% for planet in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}{% if sky.positions.get(planet) %}<span><b>{{planet}}</b> {{sky.positions[planet]['sign']}}</span>{% endif %}{% endfor %}</div>{% endif %}</div>
-    <div class="season-reflection"><span class="section-kicker">THE SEASON WE'RE IN</span><h3>{{sky.season}}</h3><p>Journal • Reflect • Share</p><small><b>Mind:</b> What deserves attention?<br><b>Body:</b> What pace feels sustainable?<br><b>Spirit:</b> What are you cultivating?</small></div>
+
+    <div class="moon-visual {{ (sky.moon_phase or '')|lower|replace(' ','-') }}">
+      <span>☾</span>
+    </div>
+
+
+    <div>
+
+      <span class="section-kicker">
+        MOON TODAY
+      </span>
+
+      <h2>
+        Moon in {{ sky.moon_sign or 'the current sky' }}
+      </h2>
+
+
+      <p>
+
+        <b>
+          {{ sky.moon_phase or 'Current lunar phase' }}
+        </b>
+
+        {% if sky.moon_degree is not none %}
+        • {{ sky.moon_degree }}°
+        {% endif %}
+
+      </p>
+
+
+      <p>
+        A moment to notice the emotional atmosphere, your pace and what is
+        asking for conscious attention. This is a reflection, not a prediction.
+      </p>
+
+
+      {% if sky.positions %}
+
+      <div class="sky-mini">
+
+        {% for planet in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}
+
+          {% if sky.positions.get(planet) %}
+
+          <span>
+            <b>{{ planet }}</b>
+            {{ sky.positions[planet]['sign'] }}
+          </span>
+
+          {% endif %}
+
+        {% endfor %}
+
+      </div>
+
+      {% endif %}
+
+    </div>
+
+
+
+    <div class="season-reflection">
+
+      <span class="section-kicker">
+        THE SEASON WE'RE IN
+      </span>
+
+      <h3>
+        {{ sky.season }}
+      </h3>
+
+      <p>
+        Journal • Reflect • Share
+      </p>
+
+      <small>
+
+        <b>Mind:</b>
+        What deserves attention?
+
+        <br>
+
+        <b>Body:</b>
+        What pace feels sustainable?
+
+        <br>
+
+        <b>Spirit:</b>
+        What are you cultivating?
+
+      </small>
+
+    </div>
+
   </section>
 
-  <section class="business-join-panel"><div><span>FOR WELLNESS BUSINESSES</span><h2>Be Found Within The Seasons Within</h2><p>Create a free business profile with your business information and links. Upgrade to the $29.99/month Business Network when you want a hosted app for classes, events, shop items, memberships and booking links.</p></div><div class="hero-actions"><a class="btn" href="/join">List My Business Free</a><a class="btn outline" href="/plans">Business Network</a></div></section>
-  <section class="coordination-intro"><span>CONSCIOUS COORDINATION</span><h2>Connect With Intention. Discover Your Seasons Within.</h2><p>The Seasons Within — where meaningful connections consciously coordinate across friendship, love, business, wellness, collaboration and shared experiences.</p><div class="hero-actions"><a class="btn" href="/join">Create Your Free Account</a><a class="btn outline" href="/login">Log In</a></div></section>
+
+  <section class="business-join-panel">
+
+    <div>
+
+      <span>
+        FOR WELLNESS BUSINESSES
+      </span>
+
+      <h2>
+        Be Found Within The Seasons Within
+      </h2>
+
+      <p>
+        Create a free business profile with your business information and
+        links. Upgrade to the $29.99/month Business Network when you want a
+        hosted app for classes, events, shop items, memberships and booking
+        links.
+      </p>
+
+    </div>
+
+
+    <div class="hero-actions">
+
+      <a class="btn" href="/join">
+        List My Business Free
+      </a>
+
+      <a class="btn outline" href="/plans">
+        Business Network
+      </a>
+
+    </div>
+
+  </section>
+
+
+
+  <section class="coordination-intro">
+
+    <span>
+      CONSCIOUS COORDINATION
+    </span>
+
+    <h2>
+      Connect With Intention. Discover Your Seasons Within.
+    </h2>
+
+    <p>
+      The Seasons Within — where meaningful connections consciously coordinate
+      across friendship, love, business, wellness, collaboration and shared
+      experiences.
+    </p>
+
+
+    <div class="hero-actions">
+
+      <a class="btn" href="/join">
+        Create Your Free Account
+      </a>
+
+      <a class="btn outline" href="/login">
+        Log In
+      </a>
+
+    </div>
+
+  </section>
+
 </section>
+
 {% endblock %}
