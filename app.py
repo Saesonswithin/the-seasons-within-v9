@@ -259,6 +259,54 @@ def init_db():
     ensure_column(c, "businesses", "facebook", "TEXT DEFAULT ''")
     ensure_column(c, "businesses", "affiliate_url", "TEXT DEFAULT ''")
     ensure_column(c, "businesses", "booking_url", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "business_type", "TEXT DEFAULT 'business'")
+    ensure_column(c, "businesses", "creator_title", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "tiktok", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "youtube", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "media_kit_enabled", "INTEGER DEFAULT 0")
+    ensure_column(c, "businesses", "content_categories", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "audience_info", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "featured_content", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "previous_collaborations", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "collaboration_interests", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "social_followers", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "social_likes", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "social_views", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "engagement_rate", "TEXT DEFAULT ''")
+    ensure_column(c, "businesses", "show_natal_business", "INTEGER DEFAULT 0")
+    ensure_column(c, "businesses", "profile_views", "INTEGER DEFAULT 0")
+    ensure_column(c, "users", "complimentary_member", "INTEGER DEFAULT 0")
+    ensure_column(c, "users", "complimentary_business", "INTEGER DEFAULT 0")
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS business_content (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'update',
+        caption TEXT DEFAULT '',
+        media_path TEXT DEFAULT '',
+        media_type TEXT DEFAULT '',
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS business_follows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(business_id,user_id)
+    );
+    CREATE TABLE IF NOT EXISTS business_collaboration_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        requester_id INTEGER,
+        requester_name TEXT DEFAULT '',
+        requester_email TEXT DEFAULT '',
+        request_type TEXT DEFAULT '',
+        message TEXT DEFAULT '',
+        status TEXT DEFAULT 'new',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
 
     # Secure demo accounts. Existing plaintext accounts are automatically upgraded on next login.
     demo = [
@@ -391,6 +439,10 @@ def has_access(user, area):
     if not user or user["suspended"]:
         return False
     if area == "free":
+        return True
+    if area == "zodiac" and "complimentary_member" in user.keys() and user["complimentary_member"]:
+        return True
+    if area == "business" and "complimentary_business" in user.keys() and user["complimentary_business"]:
         return True
     return membership_status(user["id"], area) in ("active", "trialing")
 
@@ -783,7 +835,7 @@ def home():
         return redirect(url_for("community"))
     c=conn()
     businesses=c.execute("""SELECT b.*,u.name owner_name,
-           CASE WHEN s.status IN ('active','trialing') THEN 1 ELSE 0 END AS paid_business
+           CASE WHEN s.status IN ('active','trialing') OR u.complimentary_business=1 THEN 1 ELSE 0 END AS paid_business
            FROM businesses b JOIN users u ON u.id=b.owner_id
            LEFT JOIN subscriptions s ON s.user_id=b.owner_id AND s.membership_type='business'
            WHERE b.status='active' AND u.suspended=0
@@ -1289,7 +1341,7 @@ def business():
     c=conn()
     own=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone() if u else None
     sql="""SELECT b.*,u.name owner_name,
-           CASE WHEN s.status IN ('active','trialing') THEN 1 ELSE 0 END AS paid_business
+           CASE WHEN s.status IN ('active','trialing') OR u.complimentary_business=1 THEN 1 ELSE 0 END AS paid_business
            FROM businesses b JOIN users u ON u.id=b.owner_id
            LEFT JOIN subscriptions s ON s.user_id=b.owner_id AND s.membership_type='business'
            WHERE b.status='active' AND u.suspended=0
@@ -1312,25 +1364,27 @@ def business_setup():
     u=current_user()
     if not u: return redirect(url_for("login"))
     c=conn(); business=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone()
+    paid_access=has_access(u,"business")
     if request.method=="POST":
         name=request.form.get("business_name","").strip()
         if not name: flash("Business name is required."); c.close(); return redirect(url_for("business_setup"))
         logo=save_image(request.files.get("logo"),f"biz{u['id']}_logo") or (business["logo"] if business else "")
         hero=save_image(request.files.get("hero_image"),f"biz{u['id']}_hero") or (business["hero_image"] if business else "")
-        vals=[name,request.form.get("tagline","").strip(),request.form.get("description","").strip(),request.form.get("category","").strip(),request.form.get("city","").strip(),request.form.get("website","").strip(),request.form.get("contact_email","").strip(),request.form.get("phone","").strip(),logo,hero,request.form.get("accent","#b99ad6").strip()]
-        extras=[request.form.get("instagram","").strip(),request.form.get("facebook","").strip(),request.form.get("affiliate_url","").strip(),request.form.get("booking_url","").strip()]
+        basevals=[name,request.form.get("tagline","").strip(),request.form.get("description","").strip(),request.form.get("category","").strip(),request.form.get("city","").strip(),request.form.get("website","").strip(),request.form.get("contact_email","").strip(),request.form.get("phone","").strip(),logo,hero,request.form.get("accent","#b99ad6").strip(),request.form.get("instagram","").strip(),request.form.get("facebook","").strip(),request.form.get("affiliate_url","").strip(),request.form.get("booking_url","").strip()]
+        provals=[request.form.get("business_type","business").strip(),request.form.get("creator_title","").strip(),request.form.get("tiktok","").strip(),request.form.get("youtube","").strip(),1 if request.form.get("media_kit_enabled") and paid_access else 0,request.form.get("content_categories","").strip(),request.form.get("audience_info","").strip(),request.form.get("featured_content","").strip(),request.form.get("previous_collaborations","").strip(),request.form.get("collaboration_interests","").strip(),request.form.get("social_followers","").strip(),request.form.get("social_likes","").strip(),request.form.get("social_views","").strip(),request.form.get("engagement_rate","").strip(),1 if request.form.get("show_natal_business") and paid_access else 0]
         if business:
-            c.execute("""UPDATE businesses SET business_name=?,tagline=?,description=?,category=?,city=?,website=?,contact_email=?,phone=?,logo=?,hero_image=?,accent=?,instagram=?,facebook=?,affiliate_url=?,booking_url=?,status='active' WHERE owner_id=?""",(*vals,*extras,u["id"])); slug=business["slug"]
+            c.execute("""UPDATE businesses SET business_name=?,tagline=?,description=?,category=?,city=?,website=?,contact_email=?,phone=?,logo=?,hero_image=?,accent=?,instagram=?,facebook=?,affiliate_url=?,booking_url=?,business_type=?,creator_title=?,tiktok=?,youtube=?,media_kit_enabled=?,content_categories=?,audience_info=?,featured_content=?,previous_collaborations=?,collaboration_interests=?,social_followers=?,social_likes=?,social_views=?,engagement_rate=?,show_natal_business=?,status='active' WHERE owner_id=?""",(*basevals,*provals,u["id"])); slug=business["slug"]
         else:
-            slug=slugify(name); c.execute("""INSERT INTO businesses(owner_id,slug,business_name,tagline,description,category,city,website,contact_email,phone,logo,hero_image,accent,instagram,facebook,affiliate_url,booking_url,status)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",(u["id"],slug,*vals,*extras))
+            slug=slugify(name)
+            c.execute("""INSERT INTO businesses(owner_id,slug,business_name,tagline,description,category,city,website,contact_email,phone,logo,hero_image,accent,instagram,facebook,affiliate_url,booking_url,business_type,creator_title,tiktok,youtube,media_kit_enabled,content_categories,audience_info,featured_content,previous_collaborations,collaboration_interests,social_followers,social_likes,social_views,engagement_rate,show_natal_business,status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active')""",(u["id"],slug,*basevals,*provals))
         c.commit(); c.close()
-        if has_access(u,"business"):
-            flash("Business profile saved. Build your hosted app next.")
+        if paid_access:
+            flash("Business profile saved. Your hosted app tools are open.")
             return redirect(url_for("business_items"))
-        flash("Free business profile saved. Upgrade when you want to build a hosted business app.")
+        flash("Free business profile saved. Upgrade when you want the hosted Business App tools.")
         return redirect(url_for("business"))
-    c.close(); return render_template("business_setup.html",business=business)
+    c.close(); return render_template("business_setup.html",business=business,paid_access=paid_access)
 
 
 @app.route("/business/items",methods=["GET","POST"])
@@ -1341,11 +1395,26 @@ def business_items():
     c=conn(); business=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone()
     if not business: c.close(); return redirect(url_for("business_setup"))
     if request.method=="POST":
-        title=request.form.get("title","").strip()
-        if title:
-            c.execute("INSERT INTO business_items(business_id,item_type,title,description,price,action_url) VALUES (?,?,?,?,?,?)",(business["id"],request.form.get("item_type","service"),title,request.form.get("description","").strip(),request.form.get("price","").strip(),request.form.get("action_url","").strip())); c.commit(); flash("Added to your hosted app.")
-    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall(); c.close()
-    return render_template("business_items.html",business=business,items=items)
+        section=request.form.get("section","offer")
+        if section=="content":
+            caption=request.form.get("caption","").strip(); upload=request.files.get("content_media"); path=""; mtype=""
+            if upload and upload.filename:
+                path=save_image(upload,f"bizcontent{business['id']}")
+                mtype="image" if path else ""
+                if not path:
+                    path=save_video(upload,f"bizcontent{business['id']}")
+                    mtype="video" if path else ""
+            if caption or path:
+                c.execute("INSERT INTO business_content(business_id,content_type,caption,media_path,media_type) VALUES (?,?,?,?,?)",(business["id"],request.form.get("content_type","update"),caption,path,mtype)); c.commit(); flash("Content published to your Business App.")
+        else:
+            title=request.form.get("title","").strip()
+            if title:
+                c.execute("INSERT INTO business_items(business_id,item_type,title,description,price,action_url) VALUES (?,?,?,?,?,?)",(business["id"],request.form.get("item_type","service"),title,request.form.get("description","").strip(),request.form.get("price","").strip(),request.form.get("action_url","").strip())); c.commit(); flash("Added to your hosted app.")
+    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall()
+    content=c.execute("SELECT * FROM business_content WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall()
+    requests=c.execute("SELECT * FROM business_collaboration_requests WHERE business_id=? ORDER BY id DESC LIMIT 50",(business["id"],)).fetchall()
+    c.close()
+    return render_template("business_items.html",business=business,items=items,content=content,collab_requests=requests)
 
 
 @app.route("/business/item/<int:item_id>/delete",methods=["POST"])
@@ -1355,34 +1424,69 @@ def delete_business_item(item_id):
     c=conn(); c.execute("UPDATE business_items SET active=0 WHERE id=? AND business_id IN (SELECT id FROM businesses WHERE owner_id=?)",(item_id,u["id"])); c.commit(); c.close(); return redirect(url_for("business_items"))
 
 
+@app.route("/business/content/<int:content_id>/delete",methods=["POST"])
+def delete_business_content(content_id):
+    u=current_user()
+    if not u: return redirect(url_for("login"))
+    c=conn(); c.execute("UPDATE business_content SET active=0 WHERE id=? AND business_id IN (SELECT id FROM businesses WHERE owner_id=?)",(content_id,u["id"])); c.commit(); c.close(); return redirect(url_for("business_items"))
+
+
 @app.route("/business/my-app")
 def my_business_app():
     u=current_user()
     if not u: return redirect(url_for("login"))
     c=conn(); business=c.execute("SELECT * FROM businesses WHERE owner_id=?",(u["id"],)).fetchone()
     if not business: c.close(); return redirect(url_for("business_setup"))
-    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall(); c.close(); return render_template("business_app.html",business=business,items=items,owner_preview=True)
+    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall()
+    content=c.execute("SELECT * FROM business_content WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall()
+    followers=c.execute("SELECT COUNT(*) FROM business_follows WHERE business_id=?",(business["id"],)).fetchone()[0]
+    c.close()
+    chart=get_birth_chart(u["id"]); balance={}
+    if chart:
+        try: balance=json.loads(chart["element_balance_json"] or "{}")
+        except Exception: balance={}
+    return render_template("business_app.html",business=business,items=items,content=content,owner_preview=True,paid=has_access(u,"business"),business_coord=None,premium_business_view=True,owner=u,owner_chart=chart,owner_balance=balance,followers=followers,is_following=False)
 
-@app.route("/app/<slug>")
+@app.route("/app/<slug>",methods=["GET","POST"])
 def business_app(slug):
     u=current_user()
-    if not u:
-        return redirect(url_for("login"))
     c=conn()
     business=c.execute("""SELECT b.*,u.name owner_name FROM businesses b
        JOIN users u ON u.id=b.owner_id
        WHERE b.slug=? AND b.status='active' AND u.suspended=0""",(slug,)).fetchone()
     if not business:
-        c.close()
-        return render_template("business_inactive.html"),404
+        c.close(); return render_template("business_inactive.html"),404
     paid=membership_status(business["owner_id"],"business") in ("active","trialing")
-    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",
-                    (business["id"],)).fetchall() if paid else []
     owner=c.execute("SELECT * FROM users WHERE id=?",(business["owner_id"],)).fetchone()
+    if owner and owner["complimentary_business"]: paid=True
+    c.execute("UPDATE businesses SET profile_views=COALESCE(profile_views,0)+1 WHERE id=?",(business["id"],)); c.commit()
+    items=c.execute("SELECT * FROM business_items WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall() if paid else []
+    content=c.execute("SELECT * FROM business_content WHERE business_id=? AND active=1 ORDER BY id DESC",(business["id"],)).fetchall() if paid else []
+    followers=c.execute("SELECT COUNT(*) FROM business_follows WHERE business_id=?",(business["id"],)).fetchone()[0]
+    is_following=bool(u and c.execute("SELECT 1 FROM business_follows WHERE business_id=? AND user_id=?",(business["id"],u["id"])).fetchone())
+    if request.method=="POST" and request.form.get("collaboration_request"):
+        rtype=request.form.get("request_type","").strip(); message=request.form.get("message","").strip(); rname=(u["name"] if u else request.form.get("requester_name","").strip()); remail=(u["email"] if u else request.form.get("requester_email","").strip())
+        if rname and remail and rtype:
+            c.execute("INSERT INTO business_collaboration_requests(business_id,requester_id,requester_name,requester_email,request_type,message) VALUES (?,?,?,?,?,?)",(business["id"],u["id"] if u else None,rname,remail,rtype,message)); c.commit(); flash("Collaboration request sent.")
+        else: flash("Please include your name, email and collaboration type.")
     c.close()
-    business_coord=coordination_categories(u,owner) if owner and get_birth_data(u["id"]) and get_birth_data(owner["id"]) else None
-    return render_template("business_app.html",business=business,items=items,paid=paid,
-                           business_coord=business_coord,premium_business_view=has_access(u,"business"))
+    business_coord=coordination_categories(u,owner) if u and owner and get_birth_data(u["id"]) and get_birth_data(owner["id"]) else None
+    chart=get_birth_chart(owner["id"]) if owner else None; balance={}
+    if chart:
+        try: balance=json.loads(chart["element_balance_json"] or "{}")
+        except Exception: balance={}
+    return render_template("business_app.html",business=business,items=items,content=content,paid=paid,owner=owner,
+                           business_coord=business_coord,premium_business_view=bool(u and has_access(u,"business")),owner_chart=chart,owner_balance=balance,followers=followers,is_following=is_following)
+
+
+@app.route("/business/<int:business_id>/follow",methods=["POST"])
+def follow_business(business_id):
+    u=current_user()
+    if not u: return redirect(url_for("login"))
+    c=conn(); existing=c.execute("SELECT id FROM business_follows WHERE business_id=? AND user_id=?",(business_id,u["id"])).fetchone()
+    if existing: c.execute("DELETE FROM business_follows WHERE id=?",(existing["id"],))
+    else: c.execute("INSERT OR IGNORE INTO business_follows(business_id,user_id) VALUES (?,?)",(business_id,u["id"]))
+    c.commit(); b=c.execute("SELECT slug FROM businesses WHERE id=?",(business_id,)).fetchone(); c.close(); return redirect(url_for("business_app",slug=b["slug"]) if b else url_for("business"))
 
 
 @app.route("/retreats")
@@ -1394,6 +1498,29 @@ def admin():
     u=current_user()
     if not u or not u["is_admin"]: return "Admin access required",403
     c=conn(); reports=c.execute("""SELECT r.*,a.name reporter_name,b.name reported_name FROM reports r JOIN users a ON a.id=r.reporter_id LEFT JOIN users b ON b.id=r.reported_user_id ORDER BY r.id DESC""").fetchall(); users=c.execute("SELECT * FROM users ORDER BY id DESC").fetchall(); subs=c.execute("SELECT s.*,u.name,u.email FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC").fetchall(); c.close(); return render_template("admin.html",reports=reports,users=users,subscriptions=subs)
+
+
+@app.route("/admin/create-profile",methods=["POST"])
+def admin_create_profile():
+    admin_user=current_user()
+    if not admin_user or not admin_user["is_admin"]: return "Admin access required",403
+    name=request.form.get("name","").strip(); email=request.form.get("email","").strip().lower(); password=request.form.get("password","")
+    role=request.form.get("role","free")
+    if len(name)<2 or "@" not in email or len(password)<8:
+        flash("Profile needs a name, valid email and password with at least 8 characters."); return redirect(url_for("admin"))
+    cm=1 if role in ("full","galaxy") else 0; cb=1 if role in ("business","full","galaxy") else 0; creator=1 if role=="galaxy" else 0
+    c=conn()
+    try:
+        c.execute("INSERT INTO users(name,email,password,plan,complimentary_member,complimentary_business,is_creator) VALUES (?,?,?,'free',?,?,?)",(name,email,hash_password(password),cm,cb,creator)); c.commit(); flash(f"{name} profile created. Complimentary access is ready where selected.")
+    except sqlite3.IntegrityError: flash("That email already exists.")
+    c.close(); return redirect(url_for("admin"))
+
+
+@app.route("/admin/access/<int:user_id>",methods=["POST"])
+def admin_access(user_id):
+    admin_user=current_user()
+    if not admin_user or not admin_user["is_admin"]: return "Admin access required",403
+    c=conn(); c.execute("UPDATE users SET complimentary_member=?,complimentary_business=?,is_creator=?,is_admin=? WHERE id=?",(1 if request.form.get("complimentary_member") else 0,1 if request.form.get("complimentary_business") else 0,1 if request.form.get("is_creator") else 0,1 if request.form.get("is_admin") else 0,user_id)); c.commit(); c.close(); flash("Access updated."); return redirect(url_for("admin"))
 
 
 @app.route("/admin/suspend/<int:user_id>",methods=["POST"])

@@ -64,3 +64,13 @@ Upload these items into the ROOT of the-seasons-within-v9 and replace matching f
 - static/seasons-within-logo.png
 
 Do NOT upload or replace community_v8.db from another build.
+
+FINAL CONSOLIDATED UPDATE — AUGUST 11, 2026
+- Global message updated to: Connect With Intention. Discover Your Seasons Within.
+- Existing plans/prices/navigation preserved.
+- Business App expanded for content creators and wellness businesses.
+- Paid Business Apps now support Media Kit fields, creator/business content posts, followers, profile-view statistics, collaborations, meetups/retreat offerings, booking/application links, social links, and optional extended natal-chart business profile.
+- Galaxy Eve should be created from Admin > Create Galaxy Eve or Test Profiles using “Galaxy Eve — Full Complimentary Access + Creator.” This gives the account full $10.99 member features and $29.99 Business App features without charging it. Galaxy Eve then builds her own personal profile and professional creator app through the real builders.
+- Admin can create two additional test profiles or grant/revoke complimentary member, Business App, Creator, or Admin access to existing users.
+- Retreat page uses The Seasons Within logo and includes Create Your Private Wellness Retreat + Explore Wellness Partners.
+- Public visitors can open real Business Profiles/paid Business Apps; no mock business cards are required.
