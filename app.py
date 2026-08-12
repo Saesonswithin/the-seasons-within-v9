@@ -394,6 +394,113 @@ def zodiac_from_degree(deg):
     deg=float(deg)%360; idx=int(deg//30)
     return ZODIAC_SIGNS[idx], round(deg-(idx*30),2)
 
+
+def media_url(path):
+    """Return a browser-safe URL for locally uploaded media or an external URL."""
+    if not path:
+        return ""
+    path = str(path).strip()
+    if path.startswith(("http://", "https://", "/")):
+        return path
+    return url_for("static", filename=path)
+
+
+def current_season_name(moment=None):
+    """Northern-hemisphere seasonal label used by The Seasons Within."""
+    moment = moment or datetime.now(timezone.utc)
+    month_day = (moment.month, moment.day)
+    if (3, 20) <= month_day < (6, 20):
+        return "Spring"
+    if (6, 20) <= month_day < (9, 22):
+        return "Summer"
+    if (9, 22) <= month_day < (12, 21):
+        return "Autumn"
+    return "Winter"
+
+
+def current_sky_snapshot():
+    """Calculate the current Moon, lunar phase, season, and selected planets."""
+    now = datetime.now(timezone.utc)
+    sky = {
+        "moon_sign": "",
+        "moon_degree": None,
+        "moon_phase": "",
+        "positions": {},
+        "season": current_season_name(now),
+        "updated_at": now.isoformat(),
+    }
+
+    if swe is None:
+        return sky
+
+    try:
+        hour = now.hour + now.minute / 60.0 + now.second / 3600.0
+        jd_ut = swe.julday(now.year, now.month, now.day, hour, swe.GREG_CAL)
+
+        bodies = {
+            "Sun": swe.SUN,
+            "Moon": swe.MOON,
+            "Mercury": swe.MERCURY,
+            "Venus": swe.VENUS,
+            "Mars": swe.MARS,
+            "Jupiter": swe.JUPITER,
+            "Saturn": swe.SATURN,
+        }
+
+        longitudes = {}
+        for name, body in bodies.items():
+            xx = swe.calc_ut(jd_ut, body)[0]
+            longitude = float(xx[0]) % 360.0
+            sign, degree = zodiac_from_degree(longitude)
+            longitudes[name] = longitude
+            sky["positions"][name] = {
+                "sign": sign,
+                "degree": degree,
+                "longitude": round(longitude, 4),
+            }
+
+        sky["moon_sign"] = sky["positions"]["Moon"]["sign"]
+        sky["moon_degree"] = sky["positions"]["Moon"]["degree"]
+
+        elongation = (longitudes["Moon"] - longitudes["Sun"]) % 360.0
+        if elongation < 22.5 or elongation >= 337.5:
+            phase = "New Moon"
+        elif elongation < 67.5:
+            phase = "Waxing Crescent"
+        elif elongation < 112.5:
+            phase = "First Quarter"
+        elif elongation < 157.5:
+            phase = "Waxing Gibbous"
+        elif elongation < 202.5:
+            phase = "Full Moon"
+        elif elongation < 247.5:
+            phase = "Waning Gibbous"
+        elif elongation < 292.5:
+            phase = "Last Quarter"
+        else:
+            phase = "Waning Crescent"
+
+        sky["moon_phase"] = phase
+    except Exception:
+        # The page must remain usable even if astronomy data cannot be calculated.
+        pass
+
+    return sky
+
+
+def daily_seasons_reflection(user=None):
+    """Public/current-sky reflection data used by the member Home page."""
+    return {"sky": current_sky_snapshot()}
+
+
+def coordination_categories(viewer, member):
+    """Small compatibility summary used by Community profile cards."""
+    try:
+        result = compatibility_summary(viewer, member)
+        return {"Overall": result.get("score", 50)}
+    except Exception:
+        return {"Overall": 50}
+
 def geocode_birthplace(city,state,country):
     if not Nominatim: return None
     try:
@@ -513,13 +620,43 @@ def inject_globals():
     statuses={}
     if u:
         statuses={k:membership_status(u["id"],k) for k in ("zodiac","business")}
-    return dict(current_user=u,plans=PLANS,has_access=has_access,age_from_birth_date=age_from_birth_date,membership_statuses=statuses,compatibility_summary=compatibility_summary,stripe_ready=stripe_ready,platform_config=load_platform_config())
+    return dict(
+        current_user=u,
+        plans=PLANS,
+        has_access=has_access,
+        age_from_birth_date=age_from_birth_date,
+        membership_statuses=statuses,
+        compatibility_summary=compatibility_summary,
+        coordination_categories=coordination_categories,
+        media_url=media_url,
+        stripe_ready=stripe_ready,
+        platform_config=load_platform_config()
+    )
 
 
 @app.route("/")
 def home():
-    if current_user(): return redirect(url_for("community"))
-    return render_template("home.html")
+    if current_user():
+        return redirect(url_for("community"))
+
+    c=conn()
+    businesses=c.execute("""SELECT b.*,u.name owner_name
+        FROM businesses b
+        JOIN users u ON u.id=b.owner_id
+        LEFT JOIN subscriptions s
+          ON s.user_id=b.owner_id
+         AND s.membership_type='business'
+         AND s.status IN ('active','trialing')
+        WHERE b.status='active' AND u.suspended=0
+        ORDER BY CASE WHEN s.id IS NOT NULL THEN 0 ELSE 1 END, b.created_at DESC
+        LIMIT 12""").fetchall()
+    c.close()
+
+    return render_template(
+        "home.html",
+        businesses=businesses,
+        sky=current_sky_snapshot()
+    )
 
 
 @app.route("/join", methods=["GET","POST"])
@@ -562,15 +699,68 @@ def logout(): session.clear(); return redirect(url_for("home"))
 @app.route("/community", methods=["GET","POST"])
 def community():
     u=current_user()
-    if not u: return redirect(url_for("login"))
+    if not u:
+        return redirect(url_for("login"))
+
     c=conn()
+
     if request.method=="POST":
         body=request.form.get("body","").strip()
-        if body: c.execute("INSERT INTO posts(user_id,body) VALUES (?,?)",(u["id"],body)); c.commit()
-    posts=c.execute("""SELECT posts.*,users.name,users.photo FROM posts JOIN users ON users.id=posts.user_id WHERE users.suspended=0 ORDER BY posts.id DESC LIMIT 40""").fetchall()
-    members=c.execute("SELECT id,name,photo,profile_headline,bio,city,sun,show_headline,show_city,show_bio,show_zodiac_basic FROM users WHERE suspended=0 ORDER BY is_creator DESC,name LIMIT 24").fetchall()
-    creator=bool(u["is_creator"] or u["is_admin"]); c.close()
-    return render_template("community.html",posts=posts,members=members,creator=creator)
+        if body:
+            c.execute(
+                "INSERT INTO posts(user_id,body) VALUES (?,?)",
+                (u["id"],body)
+            )
+            c.commit()
+
+    posts=c.execute("""SELECT posts.*,users.name,users.photo
+        FROM posts
+        JOIN users ON users.id=posts.user_id
+        WHERE users.suspended=0
+        ORDER BY posts.id DESC
+        LIMIT 40""").fetchall()
+
+    members=c.execute("""SELECT id,name,photo,profile_headline,bio,city,sun,
+        show_headline,show_city,show_bio,show_zodiac_basic
+        FROM users
+        WHERE suspended=0
+        ORDER BY is_creator DESC,name
+        LIMIT 24""").fetchall()
+
+    businesses=c.execute("""SELECT b.*,u.name owner_name
+        FROM businesses b
+        JOIN users u ON u.id=b.owner_id
+        LEFT JOIN subscriptions s
+          ON s.user_id=b.owner_id
+         AND s.membership_type='business'
+         AND s.status IN ('active','trialing')
+        WHERE b.status='active' AND u.suspended=0
+        ORDER BY CASE WHEN s.id IS NOT NULL THEN 0 ELSE 1 END, b.created_at DESC
+        LIMIT 6""").fetchall()
+
+    daters=c.execute("""SELECT *
+        FROM users
+        WHERE dating_profile_active=1
+          AND dating_18_confirmed=1
+          AND suspended=0
+          AND id<>?
+        ORDER BY id DESC
+        LIMIT 6""",(u["id"],)).fetchall()
+
+    creator=bool(u["is_creator"] or u["is_admin"])
+    c.close()
+
+    reflection=daily_seasons_reflection(u)
+
+    return render_template(
+        "community.html",
+        posts=posts,
+        members=members,
+        businesses=businesses,
+        daters=daters,
+        creator=creator,
+        reflection=reflection
+    )
 
 
 @app.route("/members")
