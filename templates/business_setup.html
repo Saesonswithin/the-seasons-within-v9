@@ -1,15 +1,31 @@
 {% extends 'base.html' %}{% block content %}
-<section class="settings-page wide-settings"><div class="simple-head"><span>BUSINESS NETWORK</span><h1>{% if business %}Edit My Business{% else %}List My Business{% endif %}</h1><p>Create a free business profile now. Business Network membership unlocks the hosted app builder.</p></div>
+<section class="settings-page wide-settings"><div class="simple-head"><span>BUSINESS NETWORK</span><h1>{% if business %}Edit My Business App/Profile{% else %}Create My Business Profile{% endif %}</h1><p>Every business can create a free public listing. Paid or complimentary Business App access opens the full creator/business builder below.</p></div>
 <form class="settings-card" method="post" enctype="multipart/form-data">
-  <div class="two-fields"><label>Business name<input name="business_name" required value="{{business['business_name'] if business else ''}}"></label><label>Category<input name="category" value="{{business['category'] if business else ''}}" placeholder="Yoga, Reiki, Coaching..."></label></div>
-  <label>Tagline<input name="tagline" value="{{business['tagline'] if business else ''}}"></label><label>Description<textarea name="description">{{business['description'] if business else ''}}</textarea></label>
-  <div class="two-fields"><label>City / Area<input name="city" value="{{business['city'] if business else ''}}"></label><label>Contact email<input name="contact_email" value="{{business['contact_email'] if business else current_user['email']}}"></label></div>
+  <div class="two-fields"><label>Business / creator name<input name="business_name" required value="{{business['business_name'] if business else ''}}"></label><label>Profile type<select name="business_type"><option value="business" {% if business and business['business_type']=='business' %}selected{% endif %}>Business / Wellness Professional</option><option value="creator" {% if business and business['business_type']=='creator' %}selected{% endif %}>Content Creator</option><option value="brand" {% if business and business['business_type']=='brand' %}selected{% endif %}>Brand / Organization</option></select></label></div>
+  <div class="two-fields"><label>Category<input name="category" value="{{business['category'] if business else ''}}" placeholder="Content Creator, Yoga, Reiki, Coaching..."></label><label>Professional title<input name="creator_title" value="{{business['creator_title'] if business else ''}}" placeholder="Conscious Coordinator • Content Creator"></label></div>
+  <label>Tagline<input name="tagline" value="{{business['tagline'] if business else ''}}"></label><label>Bio / Description<textarea name="description">{{business['description'] if business else ''}}</textarea></label>
+  <div class="two-fields"><label>City / Area<input name="city" value="{{business['city'] if business else ''}}"></label><label>Business contact email<input name="contact_email" value="{{business['contact_email'] if business else current_user['email']}}"></label></div>
   <div class="two-fields"><label>Phone<input name="phone" value="{{business['phone'] if business else ''}}"></label><label>Website<input name="website" value="{{business['website'] if business else ''}}"></label></div>
   <div class="two-fields"><label>Instagram<input name="instagram" value="{{business['instagram'] if business else ''}}"></label><label>Facebook<input name="facebook" value="{{business['facebook'] if business else ''}}"></label></div>
-  <label>Affiliate / outside wellness link<input name="affiliate_url" value="{{business['affiliate_url'] if business else ''}}"></label>
-  <label>Booking link {% if not has_access(current_user,'business') %}<small>— displayed when you upgrade to Business Network</small>{% endif %}<input name="booking_url" value="{{business['booking_url'] if business else ''}}"></label>
-  <div class="two-fields"><label>Logo<input type="file" name="logo" accept="image/*"></label><label>Cover image<input type="file" name="hero_image" accept="image/*"></label></div>
+  <div class="two-fields"><label>TikTok<input name="tiktok" value="{{business['tiktok'] if business else ''}}"></label><label>YouTube<input name="youtube" value="{{business['youtube'] if business else ''}}"></label></div>
+  <label>Affiliate / outside link<input name="affiliate_url" value="{{business['affiliate_url'] if business else ''}}"></label>
+  <label>Booking / application link {% if not paid_access %}<small>— displayed when Business App access is active</small>{% endif %}<input name="booking_url" value="{{business['booking_url'] if business else ''}}"></label>
+  <div class="two-fields"><label>Logo / profile photo<input type="file" name="logo" accept="image/*"></label><label>Cover image<input type="file" name="hero_image" accept="image/*"></label></div>
   <label>Accent color<input name="accent" value="{{business['accent'] if business else '#b99ad6'}}"></label>
+
+  {% if paid_access %}
+  <section class="builder-section"><span>PAID BUSINESS APP</span><h2>Media Kit & Creator/Business Profile</h2><p>These tools are available to every paid Business App. Content creators can use them as a full professional media kit; wellness businesses can use only the sections that fit their brand.</p>
+    <label class="check-line"><input type="checkbox" name="media_kit_enabled" {% if business and business['media_kit_enabled'] %}checked{% endif %}> Show Media Kit on my Business App</label>
+    <label class="check-line"><input type="checkbox" name="show_natal_business" {% if business and business['show_natal_business'] %}checked{% endif %}> Show my extended natal chart / Conscious Coordination profile in my Business App</label>
+    <label>Content categories<textarea name="content_categories" placeholder="Wellness journey, lifestyle, relationships, travel, creator content...">{{business['content_categories'] if business else ''}}</textarea></label>
+    <label>Audience information<textarea name="audience_info" placeholder="Describe your audience, interests, locations or demographics you choose to share.">{{business['audience_info'] if business else ''}}</textarea></label>
+    <label>Featured content / portfolio<textarea name="featured_content" placeholder="Links or descriptions of featured work.">{{business['featured_content'] if business else ''}}</textarea></label>
+    <label>Previous collaborations<textarea name="previous_collaborations">{{business['previous_collaborations'] if business else ''}}</textarea></label>
+    <label>Collaboration interests<textarea name="collaboration_interests" placeholder="Creator collaboration, brand feature, retreat collaboration, podcast, event appearance...">{{business['collaboration_interests'] if business else ''}}</textarea></label>
+    <div class="two-fields"><label>Followers (external platforms)<input name="social_followers" value="{{business['social_followers'] if business else ''}}" placeholder="e.g. TikTok 25K • Instagram 10K"></label><label>Likes / engagement totals<input name="social_likes" value="{{business['social_likes'] if business else ''}}"></label></div>
+    <div class="two-fields"><label>Views<input name="social_views" value="{{business['social_views'] if business else ''}}"></label><label>Engagement rate<input name="engagement_rate" value="{{business['engagement_rate'] if business else ''}}" placeholder="e.g. 6.4%"></label></div>
+  </section>
+  {% else %}<div class="notice">Your free Business Profile can be listed publicly now. Media Kit, content publishing, app statistics, booking tools, events, classes, shop items and extended natal-chart business features unlock with Business Network access.</div>{% endif %}
   <button class="btn large">Save Business Profile</button>
 </form></section>
 {% endblock %}
