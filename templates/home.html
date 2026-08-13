@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block public_content %}
+{% block content %}
 
 {% set sky = sky|default({
   'moon_phase': '',
@@ -75,11 +75,14 @@
 
         {% if b['logo'] %}
 
-        <img src="{{ media_url(b['logo']) }}">
+        <img src="{{ media_url(b['logo']) }}" alt="{{ b['business_name'] }}">
 
         {% else %}
 
-        <div class="biz-logo-fallback">▣</div>
+        <img
+          src="{{ url_for('static', filename='seasons-within-logo.png') }}"
+          alt="The Seasons Within"
+        >
 
         {% endif %}
 
@@ -134,13 +137,11 @@
 
     <p>
       Real wellness businesses will appear here as they create profiles.
-      No mock businesses are displayed.
     </p>
 
   </div>
 
   {% endif %}
-
 
 
   <section class="public-sky-card">
@@ -203,41 +204,6 @@
 
     </div>
 
-
-
-    <div class="season-reflection">
-
-      <span class="section-kicker">
-        THE SEASON WE'RE IN
-      </span>
-
-      <h3>
-        {{ sky.season }}
-      </h3>
-
-      <p>
-        Journal • Reflect • Share
-      </p>
-
-      <small>
-
-        <b>Mind:</b>
-        What deserves attention?
-
-        <br>
-
-        <b>Body:</b>
-        What pace feels sustainable?
-
-        <br>
-
-        <b>Spirit:</b>
-        What are you cultivating?
-
-      </small>
-
-    </div>
-
   </section>
 
 
@@ -276,7 +242,6 @@
     </div>
 
   </section>
-
 
 
   <section class="coordination-intro">
