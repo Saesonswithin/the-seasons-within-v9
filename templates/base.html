@@ -6,42 +6,178 @@
   <title>The Seasons Within</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
+
 <header class="app-shell-header">
   <div class="app-shell-inner">
-    <a class="app-brand" href="{{ url_for('home') if me else url_for('public_home') }}">
-      <img class="app-brand-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="The Seasons Within">
-      <div class="app-brand-copy"><strong>The Seasons Within</strong><span>Conscious Coordination</span></div>
+
+    <a class="app-brand" href="{{ url_for('home') }}">
+      <img
+        class="app-brand-logo"
+        src="{{ url_for('static', filename='logo.svg') }}"
+        alt="The Seasons Within"
+      >
+      <div class="app-brand-copy">
+        <strong>The Seasons Within</strong>
+        <span>Conscious Coordination</span>
+      </div>
     </a>
+
     <nav class="primary-nav" aria-label="Primary navigation">
-      <a href="{{ url_for('home') if me else url_for('public_home') }}" class="{% if request.endpoint in ['home','community','public_home'] %}active{% endif %}">Home</a>
-      {% if me %}<a href="{{ url_for('profile') }}" class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}">My Profile</a>{% endif %}
-      <a href="{{ url_for('business') }}" class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}">Business Network</a>
-      <a href="{{ url_for('retreats') }}" class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}">Retreats</a>
-      <a href="{{ url_for('membership') }}" class="{% if request.endpoint == 'membership' %}active{% endif %}">Membership</a>
-    </nav>
-    <div class="account-actions">
-      {% if me %}
-      <a class="profile-pill" href="{{ url_for('profile') }}">
-        {% if me.photo %}<img src="{{ media_url(me.photo) }}" alt="">{% else %}<span class="profile-initial">{{ me.name[:1] }}</span>{% endif %}
-        <span>{{ me.name }}</span>
+
+      <a
+        href="{{ url_for('home') }}"
+        class="{% if request.endpoint in ['home','community'] %}active{% endif %}"
+      >
+        Home
       </a>
-      <a class="quiet-link desktop-only" href="{{ url_for('logout') }}">Log Out</a>
-      {% else %}
-      <a class="quiet-link desktop-only" href="{{ url_for('login') }}">Log In</a>
-      <a class="shell-btn desktop-only" href="{{ url_for('join') }}">Join Free</a>
+
+      {% if me %}
+      <a
+        href="{{ url_for('profile') }}"
+        class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}"
+      >
+        My Profile
+      </a>
       {% endif %}
+
+      <a
+        href="{{ url_for('business') }}"
+        class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}"
+      >
+        Business Network
+      </a>
+
+      <a
+        href="{{ url_for('retreats') }}"
+        class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"
+      >
+        Retreats
+      </a>
+
+      <a
+        href="{{ url_for('membership') }}"
+        class="{% if request.endpoint == 'membership' %}active{% endif %}"
+      >
+        Membership
+      </a>
+
+    </nav>
+
+    <div class="account-actions">
+
+      {% if me %}
+
+      <a class="profile-pill" href="{{ url_for('profile') }}">
+
+        {% if me.photo %}
+        <img src="{{ media_url(me.photo) }}" alt="">
+        {% else %}
+        <span class="profile-initial">{{ me.name[:1] }}</span>
+        {% endif %}
+
+        <span>{{ me.name }}</span>
+
+      </a>
+
+      <a
+        class="quiet-link desktop-only"
+        href="{{ url_for('logout') }}"
+      >
+        Log Out
+      </a>
+
+      {% else %}
+
+      <a
+        class="quiet-link desktop-only"
+        href="{{ url_for('login') }}"
+      >
+        Log In
+      </a>
+
+      <a
+        class="shell-btn desktop-only"
+        href="{{ url_for('join') }}"
+      >
+        Join Free
+      </a>
+
+      {% endif %}
+
     </div>
+
   </div>
 </header>
-{% with msgs=get_flashed_messages() %}{% if msgs %}<div class="flash-wrap">{% for m in msgs %}<div class="flash-message">{{ m }}</div>{% endfor %}</div>{% endif %}{% endwith %}
-<main class="app-page">{% block content %}{% endblock %}</main>
+
+
+{% with msgs=get_flashed_messages() %}
+  {% if msgs %}
+    <div class="flash-wrap">
+
+      {% for m in msgs %}
+        <div class="flash-message">
+          {{ m }}
+        </div>
+      {% endfor %}
+
+    </div>
+  {% endif %}
+{% endwith %}
+
+
+<main class="app-page">
+  {% block content %}
+  {% endblock %}
+</main>
+
+
 <nav class="mobile-bottom-nav" aria-label="Mobile navigation">
-  <a href="{{ url_for('home') if me else url_for('public_home') }}" class="{% if request.endpoint in ['home','community','public_home'] %}active{% endif %}"><span>⌂</span><small>Home</small></a>
-  {% if me %}<a href="{{ url_for('profile') }}" class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}"><span>◉</span><small>Profile</small></a>{% endif %}
-  <a href="{{ url_for('business') }}" class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}"><span>◇</span><small>Business</small></a>
-  <a href="{{ url_for('retreats') }}" class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"><span>✦</span><small>Retreats</small></a>
-  <a href="{{ url_for('membership') }}" class="{% if request.endpoint == 'membership' %}active{% endif %}"><span>♡</span><small>Membership</small></a>
+
+  <a
+    href="{{ url_for('home') }}"
+    class="{% if request.endpoint in ['home','community'] %}active{% endif %}"
+  >
+    <span>⌂</span>
+    <small>Home</small>
+  </a>
+
+  {% if me %}
+  <a
+    href="{{ url_for('profile') }}"
+    class="{% if request.endpoint in ['profile','profile_edit','journal'] %}active{% endif %}"
+  >
+    <span>◉</span>
+    <small>Profile</small>
+  </a>
+  {% endif %}
+
+  <a
+    href="{{ url_for('business') }}"
+    class="{% if request.endpoint in ['business','business_setup','business_app'] %}active{% endif %}"
+  >
+    <span>◇</span>
+    <small>Business</small>
+  </a>
+
+  <a
+    href="{{ url_for('retreats') }}"
+    class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"
+  >
+    <span>✦</span>
+    <small>Retreats</small>
+  </a>
+
+  <a
+    href="{{ url_for('membership') }}"
+    class="{% if request.endpoint == 'membership' %}active{% endif %}"
+  >
+    <span>♡</span>
+    <small>Membership</small>
+  </a>
+
 </nav>
+
 </body>
 </html>
