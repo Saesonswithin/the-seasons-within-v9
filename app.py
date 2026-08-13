@@ -1,293 +1,3 @@
-Edit
-The_Seasons_Within_V9_ANY_PYTHON_EASY_OPEN(1).zip
-Zip Archive
-Edit
-The_Seasons_Within_V9_ANY_PYTHON_EASY_OPEN(1)(1).zip
-Zip Archive
-thats not my logo I want it to look like this 
-
-Here is Page 1 — Community/Home on mobile, using the exact logo from your V9 app files and matching the V9 purple/lavender style and Community layout.
-
-View Mobile Page 1 — Community
-
-If this is the look you want, I’ll do Page 2 — Zodiac Dater next, the same way. 
-
-The_Seasons_Within_Mobile_Page_1_Community.png
-Image
-Pasted text(4).txt
-Document
-Pasted text(5).txt
-Document
-c1e2c886-fc97-47f7-ac6b-34150c0678ab.py
-Python
-Edit
-That extra picture you have in the right corner remove it I don't want any other pictures other than the logo you can add a space for the upcoming retreat 
-Edit
-Edit
-Edit
-Edit
-
-This is closer to the direction you described.
-
-The logged-in Home / Daily Seasons Within page stays the main community page, but the sidebar is simplified to:
-
-Home → Business Network → Retreats → My Profile → Membership
-
-I removed Messages, Notifications, and Zodiac Dater from the sidebar completely.
-
-For Zodiac, I agree with making it more discreet. Instead of being a whole sidebar destination, we can place it inside My Profile as an optional section. A member could choose whether to show their Sun, Moon, Rising, Venus, Mars, or dating interest on their public Seasons Within profile. That way it feels like one part of the person's wellness/community identity rather than the whole app being centered around dating.
-
-For the Business Network, guests can see that businesses exist from the public entrance page, but they must create a free Seasons Within account before opening the full business directory and individual business listings.
-
-And inside My Profile, we can eventually let members build one fuller Seasons Within profile that can include their basic profile, optional astrology/dating information, their own business if they have one, and wellness interests/businesses they like.
-
-I have not changed the app code yet. This is still the preview/approval stage, just as you asked.
-
-Edit
-Edit
-Edit
-Edit
-remove all mockups and send pic 
-Edit
-remove the mockup 
-Edit
-
-FULL MEMBERSHIP
-
-The Seasons Within Membership
-
-$10.99 /month BUSINESS
-
-Business Network
-
-$29.99 /month change this wording MEMBERSHIP
-
-Free to belong. Become a member when you want deeper connection.
-
-Everyone can create a Basic Profile and a Zodiac Dater profile for free. One paid Seasons Within Membership unlocks full dating profiles, detailed compatibility, personalized date ideas and compatible-member alerts. Business owners have a separate monthly Business Network plan.
-
-Edit
-since we took zodiac dater off the sidebar, they still need to get to see the daters so let's create a zodiac dater list of daters in the side bar of each daters profile that and when they create a profile, they should be able to see their profile allow them to post up to 7 pics and two videos  when making the dating profile they need to be asked more then just birth chart and after they input info it should show on there profile screen that and give a short description on each placement that and best sign match lets make the dating fun allow the daters to video call and when they make free profile they should be able to upload only profile pic and there journey story  Free to belong. Become a member when you want deeper connection.
-Everyone can create a Basic Profile and a Zodiac Dater profile for free. One paid Seasons Within Membership unlocks full dating profiles, detailed compatibility, personalized date ideas and compatible-member alerts. Business owners have a separate monthly Business Network plan. change this wording that and the prices are not changed  the home page is not changed it should show list of business 
-Tuesday 11:02 AM
-the first landing page should be the listing of business and apps within the seasons within community this page should sere as a network of business to browse from for anyone this one of the main feathers in seasons within for free business  
-
-the picture is to big MOON TODAY
-
-☾ Leo
-
-New Moon • 3.92°
-
-Mercury LeoVenus LibraMars CancerJupiter LeoSaturn Aries
-
-The sky display updates from current planetary positions.
-
-YOUR DAILY SEASONS WITHIN
-
-☾ Your Natal Moon
-
-Notice what your inner world is asking you to acknowledge today.
-
-Journal • Reflect • Share With Community
-
-Inspired by your natal chart, the current Moon and your Seasons Within.
-
-THE SEASON WE'RE IN
-
-Summer
-
-Let the Summer season invite reflection on expression, connection and what is expanding. These are reflective prompts, not predictions.
-
-Mind What deserves attention? Body What pace feels sustainable? Spirit What are you cultivating? not sure what is going on here however this should display as a the current moon position of the moon a journal reflection seasonal reflective prompts and the personal reflections are in member inbox when they login after they become member that is a free
-
-50a67e4c-65a4-42e5-a130-238848f7df1b.zip
-Zip Archive
-Tuesday 6:52 PM
-3bf547d1-fe4f-4cab-919b-eb61221d2591.py
-Python
-2a1dbf96-e031-40be-8904-5067038d35b0.py
-Python
-68d1770a-b0c3-485e-be97-4b0be10cf08e.py
-Python
-ee2bc48c-8b6b-41a3-a5e6-8f32279868b7.py
-Python
-Pasted text(6).txt
-Document
-Yesterday 10:34 AM
-the moon phase was taken away 
-the mockups are still thought out the app 
-
-app.p
-
-No Galaxy Eve 
-before I download anything else the mockups are all through the app and the pic on the retreat page is still not clear  
-How do I free up space
-Yesterday 7:08 PM
-Share Your Journey you dont share your journey on this page
-Pasted text(7).txt
-Document
-We need a dating Community  allow Love & Dating / Friendship to have its own page as to business network this is for Love & Dating / Friendship only people who are part of the dating community can see and respond in member inbox who posted Also after you post you be able to see a button where you can inbox the member who posted it. 
-dont just go writing code slow down and lets do this together
-Edit
-don't put mockup profiles and galaxy Eve is the host of conscious connections she is the only one who post but everyone can in conscious connections can inbox her under each comment  lets see a new fake link what it will look like 
-Pasted text(8).txt
-Document
-ok copy and paste code please look at our chat histroy from last night to send the right code and help what fixed 
-
-Yes. I went back to the working app.py you gave me last night, not the shorter/older file that was accidentally used afterward. Your screenshot shows Render successfully deployed the new commit, but the 500 Internal Server Error is a runtime error, so a green deploy by itself does not mean the page is working.
-
-I rebuilt the corrected version from your working file and checked that the complete Python file compiles successfully. The Profile + Conscious Connections changes are added without replacing your Home, Moon/current-sky, Business Network, Retreats, Galaxy Eve business app, or other working sections.
-
-The corrected build now does what we agreed on: every member has the ♡ Conscious Connections button on My Profile; clicking it opens the questionnaire if they haven't created a connection profile; the answers build their real Love/Dating/Friendship profile; real member profiles appear at the bottom; Galaxy Eve is the host and is the only regular account that can post there; she can really upload text/photos/videos; her real posts get Inbox Galaxy Eve; there are no mock members and no fake Galaxy Eve posts. Your existing compatibility route is preserved and expanded to display the new profile information.
-
-Because the complete app.py is over 11,000 lines, putting it into one chat code box risks the browser cutting off part of it—which is exactly the kind of thing that can create another server error. I made the entire corrected code into one plain-text Python file so you can open it, Ctrl+A → Ctrl+C, then paste all of it into GitHub:
-
-OPEN THE COMPLETE COPY-AND-PASTE app.py CODE
-
-Do not commit it yet. After you paste it into GitHub, show me the screen right before you press Commit changes. I want to verify that GitHub received the complete file.
-
-Also, to identify the current Internal Server Error, click Logs on the left side of Render—not Events—and send me a screenshot of the red ERROR/Traceback lines at the bottom. That will tell us exactly what the currently deployed file is failing on before we replace it.
-
-app_fixed_profile_connections.py
-Code
-Today 10:15 AM
-Pasted text(9).txt
-Document
-I copied and pasted the last working code so it if back working here is the code in github the app is back to how it looked before   
-
-Perfect — this is what we needed. This working GitHub code is now the locked baseline. I can see it has the full app structure again, including the working Moon/current-sky calculation, the global navigation, the existing Profile page, Galaxy Eve setup, Business Network, Retreats, and the current Conscious Connections routes.
-
-So from this point forward, I will not rebuild the whole app from scratch and I will not replace working sections just to make one page change. We’ll edit this exact working code page-by-page.
-
-The next build can be My Profile + Conscious Connections only: keep your current Profile appearance, make ♡ Conscious Connections available for any member who wants to create one, add the quick Love/Dating/Friendship profile questions on the Conscious Connections page, let Galaxy Eve really post photos/videos as host, put her real posts above the member directory with private inbox buttons, and show only real Conscious Connections member profiles at the bottom. Everything else stays untouched.
-
-And yes — when we are ready for that edit, I’ll use this exact uploaded working file as the source, then give you the full copy-and-paste replacement the same way you gave it to me.
-
-ready for step by sept when we are ready for that edit, I’ll use this exact uploaded working file as the source, then give you the full copy-and-paste replacement the same way you gave it to me.
-
-Yes. We’re ready, and we’ll do it step by step, not another giant rewrite all at once.
-
-I reviewed the exact working app.py you uploaded. Your current My Profile page already has Community, Inbox, Notifications, Conscious Connections, and Business tools. Your current Conscious Connections section also already exists, so we are modifying what works instead of replacing the app.
-
-Step 1 — Fix only the My Profile page
-
-For this first change, I want us to leave the top portion of My Profile alone:
-
-MY PROFILE
-Profile picture
-Name
-City
-Sun / Moon / Rising
-Edit My Profile
-
-Then the private journal stays exactly where it is.
-
-Under that, the member's personal areas stay:
-
-Community
-Post and see member reflections.
-
-My Inbox
-Private messages.
-
-My Notifications
-Private updates.
-
-♡ Conscious Connections
-Friendship • Love & Dating
-
-My Business Listing / App
-Create or manage your business presence.
-
-The important change is Conscious Connections will be available to everyone from My Profile. If they haven't created a Conscious Connections profile yet, clicking it takes them to the setup questions. If they already created one, clicking the exact same box takes them into Conscious Connections.
-
-That matches what you told me earlier: they do not have to choose Conscious Connections when creating their regular account. They can decide later from My Profile.
-
-And Conscious Connections still does not go into the main navigation. Your existing main navigation remains Home → My Profile → Business Network → Retreats → Membership.
-
-Step 2 will be the Conscious Connections setup questions
-
-We won't touch that yet.
-
-First I want to make Step 1 correct visually and functionally before we move on to the questions and member profiles.
-
-Your working code currently actually has two different states — ♡ Conscious Connections for someone already enrolled and ♡ Join Conscious Connections for someone who isn't.
-
-I recommend we change that to ONE box for everybody:
-
-♡ Conscious Connections
-Friendship • Love & Dating
-
-No word “Join” on the My Profile screen. Clicking it handles whether they need to create their Conscious Connections profile.
-
-If that is exactly how you want Step 1, tell me “yes Step 1” and I'll give you only the exact code change for this part first.
-
-we are unable to create Conscious Connections  app on the page 
-
-Yes. This time the complete app.py is ready as one file. You do not need to find or replace individual sections.
-
-I used the restored working app as the base and fixed Conscious Connections so that:
-
-A member who hasn't created a Conscious Connections profile is sent to Create My Conscious Connections Profile.
-The setup asks the Love/Dating/Friendship questions we designed.
-Saving creates the member's real Conscious Connections profile.
-Regular members cannot post to the Conscious Connections feed.
-Only Galaxy Eve/authorized admin receives the real posting controls for text, photo and video.
-The wording about “regular members post text only” is removed.
-Galaxy Eve's real posts can have an Inbox Galaxy Eve button.
-The logged-in member is excluded from their own Discover Members results.
-Only people who actually completed a Conscious Connections profile appear under Discover Conscious Connections Members.
-Opening a member shows their profile answers, natal-chart compatibility, private message option, connection idea and retreat option.
-Home, Moon, Business Network, Retreats, Membership and the rest of the working app were left in the full file.
-Copy the entire app.py
-
-OPEN COMPLETE app.py — CTRL+A → CTRL+C
-
-Then in GitHub:
-
-Open app.py.
-Click the pencil/Edit button.
-Click inside the code and press Ctrl+A.
-Press Backspace/Delete.
-Open my file above and press Ctrl+A → Ctrl+C.
-Return to GitHub and press Ctrl+V.
-Click Commit changes.
-Wait for Render to show Deploy live.
-
-This is the complete file—about 11,900 lines—so you only have to paste once.
-
-app.py
-Code
-Today 12:41 PM
-Pasted code.py
-Python
-
-I received the new Pasted code.py file. It contains your current working Seasons Within app.py code.
-
-I’ll treat this newly uploaded file as our working master, not the earlier version. I won’t change anything yet until you tell me the next change you want to make.
-
-I found the problem. The Pasted code.py you just uploaded is not the same app structure as the working 12,000-line app.py we were editing.
-
-This new file is only about 895 lines, uses separate templates/*.html files, and it does not contain the Conscious Connections routes at all. It also has no /membership route even though your newer visual shell uses a Membership link, which can trigger a Flask BuildError and produce the exact Internal Server Error screen you are seeing.
-
-So do not keep trying to add Conscious Connections to this 895-line file. It is the wrong version for the app design we were working on.
-
-What I want you to do now
-
-Go back to GitHub and restore the last version that was actually showing your purple Seasons Within pages correctly, before this Internal Server Error appeared.
-
-On Render/GitHub, that was the version where you could see:
-
-Home → My Profile → Business Network → Retreats → Membership
-
-and the Conscious Connections page you showed me earlier.
-
-Once the app is visible again, do not change anything else.
-
-Then send me the app.py from that restored working version again. I will use that exact file, add the Conscious Connections profile builder, and give you one complete app.py to paste once.
-
-The good news is your uploaded file itself has valid Python syntax—the problem is that it belongs to a different generation of the app and no longer matches the templates/routes we are using.
-
 import os
 import re
 import json
@@ -300,1973 +10,2081 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-Flask,
-render_template,
-request,
-redirect,
-url_for,
-session,
-flash,
-send_from_directory,
-abort,
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    send_from_directory,
+    abort,
 )
 
 from werkzeug.utils import secure_filename
 from jinja2 import DictLoader
 
+
 try:
-import swisseph as swe
+    import swisseph as swe
 except Exception:
-swe = None
+    swe = None
 
-============================================================
-THE SEASONS WITHIN
-============================================================
 
-BASE = Path(file).resolve().parent
+# ============================================================
+# THE SEASONS WITHIN
+# ============================================================
+
+BASE = Path(__file__).resolve().parent
 
 DATA = Path(
-os.environ.get(
-"PERSISTENT_DATA_DIR",
-BASE / "data"
-)
+    os.environ.get(
+        "PERSISTENT_DATA_DIR",
+        BASE / "data"
+    )
 )
 
 DATA.mkdir(
-parents=True,
-exist_ok=True
+    parents=True,
+    exist_ok=True
 )
 
 DB = Path(
-os.environ.get(
-"DATABASE_PATH",
-DATA / "the_seasons_within.db"
-)
+    os.environ.get(
+        "DATABASE_PATH",
+        DATA / "the_seasons_within.db"
+    )
 )
 
 UPLOADS = Path(
-os.environ.get(
-"UPLOAD_DIR",
-DATA / "uploads"
-)
+    os.environ.get(
+        "UPLOAD_DIR",
+        DATA / "uploads"
+    )
 )
 
 UPLOADS.mkdir(
-parents=True,
-exist_ok=True
+    parents=True,
+    exist_ok=True
 )
 
-app = Flask(name)
+
+app = Flask(__name__)
 
 app.secret_key = os.environ.get(
-"SECRET_KEY",
-"change-me-in-render"
+    "SECRET_KEY",
+    "change-me-in-render"
 )
+
 
 MEMBER_PRICE = "10.99"
 BUSINESS_PRICE = "29.99"
 
+
 GALAXY_EMAIL = os.environ.get(
-"GALAXY_EVE_EMAIL",
-"galaxyeve@theseasonswithin.local"
+    "GALAXY_EVE_EMAIL",
+    "galaxyeve@theseasonswithin.local"
 ).strip().lower()
 
+
 ADMIN_EMAILS = {
-x.strip().lower()
-for x in os.environ.get(
-"ADMIN_EMAILS",
-""
-).split(",")
-if x.strip()
+    x.strip().lower()
+    for x in os.environ.get(
+        "ADMIN_EMAILS",
+        ""
+    ).split(",")
+    if x.strip()
 }
 
+
 SIGNS = [
-"Aries",
-"Taurus",
-"Gemini",
-"Cancer",
-"Leo",
-"Virgo",
-"Libra",
-"Scorpio",
-"Sagittarius",
-"Capricorn",
-"Aquarius",
-"Pisces",
+    "Aries",
+    "Taurus",
+    "Gemini",
+    "Cancer",
+    "Leo",
+    "Virgo",
+    "Libra",
+    "Scorpio",
+    "Sagittarius",
+    "Capricorn",
+    "Aquarius",
+    "Pisces",
 ]
 
+
 DEMO_EMAILS = (
-"avery@example.com",
-"morgan@example.com",
-"nia@example.com",
-"marcus@example.com",
-"jordan@example.com",
-"sage@business.demo",
-"maya@business.demo",
+    "avery@example.com",
+    "morgan@example.com",
+    "nia@example.com",
+    "marcus@example.com",
+    "jordan@example.com",
+    "sage@business.demo",
+    "maya@business.demo",
 )
+
 
 DEMO_SLUGS = (
-"rise-flow-yoga",
-"sacred-soul-reiki",
-"sound-harmony",
-"nature-vibes",
+    "rise-flow-yoga",
+    "sacred-soul-reiki",
+    "sound-harmony",
+    "nature-vibes",
 )
 
-============================================================
-DATABASE HELPERS
-============================================================
+
+# ============================================================
+# DATABASE HELPERS
+# ============================================================
 
 def conn():
 
-connection = sqlite3.connect(DB)
+    connection = sqlite3.connect(DB)
 
-connection.row_factory = sqlite3.Row
+    connection.row_factory = sqlite3.Row
 
-connection.execute(
-    "PRAGMA foreign_keys=ON"
-)
+    connection.execute(
+        "PRAGMA foreign_keys=ON"
+    )
 
-return connection
+    return connection
+
 
 def table_columns(
-connection,
-table
-):
-
-return {
-    row[1]
-    for row
-    in connection.execute(
-        f"PRAGMA table_info({table})"
-    ).fetchall()
-}
-
-def ensure_column(
-connection,
-table,
-name,
-definition
-):
-
-if name not in table_columns(
     connection,
     table
 ):
 
-    connection.execute(
-        f"""
-        ALTER TABLE {table}
-        ADD COLUMN {name} {definition}
-        """
-    )
-============================================================
-ACCOUNT HELPERS
-============================================================
+    return {
+        row[1]
+        for row
+        in connection.execute(
+            f"PRAGMA table_info({table})"
+        ).fetchall()
+    }
+
+
+def ensure_column(
+    connection,
+    table,
+    name,
+    definition
+):
+
+    if name not in table_columns(
+        connection,
+        table
+    ):
+
+        connection.execute(
+            f"""
+            ALTER TABLE {table}
+            ADD COLUMN {name} {definition}
+            """
+        )
+
+
+# ============================================================
+# ACCOUNT HELPERS
+# ============================================================
 
 def hp(password):
 
-return hashlib.sha256(
-    (
-        "tsw::"
-        + password
-    ).encode()
-).hexdigest()
+    return hashlib.sha256(
+        (
+            "tsw::"
+            + password
+        ).encode()
+    ).hexdigest()
+
 
 def slugify(text):
 
-return (
-    re.sub(
-        r"[^a-z0-9]+",
-        "-",
-        (
-            text
-            or ""
-        ).lower()
+    return (
+        re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            (
+                text
+                or ""
+            ).lower()
+        )
+        .strip("-")
+        or secrets.token_hex(4)
     )
-    .strip("-")
-    or secrets.token_hex(4)
-)
+
 
 def me():
 
-user_id = session.get(
-    "uid"
-)
-
-if not user_id:
-
-    return None
-
-
-connection = conn()
-
-
-user = connection.execute(
-    """
-    SELECT *
-    FROM users
-    WHERE id=?
-    """,
-    (
-        user_id,
+    user_id = session.get(
+        "uid"
     )
-).fetchone()
+
+    if not user_id:
+
+        return None
 
 
-connection.close()
+    connection = conn()
 
 
-return user
+    user = connection.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE id=?
+        """,
+        (
+            user_id,
+        )
+    ).fetchone()
+
+
+    connection.close()
+
+
+    return user
+
 
 def admin(user):
 
-return bool(
+    return bool(
 
-    user
+        user
 
-    and (
+        and (
 
-        user[
-            "is_admin"
-        ]
-
-        or
-
-        (
             user[
-                "email"
+                "is_admin"
             ]
-            or ""
-        ).lower()
 
-        in ADMIN_EMAILS
+            or
+
+            (
+                user[
+                    "email"
+                ]
+                or ""
+            ).lower()
+
+            in ADMIN_EMAILS
+        )
     )
-)
+
 
 def login_required(function):
 
-@wraps(function)
-def wrapped(
-    *args,
-    **kwargs
-):
+    @wraps(function)
+    def wrapped(
+        *args,
+        **kwargs
+    ):
 
-    if not me():
+        if not me():
 
-        return redirect(
-            url_for(
-                "login",
-                next=request.path
+            return redirect(
+                url_for(
+                    "login",
+                    next=request.path
+                )
             )
+
+
+        return function(
+            *args,
+            **kwargs
         )
 
 
-    return function(
-        *args,
-        **kwargs
-    )
+    return wrapped
 
-
-return wrapped
 
 def admin_required(function):
 
-@wraps(function)
-def wrapped(
-    *args,
-    **kwargs
-):
-
-    user = me()
-
-
-    if not user:
-
-        return redirect(
-            url_for(
-                "login"
-            )
-        )
-
-
-    if not admin(
-        user
-    ):
-
-        return (
-            "Admin access required",
-            403
-        )
-
-
-    return function(
+    @wraps(function)
+    def wrapped(
         *args,
         **kwargs
-    )
+    ):
+
+        user = me()
 
 
-return wrapped
-============================================================
-MEDIA
-============================================================
+        if not user:
+
+            return redirect(
+                url_for(
+                    "login"
+                )
+            )
+
+
+        if not admin(
+            user
+        ):
+
+            return (
+                "Admin access required",
+                403
+            )
+
+
+        return function(
+            *args,
+            **kwargs
+        )
+
+
+    return wrapped
+
+
+# ============================================================
+# MEDIA
+# ============================================================
 
 def media_url(path):
 
-if not path:
+    if not path:
 
-    return ""
+        return ""
 
 
-return url_for(
-    "uploads",
-    filename=path
-)
+    return url_for(
+        "uploads",
+        filename=path
+    )
+
 
 def save_file(
-file_storage,
-prefix
+    file_storage,
+    prefix
 ):
 
-if (
-    not file_storage
-    or not file_storage.filename
-):
+    if (
+        not file_storage
+        or not file_storage.filename
+    ):
 
-    return ""
-
-
-extension = Path(
-    secure_filename(
-        file_storage.filename
-    )
-).suffix.lower()
+        return ""
 
 
-allowed = {
-
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".gif",
-    ".mp4",
-    ".mov",
-    ".m4v",
-}
+    extension = Path(
+        secure_filename(
+            file_storage.filename
+        )
+    ).suffix.lower()
 
 
-if extension not in allowed:
+    allowed = {
 
-    return ""
-
-
-filename = (
-
-    f"{prefix}-"
-
-    f"{secrets.token_hex(8)}"
-
-    f"{extension}"
-)
-
-
-file_storage.save(
-    UPLOADS / filename
-)
-
-
-return filename
-
-def is_video(path):
-
-if not path:
-
-    return False
-
-
-return (
-
-    Path(path)
-    .suffix
-    .lower()
-
-    in {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif",
         ".mp4",
         ".mov",
         ".m4v",
     }
-)
-============================================================
-CURRENT SKY
-============================================================
+
+
+    if extension not in allowed:
+
+        return ""
+
+
+    filename = (
+
+        f"{prefix}-"
+
+        f"{secrets.token_hex(8)}"
+
+        f"{extension}"
+    )
+
+
+    file_storage.save(
+        UPLOADS / filename
+    )
+
+
+    return filename
+
+
+def is_video(path):
+
+    if not path:
+
+        return False
+
+
+    return (
+
+        Path(path)
+        .suffix
+        .lower()
+
+        in {
+            ".mp4",
+            ".mov",
+            ".m4v",
+        }
+    )
+
+
+def age_from_birth_date(value):
+
+    if not value:
+
+        return None
+
+
+    try:
+
+        born = datetime.strptime(
+            value,
+            "%Y-%m-%d"
+        ).date()
+
+        today = date.today()
+
+        return (
+            today.year
+            - born.year
+            - (
+                (today.month, today.day)
+                < (born.month, born.day)
+            )
+        )
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# CURRENT SKY
+# ============================================================
 
 def season_now():
 
-month = date.today().month
+    month = date.today().month
 
 
-if month in (
-    12,
-    1,
-    2,
-):
+    if month in (
+        12,
+        1,
+        2,
+    ):
 
-    return "Winter"
-
-
-if month in (
-    3,
-    4,
-    5,
-):
-
-    return "Spring"
+        return "Winter"
 
 
-if month in (
-    6,
-    7,
-    8,
-):
+    if month in (
+        3,
+        4,
+        5,
+    ):
 
-    return "Summer"
+        return "Spring"
 
 
-return "Autumn"
+    if month in (
+        6,
+        7,
+        8,
+    ):
+
+        return "Summer"
+
+
+    return "Autumn"
+
 
 def zdeg(degree):
 
-degree = (
-    float(degree)
-    % 360
-)
+    degree = (
+        float(degree)
+        % 360
+    )
 
 
-index = int(
-    degree // 30
-)
+    index = int(
+        degree // 30
+    )
 
 
-return (
+    return (
 
-    SIGNS[
-        index
-    ],
+        SIGNS[
+            index
+        ],
 
-    round(
-        degree
-        - index * 30,
-        2
-    ),
-)
+        round(
+            degree
+            - index * 30,
+            2
+        ),
+    )
+
 
 def moon_symbol(
-phase
+    phase
 ):
 
-return {
+    return {
 
-    "New Moon":
-        "🌑",
+        "New Moon":
+            "🌑",
 
-    "Waxing Crescent":
-        "🌒",
+        "Waxing Crescent":
+            "🌒",
 
-    "First Quarter":
-        "🌓",
+        "First Quarter":
+            "🌓",
 
-    "Waxing Gibbous":
-        "🌔",
+        "Waxing Gibbous":
+            "🌔",
 
-    "Full Moon":
-        "🌕",
+        "Full Moon":
+            "🌕",
 
-    "Waning Gibbous":
-        "🌖",
+        "Waning Gibbous":
+            "🌖",
 
-    "Last Quarter":
-        "🌗",
+        "Last Quarter":
+            "🌗",
 
-    "Waning Crescent":
-        "🌘",
+        "Waning Crescent":
+            "🌘",
 
-}.get(
-    phase,
-    "☾"
-)
+    }.get(
+        phase,
+        "☾"
+    )
+
 
 def current_sky():
 
-sky = {
+    sky = {
 
-    "moon_sign":
-        "",
+        "moon_sign":
+            "",
 
-    "moon_phase":
-        "",
+        "moon_phase":
+            "",
 
-    "moon_degree":
-        None,
+        "moon_degree":
+            None,
 
-    "moon_symbol":
-        "☾",
+        "moon_symbol":
+            "☾",
 
-    "positions":
-        {},
+        "positions":
+            {},
 
-    "season":
-        season_now(),
-}
+        "season":
+            season_now(),
+    }
 
 
-if not swe:
+    if not swe:
+
+        return sky
+
+
+    try:
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+
+        julian_day = swe.julday(
+
+            now.year,
+
+            now.month,
+
+            now.day,
+
+            (
+                now.hour
+
+                + now.minute / 60
+
+                + now.second / 3600
+            ),
+        )
+
+
+        bodies = {
+
+            "Sun":
+                swe.SUN,
+
+            "Moon":
+                swe.MOON,
+
+            "Mercury":
+                swe.MERCURY,
+
+            "Venus":
+                swe.VENUS,
+
+            "Mars":
+                swe.MARS,
+
+            "Jupiter":
+                swe.JUPITER,
+
+            "Saturn":
+                swe.SATURN,
+
+            "Uranus":
+                swe.URANUS,
+
+            "Neptune":
+                swe.NEPTUNE,
+
+            "Pluto":
+                swe.PLUTO,
+        }
+
+
+        degrees = {}
+
+
+        for (
+            body_name,
+            body_id
+        ) in bodies.items():
+
+
+            position = swe.calc_ut(
+                julian_day,
+                body_id
+            )[0][0]
+
+
+            sign, degree = zdeg(
+                position
+            )
+
+
+            degrees[
+                body_name
+            ] = position
+
+
+            sky[
+                "positions"
+            ][
+                body_name
+            ] = {
+
+                "sign":
+                    sign,
+
+                "degree":
+                    degree,
+            }
+
+
+        sky[
+            "moon_sign"
+        ] = sky[
+            "positions"
+        ][
+            "Moon"
+        ][
+            "sign"
+        ]
+
+
+        sky[
+            "moon_degree"
+        ] = sky[
+            "positions"
+        ][
+            "Moon"
+        ][
+            "degree"
+        ]
+
+
+        angle = (
+
+            degrees[
+                "Moon"
+            ]
+
+            -
+
+            degrees[
+                "Sun"
+            ]
+
+        ) % 360
+
+
+        phases = [
+
+            (
+                22.5,
+                "New Moon"
+            ),
+
+            (
+                67.5,
+                "Waxing Crescent"
+            ),
+
+            (
+                112.5,
+                "First Quarter"
+            ),
+
+            (
+                157.5,
+                "Waxing Gibbous"
+            ),
+
+            (
+                202.5,
+                "Full Moon"
+            ),
+
+            (
+                247.5,
+                "Waning Gibbous"
+            ),
+
+            (
+                292.5,
+                "Last Quarter"
+            ),
+
+            (
+                337.5,
+                "Waning Crescent"
+            ),
+
+            (
+                361,
+                "New Moon"
+            ),
+        ]
+
+
+        for (
+            cutoff,
+            phase_name
+        ) in phases:
+
+
+            if angle < cutoff:
+
+                sky[
+                    "moon_phase"
+                ] = phase_name
+
+                break
+
+
+        sky[
+            "moon_symbol"
+        ] = moon_symbol(
+            sky[
+                "moon_phase"
+            ]
+        )
+
+
+    except Exception:
+
+        pass
+
 
     return sky
 
 
-try:
-
-    now = datetime.now(
-        timezone.utc
-    )
-
-
-    julian_day = swe.julday(
-
-        now.year,
-
-        now.month,
-
-        now.day,
-
-        (
-            now.hour
-
-            + now.minute / 60
-
-            + now.second / 3600
-        ),
-    )
-
-
-    bodies = {
-
-        "Sun":
-            swe.SUN,
-
-        "Moon":
-            swe.MOON,
-
-        "Mercury":
-            swe.MERCURY,
-
-        "Venus":
-            swe.VENUS,
-
-        "Mars":
-            swe.MARS,
-
-        "Jupiter":
-            swe.JUPITER,
-
-        "Saturn":
-            swe.SATURN,
-
-        "Uranus":
-            swe.URANUS,
-
-        "Neptune":
-            swe.NEPTUNE,
-
-        "Pluto":
-            swe.PLUTO,
-    }
-
-
-    degrees = {}
-
-
-    for (
-        body_name,
-        body_id
-    ) in bodies.items():
-
-
-        position = swe.calc_ut(
-            julian_day,
-            body_id
-        )[0][0]
-
-
-        sign, degree = zdeg(
-            position
-        )
-
-
-        degrees[
-            body_name
-        ] = position
-
-
-        sky[
-            "positions"
-        ][
-            body_name
-        ] = {
-
-            "sign":
-                sign,
-
-            "degree":
-                degree,
-        }
-
-
-    sky[
-        "moon_sign"
-    ] = sky[
-        "positions"
-    ][
-        "Moon"
-    ][
-        "sign"
-    ]
-
-
-    sky[
-        "moon_degree"
-    ] = sky[
-        "positions"
-    ][
-        "Moon"
-    ][
-        "degree"
-    ]
-
-
-    angle = (
-
-        degrees[
-            "Moon"
-        ]
-
-        -
-
-        degrees[
-            "Sun"
-        ]
-
-    ) % 360
-
-
-    phases = [
-
-        (
-            22.5,
-            "New Moon"
-        ),
-
-        (
-            67.5,
-            "Waxing Crescent"
-        ),
-
-        (
-            112.5,
-            "First Quarter"
-        ),
-
-        (
-            157.5,
-            "Waxing Gibbous"
-        ),
-
-        (
-            202.5,
-            "Full Moon"
-        ),
-
-        (
-            247.5,
-            "Waning Gibbous"
-        ),
-
-        (
-            292.5,
-            "Last Quarter"
-        ),
-
-        (
-            337.5,
-            "Waning Crescent"
-        ),
-
-        (
-            361,
-            "New Moon"
-        ),
-    ]
-
-
-    for (
-        cutoff,
-        phase_name
-    ) in phases:
-
-
-        if angle < cutoff:
-
-            sky[
-                "moon_phase"
-            ] = phase_name
-
-            break
-
-
-    sky[
-        "moon_symbol"
-    ] = moon_symbol(
-        sky[
-            "moon_phase"
-        ]
-    )
-
-
-except Exception:
-
-    pass
-
-
-return sky
-============================================================
-NATAL CHART
-============================================================
+# ============================================================
+# NATAL CHART
+# ============================================================
 
 def chart_for(user):
 
-if (
-    not swe
-    or not user
-    or not user[
-        "birth_date"
-    ]
-):
-
-    return {}
-
-
-try:
-
-    birth_date = datetime.strptime(
-        user[
-            "birth_date"
-        ],
-        "%Y-%m-%d"
-    )
-
-
-    hour = 12.0
-
-
     if (
-        user[
-            "time_known"
-        ]
-        and user[
-            "birth_time"
+        not swe
+        or not user
+        or not user[
+            "birth_date"
         ]
     ):
 
-        hours, minutes = [
+        return {}
 
-            int(value)
 
-            for value
+    try:
 
-            in user[
+        birth_date = datetime.strptime(
+            user[
+                "birth_date"
+            ],
+            "%Y-%m-%d"
+        )
+
+
+        hour = 12.0
+
+
+        if (
+            user[
+                "time_known"
+            ]
+            and user[
                 "birth_time"
-            ].split(":")[:2]
-        ]
+            ]
+        ):
+
+            hours, minutes = [
+
+                int(value)
+
+                for value
+
+                in user[
+                    "birth_time"
+                ].split(":")[:2]
+            ]
 
 
-        hour = (
-            hours
-            + minutes / 60
+            hour = (
+                hours
+                + minutes / 60
+            )
+
+
+        julian_day = swe.julday(
+
+            birth_date.year,
+
+            birth_date.month,
+
+            birth_date.day,
+
+            hour,
         )
 
 
-    julian_day = swe.julday(
+        bodies = {
 
-        birth_date.year,
+            "Sun":
+                swe.SUN,
 
-        birth_date.month,
+            "Moon":
+                swe.MOON,
 
-        birth_date.day,
+            "Mercury":
+                swe.MERCURY,
 
-        hour,
-    )
+            "Venus":
+                swe.VENUS,
 
+            "Mars":
+                swe.MARS,
 
-    bodies = {
+            "Jupiter":
+                swe.JUPITER,
 
-        "Sun":
-            swe.SUN,
+            "Saturn":
+                swe.SATURN,
 
-        "Moon":
-            swe.MOON,
+            "Uranus":
+                swe.URANUS,
 
-        "Mercury":
-            swe.MERCURY,
+            "Neptune":
+                swe.NEPTUNE,
 
-        "Venus":
-            swe.VENUS,
-
-        "Mars":
-            swe.MARS,
-
-        "Jupiter":
-            swe.JUPITER,
-
-        "Saturn":
-            swe.SATURN,
-
-        "Uranus":
-            swe.URANUS,
-
-        "Neptune":
-            swe.NEPTUNE,
-
-        "Pluto":
-            swe.PLUTO,
-    }
-
-
-    result = {}
-
-
-    for (
-        name,
-        body_id
-    ) in bodies.items():
-
-
-        position = swe.calc_ut(
-            julian_day,
-            body_id
-        )[0][0]
-
-
-        sign, degree = zdeg(
-            position
-        )
-
-
-        result[
-            name
-        ] = {
-
-            "sign":
-                sign,
-
-            "degree":
-                degree,
-
-            "absolute":
-                round(
-                    position,
-                    4
-                ),
+            "Pluto":
+                swe.PLUTO,
         }
 
 
-    return result
+        result = {}
 
 
-except Exception:
+        for (
+            name,
+            body_id
+        ) in bodies.items():
 
-    return {}
-============================================================
-PRIVATE JOURNAL
-============================================================
+
+            position = swe.calc_ut(
+                julian_day,
+                body_id
+            )[0][0]
+
+
+            sign, degree = zdeg(
+                position
+            )
+
+
+            result[
+                name
+            ] = {
+
+                "sign":
+                    sign,
+
+                "degree":
+                    degree,
+
+                "absolute":
+                    round(
+                        position,
+                        4
+                    ),
+            }
+
+
+        return result
+
+
+    except Exception:
+
+        return {}
+
+
+# ============================================================
+# PRIVATE JOURNAL
+# ============================================================
 
 def journal_reflection(
-user
+    user
 ):
 
-sky = current_sky()
+    sky = current_sky()
 
 
-natal_reference = (
+    natal_reference = (
 
-    user[
-        "moon"
-    ]
+        user[
+            "moon"
+        ]
 
-    or
+        or
 
-    user[
-        "sun"
-    ]
+        user[
+            "sun"
+        ]
 
-    or
+        or
 
-    "your natal chart"
+        "your natal chart"
 
-) if user else "your natal chart"
+    ) if user else "your natal chart"
 
 
-return {
+    return {
 
-    "sky":
-        sky,
+        "sky":
+            sky,
 
-    "headline":
+        "headline":
 
-        (
-            f"Reflect through "
-            f"{natal_reference} "
-            f"and the current "
-            f"{sky['moon_sign'] or 'Moon'}."
-        ),
+            (
+                f"Reflect through "
+                f"{natal_reference} "
+                f"and the current "
+                f"{sky['moon_sign'] or 'Moon'}."
+            ),
 
-    "prompt":
+        "prompt":
 
-        (
-            "What are you noticing within yourself today, "
-            "and what deserves your conscious attention?"
-        ),
-}
-============================================================
-CONSCIOUS COORDINATION
-============================================================
+            (
+                "What are you noticing within yourself today, "
+                "and what deserves your conscious attention?"
+            ),
+    }
+
+
+# ============================================================
+# CONSCIOUS COORDINATION
+# ============================================================
 
 def coord(
-person_a,
-person_b,
-mode="friendship"
+    person_a,
+    person_b,
+    mode="friendship"
 ):
 
-score = 50
+    score = 50
 
 
-weights = {
+    weights = {
 
-    "dating": {
+        "dating": {
 
-        "sun": 4,
-        "moon": 10,
-        "mercury": 6,
-        "venus": 10,
-        "mars": 8,
-    },
-
-
-    "friendship": {
-
-        "sun": 7,
-        "moon": 8,
-        "mercury": 7,
-        "venus": 4,
-        "mars": 4,
-    },
+            "sun": 4,
+            "moon": 10,
+            "mercury": 6,
+            "venus": 10,
+            "mars": 8,
+        },
 
 
-    "business": {
+        "friendship": {
 
-        "sun": 6,
-        "moon": 3,
-        "mercury": 10,
-        "venus": 3,
-        "mars": 7,
-    },
-}
-
-
-selected = weights.get(
-    mode,
-    weights[
-        "friendship"
-    ]
-)
+            "sun": 7,
+            "moon": 8,
+            "mercury": 7,
+            "venus": 4,
+            "mars": 4,
+        },
 
 
-for (
-    placement,
-    weight
-) in selected.items():
+        "business": {
+
+            "sun": 6,
+            "moon": 3,
+            "mercury": 10,
+            "venus": 3,
+            "mars": 7,
+        },
+    }
 
 
-    if (
-        person_a[
-            placement
+    selected = weights.get(
+        mode,
+        weights[
+            "friendship"
         ]
-        and
-        person_b[
-            placement
-        ]
-    ):
+    )
+
+
+    for (
+        placement,
+        weight
+    ) in selected.items():
 
 
         if (
             person_a[
                 placement
             ]
-            ==
+            and
             person_b[
                 placement
             ]
         ):
 
-            score += weight
+
+            if (
+                person_a[
+                    placement
+                ]
+                ==
+                person_b[
+                    placement
+                ]
+            ):
+
+                score += weight
 
 
-        else:
+            else:
 
-            difference = abs(
+                difference = abs(
 
-                SIGNS.index(
-                    person_a[
-                        placement
-                    ]
+                    SIGNS.index(
+                        person_a[
+                            placement
+                        ]
+                    )
+
+                    -
+
+                    SIGNS.index(
+                        person_b[
+                            placement
+                        ]
+                    )
                 )
 
-                -
 
-                SIGNS.index(
-                    person_b[
-                        placement
-                    ]
+                if difference in (
+                    2,
+                    4,
+                    8,
+                    10,
+                ):
+
+                    score += max(
+                        2,
+                        weight // 2
+                    )
+
+
+    return max(
+        40,
+        min(
+            95,
+            score
+        )
+    )
+
+
+def date_idea(
+    person_a,
+    person_b,
+    mode="dating"
+):
+
+    if mode == "friendship":
+
+        return (
+            "Try a wellness class, café conversation, "
+            "nature walk, creator meetup or shared community experience."
+        )
+
+
+    combination = {
+
+        person_a[
+            "venus"
+        ],
+
+        person_b[
+            "venus"
+        ],
+
+        person_a[
+            "moon"
+        ],
+
+        person_b[
+            "moon"
+        ],
+    }
+
+
+    if (
+        "Pisces"
+        in combination
+        or
+        "Cancer"
+        in combination
+    ):
+
+        return (
+            "Consider a waterfront walk, relaxing wellness experience, "
+            "sound session or intimate conversation setting."
+        )
+
+
+    if (
+        "Leo"
+        in combination
+        or
+        "Aries"
+        in combination
+    ):
+
+        return (
+            "Consider live music, a creative class, "
+            "movement experience or energetic local event."
+        )
+
+
+    if (
+        "Libra"
+        in combination
+        or
+        "Taurus"
+        in combination
+    ):
+
+        return (
+            "Consider an art experience, beautiful dinner setting, "
+            "massage or spa experience, or garden outing."
+        )
+
+
+    if (
+        "Gemini"
+        in combination
+        or
+        "Aquarius"
+        in combination
+    ):
+
+        return (
+            "Consider a bookstore, coffee conversation, "
+            "unique workshop, community event or creative experience."
+        )
+
+
+    return (
+        "Choose an experience that supports conversation, "
+        "shared interests and the way both of you naturally connect."
+    )
+
+
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
+def init_db():
+
+    connection = conn()
+
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            name TEXT NOT NULL,
+
+            email TEXT UNIQUE NOT NULL,
+
+            password TEXT NOT NULL,
+
+            city TEXT DEFAULT '',
+
+            bio TEXT DEFAULT '',
+
+            photo TEXT DEFAULT '',
+
+            profile_headline TEXT DEFAULT '',
+
+            birth_date TEXT DEFAULT '',
+
+            birth_time TEXT DEFAULT '',
+
+            time_known INTEGER DEFAULT 0,
+
+            sun TEXT DEFAULT '',
+
+            moon TEXT DEFAULT '',
+
+            rising TEXT DEFAULT '',
+
+            mercury TEXT DEFAULT '',
+
+            venus TEXT DEFAULT '',
+
+            mars TEXT DEFAULT '',
+
+            jupiter TEXT DEFAULT '',
+
+            saturn TEXT DEFAULT '',
+
+            uranus TEXT DEFAULT '',
+
+            neptune TEXT DEFAULT '',
+
+            pluto TEXT DEFAULT '',
+
+            is_admin INTEGER DEFAULT 0,
+
+            is_creator INTEGER DEFAULT 0,
+
+            creator_access INTEGER DEFAULT 0,
+
+            business_access INTEGER DEFAULT 0,
+
+            membership_access INTEGER DEFAULT 0,
+
+            dating_active INTEGER DEFAULT 0,
+
+            connection_intentions TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS businesses(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            owner_id INTEGER UNIQUE NOT NULL
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            slug TEXT UNIQUE NOT NULL,
+
+            business_name TEXT NOT NULL,
+
+            creator_title TEXT DEFAULT '',
+
+            tagline TEXT DEFAULT '',
+
+            description TEXT DEFAULT '',
+
+            category TEXT DEFAULT '',
+
+            city TEXT DEFAULT '',
+
+            website TEXT DEFAULT '',
+
+            contact_email TEXT DEFAULT '',
+
+            phone TEXT DEFAULT '',
+
+            logo TEXT DEFAULT '',
+
+            instagram TEXT DEFAULT '',
+
+            tiktok TEXT DEFAULT '',
+
+            youtube TEXT DEFAULT '',
+
+            booking_url TEXT DEFAULT '',
+
+            paid_business INTEGER DEFAULT 0,
+
+            media_kit_enabled INTEGER DEFAULT 0,
+
+            followers TEXT DEFAULT '',
+
+            likes TEXT DEFAULT '',
+
+            views TEXT DEFAULT '',
+
+            audience_info TEXT DEFAULT '',
+
+            content_categories TEXT DEFAULT '',
+
+            collaboration_interests TEXT DEFAULT '',
+
+            retreat_participation INTEGER DEFAULT 0,
+
+            featured_order INTEGER DEFAULT 999,
+
+            status TEXT DEFAULT 'active'
+        );
+
+
+        CREATE TABLE IF NOT EXISTS posts(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            body TEXT NOT NULL,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS connection_posts(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            body TEXT NOT NULL,
+
+            media_path TEXT DEFAULT '',
+
+            media_type TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS journals(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            body TEXT NOT NULL,
+
+            sky_json TEXT DEFAULT '{}',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS messages(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            sender_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            recipient_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            message_type TEXT DEFAULT 'people',
+
+            subject TEXT DEFAULT '',
+
+            body TEXT NOT NULL,
+
+            read_at TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS notifications(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            notification_type TEXT DEFAULT 'general',
+
+            title TEXT NOT NULL,
+
+            body TEXT NOT NULL,
+
+            link TEXT DEFAULT '',
+
+            read_at TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS retreats(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            owner_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            title TEXT NOT NULL,
+
+            season TEXT DEFAULT '',
+
+            retreat_type TEXT DEFAULT '',
+
+            area TEXT DEFAULT '',
+
+            preferred_dates TEXT DEFAULT '',
+
+            guests INTEGER DEFAULT 1,
+
+            budget TEXT DEFAULT '',
+
+            lodging_preferences TEXT DEFAULT '',
+
+            wellness_interests TEXT DEFAULT '',
+
+            location_status TEXT DEFAULT 'Searching',
+
+            connection_retreat INTEGER DEFAULT 0,
+
+            status TEXT DEFAULT 'planning',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS retreat_partners(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            retreat_id INTEGER
+            REFERENCES retreats(id)
+            ON DELETE CASCADE,
+
+            business_id INTEGER
+            REFERENCES businesses(id)
+            ON DELETE CASCADE,
+
+            availability_status TEXT DEFAULT 'requested',
+
+            UNIQUE(
+                retreat_id,
+                business_id
+            )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS retreat_messages(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            retreat_id INTEGER
+            REFERENCES retreats(id)
+            ON DELETE CASCADE,
+
+            sender_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            body TEXT NOT NULL,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS business_content(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            business_id INTEGER
+            REFERENCES businesses(id)
+            ON DELETE CASCADE,
+
+            content_type TEXT DEFAULT 'post',
+
+            caption TEXT DEFAULT '',
+
+            media_path TEXT DEFAULT '',
+
+            media_type TEXT DEFAULT '',
+
+            active INTEGER DEFAULT 1,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS business_items(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            business_id INTEGER
+            REFERENCES businesses(id)
+            ON DELETE CASCADE,
+
+            item_type TEXT DEFAULT 'service',
+
+            title TEXT NOT NULL,
+
+            description TEXT DEFAULT '',
+
+            price TEXT DEFAULT '',
+
+            action_url TEXT DEFAULT '',
+
+            active INTEGER DEFAULT 1,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+        CREATE TABLE IF NOT EXISTS collaboration_requests(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            business_id INTEGER
+            REFERENCES businesses(id)
+            ON DELETE CASCADE,
+
+            sender_id INTEGER
+            REFERENCES users(id)
+            ON DELETE SET NULL,
+
+            request_type TEXT DEFAULT 'Collaboration',
+
+            message TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+
+    # --------------------------------------------------------
+    # SAFE MIGRATIONS
+    # --------------------------------------------------------
+
+    user_migrations = {
+
+        "community_enabled":
+            "INTEGER DEFAULT 1",
+
+        "conscious_connections_enabled":
+            "INTEGER DEFAULT 0",
+
+        "connection_type":
+            "TEXT DEFAULT ''",
+
+        "business_interest":
+            "INTEGER DEFAULT 0",
+
+        "last_moon_sign":
+            "TEXT DEFAULT ''",
+
+        "cc_gender":
+            "TEXT DEFAULT ''",
+
+        "cc_seeking":
+            "TEXT DEFAULT ''",
+
+        "cc_looking_for":
+            "TEXT DEFAULT ''",
+
+        "cc_children":
+            "TEXT DEFAULT ''",
+
+        "cc_lifestyle":
+            "TEXT DEFAULT ''",
+
+        "cc_activities":
+            "TEXT DEFAULT ''",
+
+        "cc_values":
+            "TEXT DEFAULT ''",
+
+        "cc_style":
+            "TEXT DEFAULT ''",
+
+        "cc_first_connection":
+            "TEXT DEFAULT ''",
+
+        "cc_retreat_interest":
+            "TEXT DEFAULT ''",
+
+        "cc_occupation":
+            "TEXT DEFAULT ''",
+
+        "cc_height":
+            "TEXT DEFAULT ''",
+
+        "cc_weight":
+            "TEXT DEFAULT ''",
+    }
+
+
+    for (
+        column_name,
+        definition
+    ) in user_migrations.items():
+
+        ensure_column(
+            connection,
+            "users",
+            column_name,
+            definition
+        )
+
+
+    business_migrations = {
+
+        "hero_image":
+            "TEXT DEFAULT ''",
+
+        "featured_video":
+            "TEXT DEFAULT ''",
+
+        "previous_collaborations":
+            "TEXT DEFAULT ''",
+
+        "engagement_rate":
+            "TEXT DEFAULT ''",
+    }
+
+
+    for (
+        column_name,
+        definition
+    ) in business_migrations.items():
+
+        ensure_column(
+            connection,
+            "businesses",
+            column_name,
+            definition
+        )
+
+
+    post_migrations = {
+
+        "media_path":
+            "TEXT DEFAULT ''",
+
+        "media_type":
+            "TEXT DEFAULT ''",
+    }
+
+
+    for (
+        column_name,
+        definition
+    ) in post_migrations.items():
+
+        ensure_column(
+            connection,
+            "posts",
+            column_name,
+            definition
+        )
+
+
+    ensure_column(
+        connection,
+        "retreats",
+        "connection_retreat",
+        "INTEGER DEFAULT 0"
+    )
+
+
+    # --------------------------------------------------------
+    # REMOVE OLD MOCK MEMBERS / BUSINESSES
+    # --------------------------------------------------------
+
+    for email in DEMO_EMAILS:
+
+        row = connection.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE lower(email)=?
+            """,
+            (
+                email,
+            )
+        ).fetchone()
+
+
+        if row:
+
+            connection.execute(
+                """
+                DELETE FROM users
+                WHERE id=?
+                """,
+                (
+                    row[
+                        "id"
+                    ],
                 )
             )
 
 
-            if difference in (
-                2,
-                4,
-                8,
-                10,
-            ):
-
-                score += max(
-                    2,
-                    weight // 2
-                )
-
-
-return max(
-    40,
-    min(
-        95,
-        score
-    )
-)
-
-def date_idea(
-person_a,
-person_b,
-mode="dating"
-):
-
-if mode == "friendship":
-
-    return (
-        "Try a wellness class, café conversation, "
-        "nature walk, creator meetup or shared community experience."
+    placeholders = ",".join(
+        "?"
+        for _
+        in DEMO_SLUGS
     )
 
 
-combination = {
-
-    person_a[
-        "venus"
-    ],
-
-    person_b[
-        "venus"
-    ],
-
-    person_a[
-        "moon"
-    ],
-
-    person_b[
-        "moon"
-    ],
-}
-
-
-if (
-    "Pisces"
-    in combination
-    or
-    "Cancer"
-    in combination
-):
-
-    return (
-        "Consider a waterfront walk, relaxing wellness experience, "
-        "sound session or intimate conversation setting."
+    connection.execute(
+        f"""
+        DELETE FROM businesses
+        WHERE slug IN ({placeholders})
+        """,
+        DEMO_SLUGS
     )
 
 
-if (
-    "Leo"
-    in combination
-    or
-    "Aries"
-    in combination
-):
-
-    return (
-        "Consider live music, a creative class, "
-        "movement experience or energetic local event."
-    )
-
-
-if (
-    "Libra"
-    in combination
-    or
-    "Taurus"
-    in combination
-):
-
-    return (
-        "Consider an art experience, beautiful dinner setting, "
-        "massage or spa experience, or garden outing."
-    )
-
-
-if (
-    "Gemini"
-    in combination
-    or
-    "Aquarius"
-    in combination
-):
-
-    return (
-        "Consider a bookstore, coffee conversation, "
-        "unique workshop, community event or creative experience."
-    )
-
-
-return (
-    "Choose an experience that supports conversation, "
-    "shared interests and the way both of you naturally connect."
-)
-============================================================
-DATABASE INITIALIZATION
-============================================================
-
-def init_db():
-
-connection = conn()
-
-
-connection.executescript(
-    """
-    CREATE TABLE IF NOT EXISTS users(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        name TEXT NOT NULL,
-
-        email TEXT UNIQUE NOT NULL,
-
-        password TEXT NOT NULL,
-
-        city TEXT DEFAULT '',
-
-        bio TEXT DEFAULT '',
-
-        photo TEXT DEFAULT '',
-
-        profile_headline TEXT DEFAULT '',
-
-        birth_date TEXT DEFAULT '',
-
-        birth_time TEXT DEFAULT '',
-
-        time_known INTEGER DEFAULT 0,
-
-        sun TEXT DEFAULT '',
-
-        moon TEXT DEFAULT '',
-
-        rising TEXT DEFAULT '',
-
-        mercury TEXT DEFAULT '',
-
-        venus TEXT DEFAULT '',
-
-        mars TEXT DEFAULT '',
-
-        jupiter TEXT DEFAULT '',
-
-        saturn TEXT DEFAULT '',
-
-        uranus TEXT DEFAULT '',
-
-        neptune TEXT DEFAULT '',
-
-        pluto TEXT DEFAULT '',
-
-        is_admin INTEGER DEFAULT 0,
-
-        is_creator INTEGER DEFAULT 0,
-
-        creator_access INTEGER DEFAULT 0,
-
-        business_access INTEGER DEFAULT 0,
-
-        membership_access INTEGER DEFAULT 0,
-
-        dating_active INTEGER DEFAULT 0,
-
-        connection_intentions TEXT DEFAULT '',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS businesses(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        owner_id INTEGER UNIQUE NOT NULL
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        slug TEXT UNIQUE NOT NULL,
-
-        business_name TEXT NOT NULL,
-
-        creator_title TEXT DEFAULT '',
-
-        tagline TEXT DEFAULT '',
-
-        description TEXT DEFAULT '',
-
-        category TEXT DEFAULT '',
-
-        city TEXT DEFAULT '',
-
-        website TEXT DEFAULT '',
-
-        contact_email TEXT DEFAULT '',
-
-        phone TEXT DEFAULT '',
-
-        logo TEXT DEFAULT '',
-
-        instagram TEXT DEFAULT '',
-
-        tiktok TEXT DEFAULT '',
-
-        youtube TEXT DEFAULT '',
-
-        booking_url TEXT DEFAULT '',
-
-        paid_business INTEGER DEFAULT 0,
-
-        media_kit_enabled INTEGER DEFAULT 0,
-
-        followers TEXT DEFAULT '',
-
-        likes TEXT DEFAULT '',
-
-        views TEXT DEFAULT '',
-
-        audience_info TEXT DEFAULT '',
-
-        content_categories TEXT DEFAULT '',
-
-        collaboration_interests TEXT DEFAULT '',
-
-        retreat_participation INTEGER DEFAULT 0,
-
-        featured_order INTEGER DEFAULT 999,
-
-        status TEXT DEFAULT 'active'
-    );
-
-
-    CREATE TABLE IF NOT EXISTS posts(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        body TEXT NOT NULL,
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS connection_posts(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        body TEXT NOT NULL,
-
-        media_path TEXT DEFAULT '',
-
-        media_type TEXT DEFAULT '',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS journals(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        body TEXT NOT NULL,
-
-        sky_json TEXT DEFAULT '{}',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS messages(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        sender_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        recipient_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        message_type TEXT DEFAULT 'people',
-
-        subject TEXT DEFAULT '',
-
-        body TEXT NOT NULL,
-
-        read_at TEXT DEFAULT '',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS notifications(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        notification_type TEXT DEFAULT 'general',
-
-        title TEXT NOT NULL,
-
-        body TEXT NOT NULL,
-
-        link TEXT DEFAULT '',
-
-        read_at TEXT DEFAULT '',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS retreats(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        owner_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        title TEXT NOT NULL,
-
-        season TEXT DEFAULT '',
-
-        retreat_type TEXT DEFAULT '',
-
-        area TEXT DEFAULT '',
-
-        preferred_dates TEXT DEFAULT '',
-
-        guests INTEGER DEFAULT 1,
-
-        budget TEXT DEFAULT '',
-
-        lodging_preferences TEXT DEFAULT '',
-
-        wellness_interests TEXT DEFAULT '',
-
-        location_status TEXT DEFAULT 'Searching',
-
-        connection_retreat INTEGER DEFAULT 0,
-
-        status TEXT DEFAULT 'planning',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS retreat_partners(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        retreat_id INTEGER
-        REFERENCES retreats(id)
-        ON DELETE CASCADE,
-
-        business_id INTEGER
-        REFERENCES businesses(id)
-        ON DELETE CASCADE,
-
-        availability_status TEXT DEFAULT 'requested',
-
-        UNIQUE(
-            retreat_id,
-            business_id
-        )
-    );
-
-
-    CREATE TABLE IF NOT EXISTS retreat_messages(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        retreat_id INTEGER
-        REFERENCES retreats(id)
-        ON DELETE CASCADE,
-
-        sender_id INTEGER
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-        body TEXT NOT NULL,
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS business_content(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        business_id INTEGER
-        REFERENCES businesses(id)
-        ON DELETE CASCADE,
-
-        content_type TEXT DEFAULT 'post',
-
-        caption TEXT DEFAULT '',
-
-        media_path TEXT DEFAULT '',
-
-        media_type TEXT DEFAULT '',
-
-        active INTEGER DEFAULT 1,
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS business_items(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        business_id INTEGER
-        REFERENCES businesses(id)
-        ON DELETE CASCADE,
-
-        item_type TEXT DEFAULT 'service',
-
-        title TEXT NOT NULL,
-
-        description TEXT DEFAULT '',
-
-        price TEXT DEFAULT '',
-
-        action_url TEXT DEFAULT '',
-
-        active INTEGER DEFAULT 1,
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-
-    CREATE TABLE IF NOT EXISTS collaboration_requests(
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        business_id INTEGER
-        REFERENCES businesses(id)
-        ON DELETE CASCADE,
-
-        sender_id INTEGER
-        REFERENCES users(id)
-        ON DELETE SET NULL,
-
-        request_type TEXT DEFAULT 'Collaboration',
-
-        message TEXT DEFAULT '',
-
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """
-)
-
-
-# --------------------------------------------------------
-# SAFE MIGRATIONS
-# --------------------------------------------------------
-
-user_migrations = {
-
-    "community_enabled":
-        "INTEGER DEFAULT 1",
-
-    "conscious_connections_enabled":
-        "INTEGER DEFAULT 0",
-
-    "connection_type":
-        "TEXT DEFAULT ''",
-
-    "business_interest":
-        "INTEGER DEFAULT 0",
-
-    "last_moon_sign":
-        "TEXT DEFAULT ''",
-}
-
-
-for (
-    column_name,
-    definition
-) in user_migrations.items():
-
-    ensure_column(
-        connection,
-        "users",
-        column_name,
-        definition
-    )
-
-
-business_migrations = {
-
-    "hero_image":
-        "TEXT DEFAULT ''",
-
-    "featured_video":
-        "TEXT DEFAULT ''",
-
-    "previous_collaborations":
-        "TEXT DEFAULT ''",
-
-    "engagement_rate":
-        "TEXT DEFAULT ''",
-}
-
-
-for (
-    column_name,
-    definition
-) in business_migrations.items():
-
-    ensure_column(
-        connection,
-        "businesses",
-        column_name,
-        definition
-    )
-
-
-post_migrations = {
-
-    "media_path":
-        "TEXT DEFAULT ''",
-
-    "media_type":
-        "TEXT DEFAULT ''",
-}
-
-
-for (
-    column_name,
-    definition
-) in post_migrations.items():
-
-    ensure_column(
-        connection,
-        "posts",
-        column_name,
-        definition
-    )
-
-
-ensure_column(
-    connection,
-    "retreats",
-    "connection_retreat",
-    "INTEGER DEFAULT 0"
-)
-
-
-# --------------------------------------------------------
-# REMOVE OLD MOCK MEMBERS / BUSINESSES
-# --------------------------------------------------------
-
-for email in DEMO_EMAILS:
-
-    row = connection.execute(
+    # --------------------------------------------------------
+    # GALAXY EVE
+    # --------------------------------------------------------
+
+    galaxy_user = connection.execute(
         """
-        SELECT id
+        SELECT *
         FROM users
         WHERE lower(email)=?
         """,
         (
-            email,
+            GALAXY_EMAIL,
         )
     ).fetchone()
 
 
-    if row:
+    if not galaxy_user:
 
-        connection.execute(
+        cursor = connection.execute(
             """
-            DELETE FROM users
-            WHERE id=?
+            INSERT INTO users(
+
+                name,
+
+                email,
+
+                password,
+
+                bio,
+
+                profile_headline,
+
+                is_creator,
+
+                creator_access,
+
+                business_access,
+
+                membership_access,
+
+                community_enabled,
+
+                conscious_connections_enabled,
+
+                connection_type,
+
+                business_interest
+            )
+
+            VALUES(
+
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+
+                'Both',
+
+                1
+            )
             """,
             (
-                row[
-                    "id"
-                ],
+
+                "Galaxy Eve",
+
+                GALAXY_EMAIL,
+
+                hp(
+                    os.environ.get(
+                        "GALAXY_EVE_INITIAL_PASSWORD",
+                        "ChangeMeGalaxyEve!"
+                    )
+                ),
+
+                (
+                    "Wellness creator documenting connection, "
+                    "self-discovery, experiences and Conscious Coordination."
+                ),
+
+                (
+                    "Conscious Coordinator • "
+                    "Content Creator"
+                ),
             )
         )
 
 
-placeholders = ",".join(
-    "?"
-    for _
-    in DEMO_SLUGS
-)
+        galaxy_id = (
+            cursor.lastrowid
+        )
 
 
-connection.execute(
-    f"""
-    DELETE FROM businesses
-    WHERE slug IN ({placeholders})
-    """,
-    DEMO_SLUGS
-)
+    else:
+
+        galaxy_id = galaxy_user[
+            "id"
+        ]
 
 
-# --------------------------------------------------------
-# GALAXY EVE
-# --------------------------------------------------------
+        connection.execute(
+            """
+            UPDATE users
 
-galaxy_user = connection.execute(
-    """
-    SELECT *
-    FROM users
-    WHERE lower(email)=?
-    """,
-    (
-        GALAXY_EMAIL,
-    )
-).fetchone()
+            SET
+
+                is_creator=1,
+
+                creator_access=1,
+
+                business_access=1,
+
+                membership_access=1,
+
+                community_enabled=1,
+
+                conscious_connections_enabled=1,
+
+                connection_type=
+                    CASE
+                    WHEN connection_type=''
+                    THEN 'Both'
+                    ELSE connection_type
+                    END,
+
+                business_interest=1
+
+            WHERE id=?
+            """,
+            (
+                galaxy_id,
+            )
+        )
 
 
-if not galaxy_user:
-
-    cursor = connection.execute(
+    galaxy_business = connection.execute(
         """
-        INSERT INTO users(
-
-            name,
-
-            email,
-
-            password,
-
-            bio,
-
-            profile_headline,
-
-            is_creator,
-
-            creator_access,
-
-            business_access,
-
-            membership_access,
-
-            community_enabled,
-
-            conscious_connections_enabled,
-
-            connection_type,
-
-            business_interest
-        )
-
-        VALUES(
-
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-
-            'Both',
-
-            1
-        )
-        """,
-        (
-
-            "Galaxy Eve",
-
-            GALAXY_EMAIL,
-
-            hp(
-                os.environ.get(
-                    "GALAXY_EVE_INITIAL_PASSWORD",
-                    "ChangeMeGalaxyEve!"
-                )
-            ),
-
-            (
-                "Wellness creator documenting connection, "
-                "self-discovery, experiences and Conscious Coordination."
-            ),
-
-            (
-                "Conscious Coordinator • "
-                "Content Creator"
-            ),
-        )
-    )
-
-
-    galaxy_id = (
-        cursor.lastrowid
-    )
-
-
-else:
-
-    galaxy_id = galaxy_user[
-        "id"
-    ]
-
-
-    connection.execute(
-        """
-        UPDATE users
-
-        SET
-
-            is_creator=1,
-
-            creator_access=1,
-
-            business_access=1,
-
-            membership_access=1,
-
-            community_enabled=1,
-
-            conscious_connections_enabled=1,
-
-            connection_type=
-                CASE
-                WHEN connection_type=''
-                THEN 'Both'
-                ELSE connection_type
-                END,
-
-            business_interest=1
-
-        WHERE id=?
-        """,
-        (
-            galaxy_id,
-        )
-    )
-
-
-galaxy_business = connection.execute(
-    """
-    SELECT *
-    FROM businesses
-    WHERE owner_id=?
-    """,
-    (
-        galaxy_id,
-    )
-).fetchone()
-
-
-if not galaxy_business:
-
-    connection.execute(
-        """
-        INSERT INTO businesses(
-
-            owner_id,
-
-            slug,
-
-            business_name,
-
-            creator_title,
-
-            tagline,
-
-            description,
-
-            category,
-
-            contact_email,
-
-            paid_business,
-
-            media_kit_enabled,
-
-            retreat_participation,
-
-            featured_order,
-
-            status
-        )
-
-        VALUES(
-
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-
-            1,
-            1,
-            1,
-            1,
-
-            'active'
-        )
-        """,
-        (
-
-            galaxy_id,
-
-            "galaxy-eve",
-
-            "Galaxy Eve",
-
-            (
-                "Conscious Coordinator • "
-                "Content Creator"
-            ),
-
-            (
-                "Content • Collaborations • "
-                "Creator Experiences"
-            ),
-
-            (
-                "Content, collaborations, creator experiences, "
-                "meetups, retreats and Conscious Coordination."
-            ),
-
-            "Creator",
-
-            GALAXY_EMAIL,
-        )
-    )
-
-
-else:
-
-    connection.execute(
-        """
-        UPDATE businesses
-
-        SET
-
-            paid_business=1,
-
-            media_kit_enabled=1,
-
-            retreat_participation=1,
-
-            featured_order=1,
-
-            status='active'
-
+        SELECT *
+        FROM businesses
         WHERE owner_id=?
         """,
         (
             galaxy_id,
         )
-    )
+    ).fetchone()
 
 
-for email in ADMIN_EMAILS:
+    if not galaxy_business:
 
-    connection.execute(
-        """
-        UPDATE users
+        connection.execute(
+            """
+            INSERT INTO businesses(
 
-        SET is_admin=1
+                owner_id,
 
-        WHERE lower(email)=?
-        """,
-        (
-            email,
+                slug,
+
+                business_name,
+
+                creator_title,
+
+                tagline,
+
+                description,
+
+                category,
+
+                contact_email,
+
+                paid_business,
+
+                media_kit_enabled,
+
+                retreat_participation,
+
+                featured_order,
+
+                status
+            )
+
+            VALUES(
+
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+
+                1,
+                1,
+                1,
+                1,
+
+                'active'
+            )
+            """,
+            (
+
+                galaxy_id,
+
+                "galaxy-eve",
+
+                "Galaxy Eve",
+
+                (
+                    "Conscious Coordinator • "
+                    "Content Creator"
+                ),
+
+                (
+                    "Content • Collaborations • "
+                    "Creator Experiences"
+                ),
+
+                (
+                    "Content, collaborations, creator experiences, "
+                    "meetups, retreats and Conscious Coordination."
+                ),
+
+                "Creator",
+
+                GALAXY_EMAIL,
+            )
         )
-    )
 
 
-connection.commit()
+    else:
 
-connection.close()
-============================================================
-TEMPLATES
-============================================================
+        connection.execute(
+            """
+            UPDATE businesses
+
+            SET
+
+                paid_business=1,
+
+                media_kit_enabled=1,
+
+                retreat_participation=1,
+
+                featured_order=1,
+
+                status='active'
+
+            WHERE owner_id=?
+            """,
+            (
+                galaxy_id,
+            )
+        )
+
+
+    for email in ADMIN_EMAILS:
+
+        connection.execute(
+            """
+            UPDATE users
+
+            SET is_admin=1
+
+            WHERE lower(email)=?
+            """,
+            (
+                email,
+            )
+        )
+
+
+    connection.commit()
+
+    connection.close()
+
+
+# ============================================================
+# TEMPLATES
+# ============================================================
 
 T = {}
 
-============================================================
-GLOBAL APP SHELL
-============================================================
+
+# ============================================================
+# GLOBAL APP SHELL
+# ============================================================
 
 T["base.html"] = r'''
-
 <!doctype html>
 
 <html>
@@ -2276,142 +2094,1272 @@ T["base.html"] = r'''
 <meta charset="utf-8">
 
 <meta
-name="viewport"
-content="width=device-width,initial-scale=1"
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
+<title>
+The Seasons Within
+</title>
+
+<style>
+
+:root {
+
+    --plum:#34204f;
+
+    --purple:#8f63ba;
+
+    --purple2:#a979c8;
+
+    --lav:#f1e7f8;
+
+    --blush:#fff1ef;
+
+    --line:#eadff1;
+
+    --muted:#786a85;
+
+    --shadow:
+        0 14px 36px
+        rgba(72,42,96,.08);
+}
 
 
+* {
+    box-sizing:border-box;
+}
 
 
-<title> The Seasons Within </title>
+body {
 
-<style> :root { --plum:#34204f; --purple:#8f63ba; --purple2:#a979c8; --lav:#f1e7f8; --blush:#fff1ef; --line:#eadff1; --muted:#786a85; --shadow: 0 14px 36px rgba(72,42,96,.08); } * { box-sizing:border-box; } body { margin:0; background: linear-gradient( 180deg, #fcf9fd, #fffaf8 55%, #faf6fc ); color: var(--plum); font-family: Arial, Helvetica, sans-serif; } a { text-decoration:none; color:inherit; } img { max-width:100%; } .top { position:sticky; top:0; z-index:50; background: rgba( 255, 255, 255, .96 ); backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); } .topin { width: min( 1220px, 94vw ); min-height: 82px; margin:auto; display:grid; grid-template-columns: auto 1fr auto; align-items:center; gap:24px; } .brand { display:flex; align-items:center; gap:10px; } .brand img { width:52px; height:52px; object-fit:contain; } .brandcopy { display:flex; flex-direction:column; } .brandcopy strong { font: 700 20px Georgia; } .brandcopy small { font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:var(--muted); margin-top:4px; } .nav { display:flex; justify-content:center; gap:6px; flex-wrap:wrap; } .nav a { padding: 10px 12px; border-radius: 999px; font-size:14px; font-weight:700; color:#62546d; } .nav a:hover, .nav a.active { background: var(--lav); color:#68428a; } .account { display:flex; align-items:center; gap:10px; } .acct { display:flex; align-items:center; gap:7px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background:white; } .acct img, .initial { width:30px; height:30px; border-radius:50%; object-fit:cover; } .initial { display:grid; place-items:center; background: linear-gradient( 135deg, var(--purple), #c58dbe ); color:white; } .wrap { width: min( 1140px, 92vw ); margin: 30px auto 90px; } .hero { background: linear-gradient( 135deg, #f1e3fb, #fff0ec ); border: 1px solid var(--line); border-radius: 26px; padding:32px; box-shadow: var(--shadow); display:flex; align-items:center; justify-content: space-between; gap:24px; } .hero h1 { font: 700 44px/1.03 Georgia; margin: 8px 0 12px; } .hero-logo { width:140px; height:140px; object-fit:contain; } .card { background:white; border: 1px solid var(--line); border-radius: 20px; padding:20px; box-shadow: var(--shadow); margin: 14px 0; } .grid { display:grid; grid-template-columns: repeat( auto-fit, minmax( 230px, 1fr ) ); gap:16px; } .two { display:grid; grid-template-columns: 1fr 1fr; gap:16px; } .sectionhead { display:flex; justify-content: space-between; align-items:end; gap:18px; } .kicker, .sectionhead span { font-size:11px; letter-spacing: 1.3px; font-weight:800; color:#8b6a9a; } h1, h2, h3 { font-family: Georgia, serif; } h2 { font-size:30px; } .btn, .outline, button { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding: 10px 16px; border-radius: 11px; font-weight:700; } .btn, button { border: 1px solid var(--purple); background: linear-gradient( 135deg, var(--purple), var(--purple2) ); color:white; } .outline { border: 1px solid #cdb6dd; background:white; color:#68428a; } .actions { display:flex; gap:10px; flex-wrap:wrap; } input, textarea, select { width:100%; padding:11px; border: 1px solid var(--line); border-radius:10px; background:#fff; margin: 5px 0 12px; } textarea { min-height:105px; } .chips { display:flex; gap:7px; flex-wrap:wrap; } .chips span, .chips a { background: var(--lav); padding: 7px 9px; border-radius: 999px; font-size:12px; } .muted { color: var(--muted); } .flash { width: min( 1140px, 92vw ); margin: 12px auto; background: #f0e4f8; padding:11px; border-radius:10px; } .portrait { width:110px; height:110px; object-fit:cover; border-radius:50%; } .empty { text-align:center; border: 1px dashed #d9c8e5; border-radius:18px; padding:28px; color: var(--muted); } .moon-card { display:grid; grid-template-columns: 130px 1fr; gap:20px; align-items:center; } .moon-picture { width:120px; height:120px; border-radius:50%; display:grid; place-items:center; background: radial-gradient( circle at 35% 30%, #fff, #ece6f0 58%, #c8bdd0 100% ); font-size:78px; box-shadow: inset -12px -14px 24px rgba( 76, 57, 87, .18 ), 0 12px 28px rgba( 89, 60, 112, .12 ); } .business-store-card { padding:0; overflow:hidden; } .store-media { height:210px; background: linear-gradient( 135deg, #e9d8f5, #fff0ed ); display:grid; place-items:center; overflow:hidden; } .store-media img, .store-media video { width:100%; height:100%; object-fit:cover; } .store-logo-fallback { width:110px !important; height:110px !important; object-fit:contain !important; } .store-body { padding:18px; } .store-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; } .badge { display:inline-block; padding: 6px 8px; border-radius: 999px; background: var(--lav); font-size:11px; font-weight:800; color:#68428a; } .posthead { display:flex; justify-content: space-between; gap:10px; align-items:center; } .postperson { display:flex; align-items:center; gap:9px; } .postperson img, .avatar { width:42px; height:42px; border-radius:50%; object-fit:cover; } .post-image { width:100%; max-height:480px; object-fit:cover; border-radius:15px; margin-top:12px; } .content-media { width:100%; max-height:420px; object-fit:cover; border-radius:14px; } .content-video { width:100%; max-height:420px; border-radius:14px; background:#000; } .profile-tools { display:grid; grid-template-columns: repeat( auto-fit, minmax( 180px, 1fr ) ); gap:12px; } .tool { border: 1px solid var(--line); border-radius:16px; padding:16px; background:white; } .media-kit-grid { display:grid; grid-template-columns: repeat( auto-fit, minmax( 150px, 1fr ) ); gap:10px; } .stat { background: var(--lav); border-radius:14px; padding:14px; } .mobilebar { display:none; } @media( max-width:850px ) { .topin { grid-template-columns: auto 1fr; } .account { display:none; } .nav { justify-content: flex-end; } .two { grid-template-columns: 1fr; } } @media( max-width:700px ) { body { padding-bottom:78px; } .topin { display:flex; justify-content:center; min-height:70px; } .brand img { width:45px; height:45px; } .brandcopy strong { font-size:18px; } .nav, .account { display:none; } .wrap { width: min( 94vw, 700px ); margin-top:20px; } .hero { padding:22px; align-items: flex-start; } .hero h1 { font-size:35px; } .hero-logo { width:82px; height:82px; } .moon-card { grid-template-columns: 90px 1fr; } .moon-picture { width:84px; height:84px; font-size:52px; } .mobilebar { position:fixed; left:50%; bottom:10px; transform: translateX(-50%); z-index:60; width: min( 95vw, 620px ); display:flex; justify-content: space-around; gap:4px; padding:7px; background: rgba( 255, 255, 255, .96 ); border: 1px solid var(--line); border-radius:20px; box-shadow: 0 14px 36px rgba( 72, 42, 96, .18 ); } .mobilebar a { display:flex; flex-direction: column; align-items:center; gap:3px; padding:7px; border-radius:12px; font-size:9px; font-weight:800; color: var(--muted); } .mobilebar a.active { background: var(--lav); color:#68428a; } .mobilebar b { font-size:17px; } } </style>
+    margin:0;
+
+    background:
+        linear-gradient(
+            180deg,
+            #fcf9fd,
+            #fffaf8 55%,
+            #faf6fc
+        );
+
+    color:
+        var(--plum);
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+}
+
+
+a {
+
+    text-decoration:none;
+
+    color:inherit;
+}
+
+
+img {
+
+    max-width:100%;
+}
+
+
+.top {
+
+    position:sticky;
+
+    top:0;
+
+    z-index:50;
+
+    background:
+        rgba(
+            255,
+            255,
+            255,
+            .96
+        );
+
+    backdrop-filter:
+        blur(16px);
+
+    border-bottom:
+        1px solid
+        var(--line);
+}
+
+
+.topin {
+
+    width:
+        min(
+            1220px,
+            94vw
+        );
+
+    min-height:
+        82px;
+
+    margin:auto;
+
+    display:grid;
+
+    grid-template-columns:
+        auto 1fr auto;
+
+    align-items:center;
+
+    gap:24px;
+}
+
+
+.brand {
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+}
+
+
+.brand img {
+
+    width:52px;
+
+    height:52px;
+
+    object-fit:contain;
+}
+
+
+.brandcopy {
+
+    display:flex;
+
+    flex-direction:column;
+}
+
+
+.brandcopy strong {
+
+    font:
+        700 20px
+        Georgia;
+}
+
+
+.brandcopy small {
+
+    font-size:10px;
+
+    text-transform:uppercase;
+
+    letter-spacing:1.2px;
+
+    color:var(--muted);
+
+    margin-top:4px;
+}
+
+
+.nav {
+
+    display:flex;
+
+    justify-content:center;
+
+    gap:6px;
+
+    flex-wrap:wrap;
+}
+
+
+.nav a {
+
+    padding:
+        10px 12px;
+
+    border-radius:
+        999px;
+
+    font-size:14px;
+
+    font-weight:700;
+
+    color:#62546d;
+}
+
+
+.nav a:hover,
+
+.nav a.active {
+
+    background:
+        var(--lav);
+
+    color:#68428a;
+}
+
+
+.account {
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+}
+
+
+.acct {
+
+    display:flex;
+
+    align-items:center;
+
+    gap:7px;
+
+    padding:
+        5px 9px;
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius:
+        999px;
+
+    background:white;
+}
+
+
+.acct img,
+
+.initial {
+
+    width:30px;
+
+    height:30px;
+
+    border-radius:50%;
+
+    object-fit:cover;
+}
+
+
+.initial {
+
+    display:grid;
+
+    place-items:center;
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--purple),
+            #c58dbe
+        );
+
+    color:white;
+}
+
+
+.wrap {
+
+    width:
+        min(
+            1140px,
+            92vw
+        );
+
+    margin:
+        30px auto
+        90px;
+}
+
+
+.hero {
+
+    background:
+        linear-gradient(
+            135deg,
+            #f1e3fb,
+            #fff0ec
+        );
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius:
+        26px;
+
+    padding:32px;
+
+    box-shadow:
+        var(--shadow);
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:
+        space-between;
+
+    gap:24px;
+}
+
+
+.hero h1 {
+
+    font:
+        700 44px/1.03
+        Georgia;
+
+    margin:
+        8px 0 12px;
+}
+
+
+.hero-logo {
+
+    width:140px;
+
+    height:140px;
+
+    object-fit:contain;
+}
+
+
+.card {
+
+    background:white;
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius:
+        20px;
+
+    padding:20px;
+
+    box-shadow:
+        var(--shadow);
+
+    margin:
+        14px 0;
+}
+
+
+.grid {
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(
+                230px,
+                1fr
+            )
+        );
+
+    gap:16px;
+}
+
+
+.two {
+
+    display:grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap:16px;
+}
+
+
+.sectionhead {
+
+    display:flex;
+
+    justify-content:
+        space-between;
+
+    align-items:end;
+
+    gap:18px;
+}
+
+
+.kicker,
+
+.sectionhead span {
+
+    font-size:11px;
+
+    letter-spacing:
+        1.3px;
+
+    font-weight:800;
+
+    color:#8b6a9a;
+}
+
+
+h1,
+
+h2,
+
+h3 {
+
+    font-family:
+        Georgia,
+        serif;
+}
+
+
+h2 {
+
+    font-size:30px;
+}
+
+
+.btn,
+
+.outline,
+
+button {
+
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    min-height:42px;
+
+    padding:
+        10px 16px;
+
+    border-radius:
+        11px;
+
+    font-weight:700;
+}
+
+
+.btn,
+
+button {
+
+    border:
+        1px solid
+        var(--purple);
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--purple),
+            var(--purple2)
+        );
+
+    color:white;
+}
+
+
+.outline {
+
+    border:
+        1px solid
+        #cdb6dd;
+
+    background:white;
+
+    color:#68428a;
+}
+
+
+.actions {
+
+    display:flex;
+
+    gap:10px;
+
+    flex-wrap:wrap;
+}
+
+
+input,
+
+textarea,
+
+select {
+
+    width:100%;
+
+    padding:11px;
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius:10px;
+
+    background:#fff;
+
+    margin:
+        5px 0 12px;
+}
+
+
+textarea {
+
+    min-height:105px;
+}
+
+
+.chips {
+
+    display:flex;
+
+    gap:7px;
+
+    flex-wrap:wrap;
+}
+
+
+.chips span,
+
+.chips a {
+
+    background:
+        var(--lav);
+
+    padding:
+        7px 9px;
+
+    border-radius:
+        999px;
+
+    font-size:12px;
+}
+
+
+.muted {
+
+    color:
+        var(--muted);
+}
+
+
+.flash {
+
+    width:
+        min(
+            1140px,
+            92vw
+        );
+
+    margin:
+        12px auto;
+
+    background:
+        #f0e4f8;
+
+    padding:11px;
+
+    border-radius:10px;
+}
+
+
+.portrait {
+
+    width:110px;
+
+    height:110px;
+
+    object-fit:cover;
+
+    border-radius:50%;
+}
+
+
+.empty {
+
+    text-align:center;
+
+    border:
+        1px dashed
+        #d9c8e5;
+
+    border-radius:18px;
+
+    padding:28px;
+
+    color:
+        var(--muted);
+}
+
+
+.moon-card {
+
+    display:grid;
+
+    grid-template-columns:
+        130px 1fr;
+
+    gap:20px;
+
+    align-items:center;
+}
+
+
+.moon-picture {
+
+    width:120px;
+
+    height:120px;
+
+    border-radius:50%;
+
+    display:grid;
+
+    place-items:center;
+
+    background:
+        radial-gradient(
+            circle at 35% 30%,
+            #fff,
+            #ece6f0 58%,
+            #c8bdd0 100%
+        );
+
+    font-size:78px;
+
+    box-shadow:
+
+        inset
+        -12px
+        -14px
+        24px
+        rgba(
+            76,
+            57,
+            87,
+            .18
+        ),
+
+        0 12px
+        28px
+        rgba(
+            89,
+            60,
+            112,
+            .12
+        );
+}
+
+
+.business-store-card {
+
+    padding:0;
+
+    overflow:hidden;
+}
+
+
+.store-media {
+
+    height:210px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #e9d8f5,
+            #fff0ed
+        );
+
+    display:grid;
+
+    place-items:center;
+
+    overflow:hidden;
+}
+
+
+.store-media img,
+
+.store-media video {
+
+    width:100%;
+
+    height:100%;
+
+    object-fit:cover;
+}
+
+
+.store-logo-fallback {
+
+    width:110px !important;
+
+    height:110px !important;
+
+    object-fit:contain !important;
+}
+
+
+.store-body {
+
+    padding:18px;
+}
+
+
+.store-links {
+
+    display:flex;
+
+    flex-wrap:wrap;
+
+    gap:8px;
+
+    margin-top:14px;
+}
+
+
+.badge {
+
+    display:inline-block;
+
+    padding:
+        6px 8px;
+
+    border-radius:
+        999px;
+
+    background:
+        var(--lav);
+
+    font-size:11px;
+
+    font-weight:800;
+
+    color:#68428a;
+}
+
+
+.posthead {
+
+    display:flex;
+
+    justify-content:
+        space-between;
+
+    gap:10px;
+
+    align-items:center;
+}
+
+
+.postperson {
+
+    display:flex;
+
+    align-items:center;
+
+    gap:9px;
+}
+
+
+.postperson img,
+
+.avatar {
+
+    width:42px;
+
+    height:42px;
+
+    border-radius:50%;
+
+    object-fit:cover;
+}
+
+
+.post-image {
+
+    width:100%;
+
+    max-height:480px;
+
+    object-fit:cover;
+
+    border-radius:15px;
+
+    margin-top:12px;
+}
+
+
+.content-media {
+
+    width:100%;
+
+    max-height:420px;
+
+    object-fit:cover;
+
+    border-radius:14px;
+}
+
+
+.content-video {
+
+    width:100%;
+
+    max-height:420px;
+
+    border-radius:14px;
+
+    background:#000;
+}
+
+
+.profile-tools {
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(
+                180px,
+                1fr
+            )
+        );
+
+    gap:12px;
+}
+
+
+.tool {
+
+    border:
+        1px solid
+        var(--line);
+
+    border-radius:16px;
+
+    padding:16px;
+
+    background:white;
+}
+
+
+.media-kit-grid {
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(
+                150px,
+                1fr
+            )
+        );
+
+    gap:10px;
+}
+
+
+.stat {
+
+    background:
+        var(--lav);
+
+    border-radius:14px;
+
+    padding:14px;
+}
+
+
+.mobilebar {
+
+    display:none;
+}
+
+
+@media(
+    max-width:850px
+) {
+
+    .topin {
+
+        grid-template-columns:
+            auto 1fr;
+    }
+
+
+    .account {
+
+        display:none;
+    }
+
+
+    .nav {
+
+        justify-content:
+            flex-end;
+    }
+
+
+    .two {
+
+        grid-template-columns:
+            1fr;
+    }
+}
+
+
+@media(
+    max-width:700px
+) {
+
+    body {
+
+        padding-bottom:78px;
+    }
+
+
+    .topin {
+
+        display:flex;
+
+        justify-content:center;
+
+        min-height:70px;
+    }
+
+
+    .brand img {
+
+        width:45px;
+
+        height:45px;
+    }
+
+
+    .brandcopy strong {
+
+        font-size:18px;
+    }
+
+
+    .nav,
+
+    .account {
+
+        display:none;
+    }
+
+
+    .wrap {
+
+        width:
+            min(
+                94vw,
+                700px
+            );
+
+        margin-top:20px;
+    }
+
+
+    .hero {
+
+        padding:22px;
+
+        align-items:
+            flex-start;
+    }
+
+
+    .hero h1 {
+
+        font-size:35px;
+    }
+
+
+    .hero-logo {
+
+        width:82px;
+
+        height:82px;
+    }
+
+
+    .moon-card {
+
+        grid-template-columns:
+            90px 1fr;
+    }
+
+
+    .moon-picture {
+
+        width:84px;
+
+        height:84px;
+
+        font-size:52px;
+    }
+
+
+    .mobilebar {
+
+        position:fixed;
+
+        left:50%;
+
+        bottom:10px;
+
+        transform:
+            translateX(-50%);
+
+        z-index:60;
+
+        width:
+            min(
+                95vw,
+                620px
+            );
+
+        display:flex;
+
+        justify-content:
+            space-around;
+
+        gap:4px;
+
+        padding:7px;
+
+        background:
+            rgba(
+                255,
+                255,
+                255,
+                .96
+            );
+
+        border:
+            1px solid
+            var(--line);
+
+        border-radius:20px;
+
+        box-shadow:
+            0 14px 36px
+            rgba(
+                72,
+                42,
+                96,
+                .18
+            );
+    }
+
+
+    .mobilebar a {
+
+        display:flex;
+
+        flex-direction:
+            column;
+
+        align-items:center;
+
+        gap:3px;
+
+        padding:7px;
+
+        border-radius:12px;
+
+        font-size:9px;
+
+        font-weight:800;
+
+        color:
+            var(--muted);
+    }
+
+
+    .mobilebar a.active {
+
+        background:
+            var(--lav);
+
+        color:#68428a;
+    }
+
+
+    .mobilebar b {
+
+        font-size:17px;
+    }
+}
+
+</style>
 
 </head>
 
+
 <body>
+
 
 <header class="top">
 
+
 <div class="topin">
 
+
 <a
-class="brand"
-href="{{url_for('public_home')}}"
-
-
+    class="brand"
+    href="{{url_for('public_home')}}"
+>
 
 
 <img
 
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
 
-alt="The Seasons Within"
-
-
+    alt="The Seasons Within"
+>
 
 
 <span class="brandcopy">
 
-<strong> The Seasons Within </strong>
 
-<small> Conscious Coordination </small>
+<strong>
+The Seasons Within
+</strong>
+
+
+<small>
+Conscious Coordination
+</small>
+
 
 </span>
 
+
 </a>
+
 
 <nav class="nav">
 
+
 <a
-href="{{url_for('public_home')}}"
-class="{% if request.endpoint in ['public_home','home'] %}active{% endif %}"
-
-
-
+    href="{{url_for('public_home')}}"
+    class="{% if request.endpoint in ['public_home','home'] %}active{% endif %}"
+>
 
 Home
 
 </a>
 
+
 {% if me %}
 
+
 <a
-href="{{url_for('profile')}}"
-class="{% if request.endpoint in ['profile','profile_edit','journal','community','messages','notifications','connections','connection_profile'] %}active{% endif %}"
-
-
-
+    href="{{url_for('profile')}}"
+    class="{% if request.endpoint in ['profile','profile_edit','journal','community','messages','notifications','connections','connection_profile'] %}active{% endif %}"
+>
 
 My Profile
 
 </a>
 
+
 {% endif %}
 
+
 <a
-href="{{url_for('business')}}"
-class="{% if request.endpoint in ['business','business_setup','business_app','business_manage'] %}active{% endif %}"
-
-
-
+    href="{{url_for('business')}}"
+    class="{% if request.endpoint in ['business','business_setup','business_app','business_manage'] %}active{% endif %}"
+>
 
 Business Network
 
 </a>
 
+
 <a
-href="{{url_for('retreats')}}"
-class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"
-
-
-
+    href="{{url_for('retreats')}}"
+    class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"
+>
 
 Retreats
 
 </a>
 
+
 <a
-href="{{url_for('membership')}}"
-class="{% if request.endpoint=='membership' %}active{% endif %}"
-
-
-
+    href="{{url_for('membership')}}"
+    class="{% if request.endpoint=='membership' %}active{% endif %}"
+>
 
 Membership
 
 </a>
 
+
 </nav>
+
 
 <div class="account">
 
+
 {% if me %}
 
+
 <a
-class="acct"
-href="{{url_for('profile')}}"
-
-
+    class="acct"
+    href="{{url_for('profile')}}"
+>
 
 
 {% if me.photo %}
 
+
 <img
-src="{{media_url(me.photo)}}"
-alt=""
-
-
+    src="{{media_url(me.photo)}}"
+    alt=""
+>
 
 
 {% else %}
 
-<span class="initial"> {{me.name[:1]}} </span>
+
+<span class="initial">
+{{me.name[:1]}}
+</span>
+
 
 {% endif %}
 
-<span> {{me.name}} </span>
+
+<span>
+{{me.name}}
+</span>
+
 
 </a>
+
 
 <a href="{{url_for('logout')}}">
 
@@ -2419,7 +3367,9 @@ Log Out
 
 </a>
 
+
 {% else %}
+
 
 <a href="{{url_for('login')}}">
 
@@ -2427,28 +3377,34 @@ Log In
 
 </a>
 
+
 <a
-class="btn"
-href="{{url_for('join')}}"
-
-
-
+    class="btn"
+    href="{{url_for('join')}}"
+>
 
 Join Free
 
 </a>
 
+
 {% endif %}
 
-</div>
 
 </div>
+
+
+</div>
+
 
 </header>
 
+
 {% with messages=get_flashed_messages() %}
 
+
 {% if messages %}
+
 
 <div class="flash">
 
@@ -2456,9 +3412,12 @@ Join Free
 
 </div>
 
+
 {% endif %}
 
+
 {% endwith %}
+
 
 <main class="wrap">
 
@@ -2468,13 +3427,13 @@ Join Free
 
 </main>
 
+
 <nav class="mobilebar">
 
+
 <a
-href="{{url_for('public_home')}}"
-
-
-
+    href="{{url_for('public_home')}}"
+>
 
 <b>⌂</b>
 
@@ -2482,13 +3441,13 @@ Home
 
 </a>
 
+
 {% if me %}
 
+
 <a
-href="{{url_for('profile')}}"
-
-
-
+    href="{{url_for('profile')}}"
+>
 
 <b>◉</b>
 
@@ -2496,13 +3455,13 @@ Profile
 
 </a>
 
+
 {% endif %}
 
+
 <a
-href="{{url_for('business')}}"
-
-
-
+    href="{{url_for('business')}}"
+>
 
 <b>◇</b>
 
@@ -2510,11 +3469,10 @@ Business
 
 </a>
 
+
 <a
-href="{{url_for('retreats')}}"
-
-
-
+    href="{{url_for('retreats')}}"
+>
 
 <b>✦</b>
 
@@ -2522,11 +3480,10 @@ Retreats
 
 </a>
 
+
 <a
-href="{{url_for('membership')}}"
-
-
-
+    href="{{url_for('membership')}}"
+>
 
 <b>♡</b>
 
@@ -2534,69 +3491,77 @@ Membership
 
 </a>
 
+
 </nav>
+
 
 </body>
 
-</html> '''
+</html>
+'''
 
-============================================================
-SHARED BUSINESS CARD
-============================================================
+
+# ============================================================
+# SHARED BUSINESS CARD
+# ============================================================
 
 T["business_card.html"] = r'''
 
 <article class="card business-store-card">
 
+
 <div class="store-media">
+
 
 {% if b.paid_business and b.featured_video %}
 
+
 <video
-src="{{media_url(b.featured_video)}}"
-muted
-playsinline
-controls
-
-
-
-
+    src="{{media_url(b.featured_video)}}"
+    muted
+    playsinline
+    controls
+>
 </video>
+
 
 {% elif b.paid_business and b.hero_image %}
 
+
 <img
-src="{{media_url(b.hero_image)}}"
-alt="{{b.business_name}}"
-
-
+    src="{{media_url(b.hero_image)}}"
+    alt="{{b.business_name}}"
+>
 
 
 {% elif b.logo %}
 
+
 <img
-class="store-logo-fallback"
-src="{{media_url(b.logo)}}"
-alt="{{b.business_name}}"
-
-
+    class="store-logo-fallback"
+    src="{{media_url(b.logo)}}"
+    alt="{{b.business_name}}"
+>
 
 
 {% else %}
 
+
 <img
-class="store-logo-fallback"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="store-logo-fallback"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 {% endif %}
 
+
 </div>
 
+
 <div class="store-body">
+
 
 <span class="badge">
 
@@ -2604,7 +3569,11 @@ alt=""
 
 </span>
 
-<h3> {{b.business_name}} </h3>
+
+<h3>
+{{b.business_name}}
+</h3>
+
 
 <p>
 
@@ -2613,6 +3582,7 @@ alt=""
 {{b.creator_title or b.category}}
 
 </b>
+
 
 {% if b.city %}
 
@@ -2623,51 +3593,58 @@ alt=""
 
 </p>
 
+
 <small>
 
 {{b.tagline or b.description}}
 
 </small>
 
+
 <div class="store-links">
 
+
 <a
-class="btn"
-href="{{url_for('business_app',slug=b.slug)}}"
-
-
-
+    class="btn"
+    href="{{url_for('business_app',slug=b.slug)}}"
+>
 
 {{'Open App' if b.paid_business else 'View Business'}}
 
 </a>
 
+
 {% if b.website %}
 
+
 <a
-class="outline"
-href="{{b.website}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.website}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Business Link
 
 </a>
 
+
 {% endif %}
 
-</div>
 
 </div>
 
-</article> '''
 
-============================================================
-HOME = MARKETPLACE
-============================================================
+</div>
+
+
+</article>
+'''
+
+
+# ============================================================
+# HOME = MARKETPLACE
+# ============================================================
 
 T["public.html"] = r'''
 
@@ -2675,11 +3652,17 @@ T["public.html"] = r'''
 
 {% block content %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> THE SEASONS WITHIN </span>
+
+<span class="kicker">
+THE SEASONS WITHIN
+</span>
+
 
 <h1>
 
@@ -2687,6 +3670,7 @@ Connect With Intention.
 Discover Your Seasons Within.
 
 </h1>
+
 
 <p>
 
@@ -2697,62 +3681,67 @@ and conscious community.
 
 </p>
 
+
 <div class="actions">
 
+
 <a
-class="btn"
-href="{{url_for('business')}}"
-
-
-
+    class="btn"
+    href="{{url_for('business')}}"
+>
 
 Explore Businesses & Apps
 
 </a>
 
+
 {% if me %}
 
+
 <a
-class="outline"
-href="{{url_for('community')}}"
-
-
-
+    class="outline"
+    href="{{url_for('community')}}"
+>
 
 Enter Member Community
 
 </a>
 
+
 {% else %}
 
+
 <a
-class="outline"
-href="{{url_for('join')}}"
-
-
-
+    class="outline"
+    href="{{url_for('join')}}"
+>
 
 Join Free
 
 </a>
 
+
 {% endif %}
 
-</div>
 
 </div>
+
+
+</div>
+
 
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 </section>
 
+
 <section class="card moon-card">
+
 
 <div class="moon-picture">
 
@@ -2760,9 +3749,14 @@ alt=""
 
 </div>
 
+
 <div>
 
-<span class="kicker"> MOON TODAY </span>
+
+<span class="kicker">
+MOON TODAY
+</span>
+
 
 <h2>
 
@@ -2772,7 +3766,9 @@ Moon in
 
 </h2>
 
+
 <p>
+
 
 <b>
 
@@ -2780,34 +3776,51 @@ Moon in
 
 </b>
 
+
 {% if sky.moon_degree is not none %}
+
 
 •
 {{sky.moon_degree}}°
 
+
 {% endif %}
+
 
 </p>
 
+
 <div class="chips">
+
 
 {% for p in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}
 
+
 {% if sky.positions.get(p) %}
+
 
 <span>
 
-<b> {{p}} </b>
+
+<b>
+{{p}}
+</b>
+
 
 {{sky.positions[p]['sign']}}
 
+
 </span>
+
 
 {% endif %}
 
+
 {% endfor %}
 
+
 </div>
+
 
 <small class="muted">
 
@@ -2816,17 +3829,26 @@ not prediction.
 
 </small>
 
+
 </div>
+
 
 </section>
 
+
 <section>
+
 
 <div class="sectionhead">
 
+
 <div>
 
-<span> BUSINESS NETWORK </span>
+
+<span>
+BUSINESS NETWORK
+</span>
+
 
 <h2>
 
@@ -2835,7 +3857,9 @@ The Seasons Within
 
 </h2>
 
+
 </div>
+
 
 <a href="{{url_for('business')}}">
 
@@ -2843,15 +3867,21 @@ View All →
 
 </a>
 
+
 </div>
+
 
 <div class="grid">
 
+
 {% for b in businesses %}
+
 
 {% include 'business_card.html' %}
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -2860,17 +3890,28 @@ as they create profiles.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
+
 </section>
+
 
 <section class="card">
 
-<span class="kicker"> RETREAT CONSTELLATION </span>
 
-<h2> Build a Wellness Retreat </h2>
+<span class="kicker">
+RETREAT CONSTELLATION
+</span>
+
+
+<h2>
+Build a Wellness Retreat
+</h2>
+
 
 <p>
 
@@ -2887,40 +3928,43 @@ that fits the experience.
 
 </p>
 
+
 <div class="actions">
 
+
 <a
-class="btn"
-href="{{url_for('retreat_build')}}"
-
-
-
+    class="btn"
+    href="{{url_for('retreat_build')}}"
+>
 
 Build My Retreat Constellation
 
 </a>
 
+
 <a
-class="outline"
-href="{{url_for('retreats')}}"
-
-
-
+    class="outline"
+    href="{{url_for('retreats')}}"
+>
 
 Explore Retreats
 
 </a>
 
+
 </div>
 
+
 </section>
+
 
 {% endblock %}
 '''
 
-============================================================
-JOIN / ONBOARDING
-============================================================
+
+# ============================================================
+# JOIN / ONBOARDING
+# ============================================================
 
 T["join.html"] = r'''
 
@@ -2928,51 +3972,56 @@ T["join.html"] = r'''
 
 {% block content %}
 
-<h1> Join The Seasons Within </h1>
 
-<form method="post" class="card" >
+<h1>
+Join The Seasons Within
+</h1>
+
+
+<form
+    method="post"
+    class="card"
+>
+
 
 <label>
 
 Name
 
 <input
-name="name"
-required
-
-
-
+    name="name"
+    required
+>
 
 </label>
+
 
 <label>
 
 Email
 
 <input
-name="email"
-type="email"
-required
-
-
-
+    name="email"
+    type="email"
+    required
+>
 
 </label>
+
 
 <label>
 
 Password
 
 <input
-name="password"
-type="password"
-minlength="6"
-required
-
-
-
+    name="password"
+    type="password"
+    minlength="6"
+    required
+>
 
 </label>
+
 
 <h2>
 
@@ -2981,18 +4030,19 @@ within The Seasons Within?
 
 </h2>
 
+
 <label>
 
 <input
-type="checkbox"
-name="community_enabled"
-value="1"
-checked
+    type="checkbox"
+    name="community_enabled"
+    value="1"
+    checked
+>
 
-
-
-
-<b> Community </b>
+<b>
+Community
+</b>
 
 —
 wellness,
@@ -3002,17 +4052,17 @@ and shared experiences
 
 </label>
 
+
 <br><br>
+
 
 <label>
 
 <input
-type="checkbox"
-name="conscious_connections_enabled"
-value="1"
-
-
-
+    type="checkbox"
+    name="conscious_connections_enabled"
+    value="1"
+>
 
 <b>
 
@@ -3023,19 +4073,21 @@ Love, Dating & Friendship
 
 </label>
 
+
 <br><br>
+
 
 <label>
 
 <input
-type="checkbox"
-name="business_interest"
-value="1"
+    type="checkbox"
+    name="business_interest"
+    value="1"
+>
 
-
-
-
-<b> Business </b>
+<b>
+Business
+</b>
 
 —
 create a business profile
@@ -3043,7 +4095,9 @@ or connect professionally
 
 </label>
 
+
 <br><br>
+
 
 <button class="btn">
 
@@ -3051,10 +4105,13 @@ Create Free Account
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
+
 
 T["onboarding.html"] = r'''
 
@@ -3062,13 +4119,25 @@ T["onboarding.html"] = r'''
 
 {% block content %}
 
-<h1> Set Up Your Profile </h1>
 
-<form method="post" class="card" >
+<h1>
+Set Up Your Profile
+</h1>
+
+
+<form
+    method="post"
+    class="card"
+>
+
 
 {% if u.conscious_connections_enabled %}
 
-<h2> Conscious Connections </h2>
+
+<h2>
+Conscious Connections
+</h2>
+
 
 <p>
 
@@ -3076,7 +4145,9 @@ What connections are you open to?
 
 </p>
 
+
 <select name="connection_type">
+
 
 <option value="Love & Dating">
 
@@ -3084,11 +4155,13 @@ Love & Dating
 
 </option>
 
+
 <option value="Friendship">
 
 Friendship
 
 </option>
+
 
 <option value="Both">
 
@@ -3096,7 +4169,9 @@ Both
 
 </option>
 
+
 </select>
+
 
 <p>
 
@@ -3108,11 +4183,17 @@ Love / Dating / Friendship community profile.
 
 </p>
 
+
 {% endif %}
+
 
 {% if u.business_interest %}
 
-<h2> Business </h2>
+
+<h2>
+Business
+</h2>
+
 
 <p>
 
@@ -3121,7 +4202,9 @@ after your member profile is saved.
 
 </p>
 
+
 {% endif %}
+
 
 <button class="btn">
 
@@ -3129,14 +4212,17 @@ Continue to My Profile
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
 
-============================================================
-GENERAL COMMUNITY
-============================================================
+
+# ============================================================
+# GENERAL COMMUNITY
+# ============================================================
 
 T["community.html"] = r'''
 
@@ -3144,13 +4230,22 @@ T["community.html"] = r'''
 
 {% block content %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> MEMBER COMMUNITY </span>
 
-<h1> Community </h1>
+<span class="kicker">
+MEMBER COMMUNITY
+</span>
+
+
+<h1>
+Community
+</h1>
+
 
 <p>
 
@@ -3161,31 +4256,44 @@ with other members.
 
 </p>
 
+
 </div>
 
+
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 </section>
 
+
 <section class="two">
+
 
 <article class="card">
 
-<span class="kicker"> THE SEASON WE'RE IN </span>
 
-<h2> {{reflection.sky.season}} </h2>
+<span class="kicker">
+THE SEASON WE'RE IN
+</span>
+
+
+<h2>
+{{reflection.sky.season}}
+</h2>
+
 
 <p>
 
-<b> Journal • Reflect </b>
+<b>
+Journal • Reflect
+</b>
 
 </p>
+
 
 <p>
 
@@ -3197,22 +4305,27 @@ and what deserves conscious attention.
 
 </p>
 
+
 <a
-class="outline"
-href="{{url_for('journal')}}"
-
-
-
+    class="outline"
+    href="{{url_for('journal')}}"
+>
 
 Open My Private Journal
 
 </a>
 
+
 </article>
+
 
 <article class="card">
 
-<span class="kicker"> MOON TODAY </span>
+
+<span class="kicker">
+MOON TODAY
+</span>
+
 
 <h2>
 
@@ -3224,9 +4337,11 @@ Moon in
 
 </h2>
 
+
 <p>
 
 {{reflection.sky.moon_phase or 'Current lunar phase'}}
+
 
 {% if reflection.sky.moon_degree is not none %}
 
@@ -3237,15 +4352,31 @@ Moon in
 
 </p>
 
+
 </article>
+
 
 </section>
 
-<h2> Share With Community </h2>
 
-<form method="post" enctype="multipart/form-data" class="card" >
+<h2>
+Share With Community
+</h2>
 
-<textarea name="body" placeholder="Share a thought, reflection, question or part of your journey..." > </textarea>
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    class="card"
+>
+
+
+<textarea
+    name="body"
+    placeholder="Share a thought, reflection, question or part of your journey..."
+>
+</textarea>
+
 
 <label>
 
@@ -3253,14 +4384,13 @@ Add Photo
 (optional)
 
 <input
-type="file"
-name="photo"
-accept="image/*"
-
-
-
+    type="file"
+    name="photo"
+    accept="image/*"
+>
 
 </label>
+
 
 <button class="btn">
 
@@ -3268,26 +4398,33 @@ Post to Community
 
 </button>
 
+
 </form>
+
 
 {% for p in posts %}
 
+
 <article class="card">
+
 
 <div class="posthead">
 
+
 <div class="postperson">
+
 
 {% if p.photo %}
 
+
 <img
-src="{{media_url(p.photo)}}"
-alt=""
-
-
+    src="{{media_url(p.photo)}}"
+    alt=""
+>
 
 
 {% else %}
+
 
 <span class="initial avatar">
 
@@ -3295,11 +4432,17 @@ alt=""
 
 </span>
 
+
 {% endif %}
+
 
 <div>
 
-<b> {{p.name}} </b>
+
+<b>
+{{p.name}}
+</b>
+
 
 <small class="muted">
 
@@ -3307,26 +4450,31 @@ alt=""
 
 </small>
 
-</div>
 
 </div>
+
+
+</div>
+
 
 {% if p.user_id != me.id %}
 
+
 <a
-class="outline"
-href="{{url_for('compose_message',recipient_id=p.user_id,kind='people')}}"
-
-
-
+    class="outline"
+    href="{{url_for('compose_message',recipient_id=p.user_id,kind='people')}}"
+>
 
 Message Member
 
 </a>
 
+
 {% endif %}
 
+
 </div>
+
 
 <p>
 
@@ -3334,21 +4482,25 @@ Message Member
 
 </p>
 
+
 {% if p.media_path %}
 
+
 <img
-class="post-image"
-src="{{media_url(p.media_path)}}"
-alt=""
-
-
+    class="post-image"
+    src="{{media_url(p.media_path)}}"
+    alt=""
+>
 
 
 {% endif %}
 
+
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -3357,19 +4509,31 @@ as the community grows.
 
 </div>
 
+
 {% endfor %}
+
 
 <section>
 
+
 <div class="sectionhead">
+
 
 <div>
 
-<span> WELLNESS WITHIN THE COMMUNITY </span>
 
-<h2> Businesses & Apps </h2>
+<span>
+WELLNESS WITHIN THE COMMUNITY
+</span>
+
+
+<h2>
+Businesses & Apps
+</h2>
+
 
 </div>
+
 
 <a href="{{url_for('business')}}">
 
@@ -3377,26 +4541,35 @@ View All →
 
 </a>
 
+
 </div>
+
 
 <div class="grid">
 
+
 {% for b in businesses %}
+
 
 {% include 'business_card.html' %}
 
+
 {% endfor %}
+
 
 </div>
 
+
 </section>
+
 
 {% endblock %}
 '''
 
-============================================================
-PROFILE
-============================================================
+
+# ============================================================
+# PROFILE
+# ============================================================
 
 T["profile.html"] = r'''
 
@@ -3406,269 +4579,92 @@ T["profile.html"] = r'''
 
 <section class="card">
 
-<span class="kicker"> MY PROFILE </span>
+<span class="kicker">MY PROFILE</span>
 
 {% if u.photo %}
-
-<img
-class="portrait"
-src="{{media_url(u.photo)}}"
-alt=""
-
-
-
-
+<img class="portrait" src="{{media_url(u.photo)}}" alt="">
 {% endif %}
 
-<h1> {{u.name}} </h1>
+<h1>{{u.name}}</h1>
+<h3>{{u.profile_headline}}</h3>
+<p>{{u.city}}</p>
+<p>{{u.bio}}</p>
 
-<h3> {{u.profile_headline}} </h3>
-
-<p> {{u.city}} </p>
-
-<p> {{u.bio}} </p>
+{% if u.conscious_connections_enabled %}
+<div style="margin:10px 0 14px;">
+<span class="badge">♡ Conscious Connections</span>
+<small class="muted" style="display:block;margin-top:5px;">{{u.connection_type or 'Love & Dating • Friendship'}}</small>
+</div>
+{% endif %}
 
 <div class="chips">
-
-<span> Sun {{u.sun or '—'}} </span>
-
-<span> Moon {{u.moon or '—'}} </span>
-
-<span> Rising {{u.rising or '—'}} </span>
-
+<span>Sun {{u.sun or '—'}}</span>
+<span>Moon {{u.moon or '—'}}</span>
+<span>Rising {{u.rising or '—'}}</span>
 {% if u.membership_access %}
-
-<span> Mercury {{u.mercury or '—'}} </span>
-
-<span> Venus {{u.venus or '—'}} </span>
-
-<span> Mars {{u.mars or '—'}} </span>
-
-<span> Jupiter {{u.jupiter or '—'}} </span>
-
-<span> Saturn {{u.saturn or '—'}} </span>
-
-<span> Uranus {{u.uranus or '—'}} </span>
-
-<span> Neptune {{u.neptune or '—'}} </span>
-
-<span> Pluto {{u.pluto or '—'}} </span>
-
+<span>Mercury {{u.mercury or '—'}}</span>
+<span>Venus {{u.venus or '—'}}</span>
+<span>Mars {{u.mars or '—'}}</span>
+<span>Jupiter {{u.jupiter or '—'}}</span>
+<span>Saturn {{u.saturn or '—'}}</span>
+<span>Uranus {{u.uranus or '—'}}</span>
+<span>Neptune {{u.neptune or '—'}}</span>
+<span>Pluto {{u.pluto or '—'}}</span>
 {% endif %}
-
 </div>
 
-<a
-class="btn"
-href="{{url_for('profile_edit')}}"
-
-
-
-
-Edit My Profile
-
-</a>
+<a class="btn" href="{{url_for('profile_edit')}}">Edit My Profile</a>
 
 </section>
 
 <section class="card">
-
-<span class="kicker"> PRIVATE JOURNAL ENTRY — TODAY </span>
-
-<h2>
-
-{{reflection.sky.moon_symbol}}
-
-{{reflection.headline}}
-
-</h2>
-
-<p> {{reflection.prompt}} </p>
-
-<a
-class="btn"
-href="{{url_for('journal')}}"
-
-
-
-
-Open My Journal
-
-</a>
-
+<span class="kicker">PRIVATE JOURNAL ENTRY — TODAY</span>
+<h2>{{reflection.sky.moon_symbol}} {{reflection.headline}}</h2>
+<p>{{reflection.prompt}}</p>
+<a class="btn" href="{{url_for('journal')}}">Open My Journal</a>
 </section>
 
 <section class="profile-tools">
 
 {% if u.community_enabled %}
-
-<a
-class="tool"
-href="{{url_for('community')}}"
-
-
-
-
-<b> Community </b>
-
-<br>
-
-<small>
-
-Post and see member reflections.
-
-</small>
-
+<a class="tool" href="{{url_for('community')}}">
+<b>Community</b><br>
+<small>Post and see member reflections.</small>
 </a>
-
 {% endif %}
 
-<a
-class="tool"
-href="{{url_for('messages')}}"
-
-
-
-
-<b> My Inbox </b>
-
-<br>
-
-<small>
-
-Private people,
-dating,
-business
-and retreat messages.
-
-</small>
-
+<a class="tool" href="{{url_for('messages')}}">
+<b>My Inbox</b><br>
+<small>Your private conversations.</small>
 </a>
 
-<a
-class="tool"
-href="{{url_for('notifications')}}"
-
-
-
-
-<b> My Notifications </b>
-
-<br>
-
-<small>
-
-Private astrology,
-connection
-and business updates.
-
-</small>
-
+<a class="tool" href="{{url_for('notifications')}}">
+<b>My Notifications</b><br>
+<small>Private astrology, connection and business updates.</small>
 </a>
 
-{% if u.conscious_connections_enabled %}
-
-<a
-class="tool"
-href="{{url_for('connections')}}"
-
-
-
-
-<b> ♡ Conscious Connections </b>
-
-<br>
-
-<small>
-
-{{u.connection_type or 'Love, Dating & Friendship'}}
-
-•
-private community,
-compatibility
-and date/friendship ideas.
-
-</small>
-
+<a class="tool" href="{{url_for('connections') if u.conscious_connections_enabled else url_for('enable_connections')}}">
+<b>♡ Conscious Connections</b><br>
+<small>{% if u.conscious_connections_enabled %}{{u.connection_type or 'Love & Dating • Friendship'}}{% else %}Love • Dating • Friendship{% endif %}</small>
 </a>
 
-{% else %}
-
-<a
-class="tool"
-href="{{url_for('enable_connections')}}"
-
-
-
-
-<b> ♡ Join Conscious Connections </b>
-
-<br>
-
-<small>
-
-Opt in to
-Love,
-Dating
-& Friendship later.
-
-</small>
-
-</a>
-
-{% endif %}
-
-<a
-class="tool"
-href="{{url_for('business_setup')}}"
-
-
-
-
-<b> My Business Listing / App </b>
-
-<br>
-
-<small>
-
-Create or manage
-your business presence.
-
-</small>
-
+<a class="tool" href="{{url_for('business_setup')}}">
+<b>My Business Listing / App</b><br>
+<small>Create or manage your business presence.</small>
 </a>
 
 {% if u.business_access %}
-
-<a
-class="tool"
-href="{{url_for('business_manage')}}"
-
-
-
-
-<b> Manage Hosted App </b>
-
-<br>
-
-<small>
-
-Upload videos,
-content,
-services,
-meetups
-and more.
-
-</small>
-
+<a class="tool" href="{{url_for('business_manage')}}">
+<b>Manage Hosted App</b><br>
+<small>Upload videos, content, services, meetups and more.</small>
 </a>
-
 {% endif %}
 
 </section>
 
 {% endblock %}
 '''
+
 
 T["profile_edit.html"] = r'''
 
@@ -3676,143 +4672,121 @@ T["profile_edit.html"] = r'''
 
 {% block content %}
 
-<h1> Edit My Profile </h1>
 
-<form method="post" enctype="multipart/form-data" class="card" >
+<h1>
+Edit My Profile
+</h1>
+
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    class="card"
+>
+
 
 <label>
 
 Profile Picture
 
 <input
-type="file"
-name="photo"
-
-
-
+    type="file"
+    name="photo"
+>
 
 </label>
+
 
 <label>
 
 Name
 
 <input
-name="name"
-value="{{u.name}}"
-
-
-
+    name="name"
+    value="{{u.name}}"
+>
 
 </label>
+
 
 <label>
 
 City
 
 <input
-name="city"
-value="{{u.city}}"
-
-
-
+    name="city"
+    value="{{u.city}}"
+>
 
 </label>
+
 
 <label>
 
 Headline
 
 <input
-name="profile_headline"
-value="{{u.profile_headline}}"
-
-
-
+    name="profile_headline"
+    value="{{u.profile_headline}}"
+>
 
 </label>
+
 
 <label>
 
 About
 
-<textarea name="bio" > {{u.bio}} </textarea>
+<textarea
+    name="bio"
+>
+{{u.bio}}
+</textarea>
 
 </label>
+
 
 <label>
 
 Birth Date
 
 <input
-type="date"
-name="birth_date"
-value="{{u.birth_date}}"
-
-
-
+    type="date"
+    name="birth_date"
+    value="{{u.birth_date}}"
+>
 
 </label>
+
 
 <label>
 
 Birth Time
 
 <input
-type="time"
-name="birth_time"
-value="{{u.birth_time}}"
-
-
-
+    type="time"
+    name="birth_time"
+    value="{{u.birth_time}}"
+>
 
 </label>
+
 
 <label>
 
 <input
-type="checkbox"
-name="time_known"
-{% if u.time_known %}checked{% endif %}
-
-
-
+    type="checkbox"
+    name="time_known"
+    {% if u.time_known %}checked{% endif %}
+>
 
 Exact birth time known
 
 </label>
 
-{% if u.conscious_connections_enabled %}
 
-<label>
 
-Conscious Connections
 
-<select name="connection_type">
-
-<option value="Love & Dating">
-
-Love & Dating
-
-</option>
-
-<option value="Friendship">
-
-Friendship
-
-</option>
-
-<option value="Both">
-
-Both
-
-</option>
-
-</select>
-
-</label>
-
-{% endif %}
 
 <button class="btn">
 
@@ -3820,14 +4794,17 @@ Save Profile
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
 
-============================================================
-JOURNAL
-============================================================
+
+# ============================================================
+# JOURNAL
+# ============================================================
 
 T["journal.html"] = r'''
 
@@ -3835,11 +4812,19 @@ T["journal.html"] = r'''
 
 {% block content %}
 
-<h1> My Private Journal </h1>
+
+<h1>
+My Private Journal
+</h1>
+
 
 <article class="card">
 
-<span class="kicker"> TODAY'S REFLECTION </span>
+
+<span class="kicker">
+TODAY'S REFLECTION
+</span>
+
 
 <h2>
 
@@ -3851,9 +4836,11 @@ Moon in
 
 </h2>
 
+
 <p>
 
 {{reflection.sky.moon_phase or 'Current lunar phase'}}
+
 
 {% if reflection.sky.moon_degree is not none %}
 
@@ -3864,11 +4851,21 @@ Moon in
 
 </p>
 
-<p> {{reflection.prompt}} </p>
+
+<p>
+{{reflection.prompt}}
+</p>
+
 
 <form method="post">
 
-<textarea name="body" placeholder="What are you noticing within yourself today?" > </textarea>
+
+<textarea
+    name="body"
+    placeholder="What are you noticing within yourself today?"
+>
+</textarea>
+
 
 <button class="btn">
 
@@ -3876,469 +4873,327 @@ Save Journal Entry
 
 </button>
 
+
 </form>
 
+
 </article>
+
 
 {% for e in entries %}
 
+
 <article class="card">
 
-<small> {{e.created_at}} </small>
 
-<p> {{e.body}} </p>
+<small>
+{{e.created_at}}
+</small>
+
+
+<p>
+{{e.body}}
+</p>
+
 
 </article>
 
+
 {% endfor %}
+
 
 {% endblock %}
 '''
 
-============================================================
-CONSCIOUS CONNECTIONS
-============================================================
+
+# ============================================================
+# CONSCIOUS CONNECTIONS
+# ============================================================
 
 T["connections_join.html"] = r'''
 
 {% extends 'base.html' %}
-
 {% block content %}
 
-<h1> Join Conscious Connections </h1>
+<section class="hero">
+<div>
+<span class="kicker">♡ CONSCIOUS CONNECTIONS</span>
+<h1>Create My Connection Profile</h1>
+<p>Love • Dating • Friendship</p>
+</div>
+<img class="hero-logo" src="{{url_for('static',filename='seasons-within-logo.png')}}" alt="">
+</section>
 
-<form method="post" class="card" >
+<form method="post" class="card">
 
-<p>
+<h2>Connection Basics</h2>
 
-Conscious Connections is the private
-Love,
-Dating
-& Friendship community
-inside The Seasons Within.
-
-</p>
-
-<select name="connection_type">
-
-<option> Love & Dating </option>
-
-<option> Friendship </option>
-
-<option> Both </option>
-
+<label>What type of connection are you looking for?
+<select name="connection_type" required>
+<option value="Love & Dating" {% if u.connection_type=='Love & Dating' %}selected{% endif %}>Love & Dating</option>
+<option value="Friendship" {% if u.connection_type=='Friendship' %}selected{% endif %}>Friendship</option>
+<option value="Both" {% if u.connection_type=='Both' %}selected{% endif %}>Both</option>
 </select>
+</label>
 
-<button class="btn">
+<label>I am a...
+<select name="cc_gender" required>
+<option value="">Choose one</option>
+{% for x in ['Woman','Man','Nonbinary','Other','Prefer not to say'] %}
+<option value="{{x}}" {% if u.cc_gender==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
 
-Join Conscious Connections
+<label>Who would you like to connect with?
+<select name="cc_seeking" required>
+<option value="">Choose one</option>
+{% for x in ['Men','Women','Both','Everyone','Open / No preference'] %}
+<option value="{{x}}" {% if u.cc_seeking==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
 
-</button>
+<label>What are you looking for right now? <small class="muted">Choose up to 3.</small></label>
+<div class="chips" style="margin-bottom:14px;">
+{% for x in ['Long-term relationship','Dating & getting to know someone','Friendship','Activity / travel companion','Open to possibilities'] %}
+<label style="width:auto;margin:0;"><input type="checkbox" name="cc_looking_for" value="{{x}}" style="width:auto;margin-right:5px;" {% if x in (u.cc_looking_for or '') %}checked{% endif %}>{{x}}</label>
+{% endfor %}
+</div>
+
+<label>Do you have children?
+<select name="cc_children">
+<option value="">Choose one</option>
+{% for x in ['No','Yes — young children','Yes — teens','Yes — adult children','Prefer not to say'] %}
+<option value="{{x}}" {% if u.cc_children==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
+
+<div class="two">
+<label>What do you do for a living?
+<input name="cc_occupation" maxlength="80" value="{{u.cc_occupation or ''}}" placeholder="Example: Teacher, business owner, artist">
+</label>
+<label>Height <small class="muted">Optional</small>
+<input name="cc_height" maxlength="20" value="{{u.cc_height or ''}}" placeholder="Example: 5 ft 6 in">
+</label>
+</div>
+
+<label>Weight <small class="muted">Optional</small>
+<input name="cc_weight" maxlength="20" value="{{u.cc_weight or ''}}" placeholder="Example: 145 lb">
+</label>
+
+<h2>Connection Style</h2>
+
+<label>What best describes your lifestyle? <small class="muted">Choose up to 3.</small></label>
+<div class="chips" style="margin-bottom:14px;">
+{% for x in ['Wellness & self-care','Active & outdoors','Social & outgoing','Homebody & relaxed','Spiritual / reflective'] %}
+<label style="width:auto;margin:0;"><input type="checkbox" name="cc_lifestyle" value="{{x}}" style="width:auto;margin-right:5px;" {% if x in (u.cc_lifestyle or '') %}checked{% endif %}>{{x}}</label>
+{% endfor %}
+</div>
+
+<label>What do you enjoy doing together? <small class="muted">Choose up to 3.</small></label>
+<div class="chips" style="margin-bottom:14px;">
+{% for x in ['Travel & new experiences','Dining & entertainment','Nature & outdoors','Wellness & retreats','Relaxing at home'] %}
+<label style="width:auto;margin:0;"><input type="checkbox" name="cc_activities" value="{{x}}" style="width:auto;margin-right:5px;" {% if x in (u.cc_activities or '') %}checked{% endif %}>{{x}}</label>
+{% endfor %}
+</div>
+
+<label>What matters most in a connection? <small class="muted">Choose up to 3.</small></label>
+<div class="chips" style="margin-bottom:14px;">
+{% for x in ['Trust & honesty','Communication','Affection & chemistry','Shared values','Growth & support'] %}
+<label style="width:auto;margin:0;"><input type="checkbox" name="cc_values" value="{{x}}" style="width:auto;margin-right:5px;" {% if x in (u.cc_values or '') %}checked{% endif %}>{{x}}</label>
+{% endfor %}
+</div>
+
+<label>What is your connection style?
+<select name="cc_style">
+<option value="">Choose one</option>
+{% for x in ['Romantic & affectionate','Fun & adventurous','Deep & thoughtful','Peaceful & easygoing','A little of everything'] %}
+<option value="{{x}}" {% if u.cc_style==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
+
+<label>What would you enjoy for a first connection?
+<select name="cc_first_connection">
+<option value="">Choose one</option>
+{% for x in ['Dinner or coffee','Walk / nature date','Wellness experience','Activity or event','Suggest by compatibility'] %}
+<option value="{{x}}" {% if u.cc_first_connection==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
+
+<label>Interested in a Conscious Connection retreat?
+<select name="cc_retreat_interest">
+<option value="">Choose one</option>
+{% for x in ['Romantic / date retreat','Friendship retreat','Either one','Maybe','Not right now'] %}
+<option value="{{x}}" {% if u.cc_retreat_interest==x %}selected{% endif %}>{{x}}</option>
+{% endfor %}
+</select>
+</label>
+
+<button class="btn">Save My Conscious Connections Profile</button>
 
 </form>
 
 {% endblock %}
 '''
+
 
 T["connections.html"] = r'''
 
 {% extends 'base.html' %}
-
 {% block content %}
 
 <section class="hero">
-
 <div>
-
-<span class="kicker"> PRIVATE MEMBER COMMUNITY </span>
-
-<h1> ♡ Conscious Connections </h1>
-
-<p>
-
-Love,
-Dating
-& Friendship
-
-•
-private posts
-
-•
-zodiac/natal compatibility
-
-•
-date
-and friendship experiences
-
-</p>
-
+<span class="kicker">LOVE • DATING • FRIENDSHIP</span>
+<h1>♡ Conscious Connections</h1>
+<p>Connection through shared interests, private conversation and Conscious Coordination.</p>
+<div class="actions"><a class="outline" href="{{url_for('enable_connections')}}">Edit My Connection Profile</a></div>
 </div>
-
-<img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
-
-
+<img class="hero-logo" src="{{url_for('static',filename='seasons-within-logo.png')}}" alt="">
 </section>
 
-<div class="chips">
-
-<a href="?mode=dating">
-
-Love & Dating
-
-</a>
-
-<a href="?mode=friendship">
-
-Friendship
-
-</a>
-
-<a href="?mode=all">
-
-Both
-
-</a>
-
+{% if galaxy %}
+<article class="card">
+<div class="posthead">
+<div class="postperson">
+{% if galaxy.photo %}<img src="{{media_url(galaxy.photo)}}" alt="Galaxy Eve">{% else %}<img src="{{url_for('static',filename='seasons-within-logo.png')}}" alt="Galaxy Eve">{% endif %}
+<div><span class="kicker">HOST</span><h3 style="margin:3px 0;">Galaxy Eve</h3><small class="muted">Conscious Coordinator • Content Creator</small></div>
 </div>
-
-<h2> Conscious Connections Community </h2>
-
-<form method="post" enctype="multipart/form-data" class="card" >
-
-<textarea name="body" placeholder="Post to the Love, Dating & Friendship community..." > </textarea>
-
-{% if host_media %}
-
-<label>
-
-Host/Admin Photo or Video
-
-<input
-type="file"
-name="media"
-
-
-
-
-</label>
-
+{% if galaxy.id != me.id %}<a class="outline" href="{{url_for('compose_message',recipient_id=galaxy.id,kind='dating')}}">Inbox Galaxy Eve</a>{% endif %}
+</div>
+</article>
 {% endif %}
 
-<button class="btn">
-
-Post
-
-</button>
-
-<small class="muted">
-
-Regular members post text only.
-
-Galaxy Eve and admins
-may post photos and videos.
-
-</small>
-
+{% if host_can_post %}
+<form method="post" enctype="multipart/form-data" class="card">
+<h3>Share With Conscious Connections</h3>
+<textarea name="body" placeholder="Write something..."></textarea>
+<label>Add Photo or Video<input type="file" name="media" accept="image/*,video/*"></label>
+<button class="btn">Post</button>
 </form>
+{% endif %}
 
 {% for p in posts %}
-
 <article class="card">
-
 <div class="posthead">
-
 <div class="postperson">
-
-{% if p.photo %}
-
-<img
-src="{{media_url(p.photo)}}"
-alt=""
-
-
-
-
-{% else %}
-
-<span class="initial avatar">
-
-{{p.name[:1]}}
-
-</span>
-
-{% endif %}
-
-<div>
-
-<b> {{p.name}} </b>
-
-<small class="muted">
-
-{{p.created_at}}
-
-</small>
-
+{% if p.photo %}<img src="{{media_url(p.photo)}}" alt="">{% else %}<img src="{{url_for('static',filename='seasons-within-logo.png')}}" alt="">{% endif %}
+<div><b>{{p.name}}</b><br><small class="muted">{{p.created_at}}</small></div>
 </div>
-
+{% if p.user_id != me.id %}<a class="outline" href="{{url_for('compose_message',recipient_id=p.user_id,kind='dating')}}">Inbox Galaxy Eve</a>{% endif %}
 </div>
-
-{% if p.user_id != me.id %}
-
-<a
-class="outline"
-href="{{url_for('compose_message',recipient_id=p.user_id,kind='dating')}}"
-
-
-
-
-Message Member
-
-</a>
-
-{% endif %}
-
-</div>
-
-<p> {{p.body}} </p>
-
+{% if p.body %}<p>{{p.body}}</p>{% endif %}
 {% if p.media_path %}
-
-{% if p.media_type=='video' %}
-
-<video
-class="content-video"
-src="{{media_url(p.media_path)}}"
-controls
-
-
-
-
-</video>
-
-{% else %}
-
-<img
-class="post-image"
-src="{{media_url(p.media_path)}}"
-alt=""
-
-
-
-
+{% if p.media_type=='video' %}<video class="content-video" src="{{media_url(p.media_path)}}" controls playsinline></video>{% else %}<img class="post-image" src="{{media_url(p.media_path)}}" alt="">{% endif %}
 {% endif %}
-
-{% endif %}
-
+{% if p.user_id != me.id %}<div class="actions" style="margin-top:12px;"><a class="outline" href="{{url_for('compose_message',recipient_id=p.user_id,kind='dating')}}">♡ Respond Privately</a></div>{% endif %}
 </article>
-
-{% else %}
-
-<div class="empty">
-
-Connection-community posts
-will appear here.
-
-</div>
-
 {% endfor %}
-
-<h2> Discover Members </h2>
-
-<div class="grid">
-
-{% for p,score in cards %}
-
-<article class="card">
-
-<h3> {{p.name}} </h3>
-
-<p> {{p.city}} </p>
-
-<p> {{p.connection_type}} </p>
-
-<b>
-
-{{score}}%
-Conscious Coordination
-
-</b>
-
-<p>
-
-<a
-class="btn"
-href="{{url_for('connection_profile',uid=p.id,mode=mode)}}"
-
-
-
-
-View Compatibility
-
-</a>
-
-</p>
-
-</article>
-
-{% else %}
-
-<div class="empty">
-
-Other opted-in members
-will appear here as they join.
-
-</div>
-
-{% endfor %}
-
-</div>
 
 <section>
-
-<div class="sectionhead">
-
-<div>
-
-<span> CONNECTION EXPERIENCES </span>
-
-<h2>
-
-Businesses & Apps for
-Dates,
-Friendships
-& Retreats
-
-</h2>
-
-</div>
-
-</div>
-
+<div class="sectionhead"><div><span>CONNECTION EXPERIENCES</span><h2>Dates, Friendships & Retreat Experiences</h2></div></div>
 <div class="grid">
-
-{% for b in businesses %}
-
-{% include 'business_card.html' %}
-
-{% endfor %}
-
+{% for b in businesses %}{% include 'business_card.html' %}{% else %}<div class="empty">Participating wellness experiences will appear here.</div>{% endfor %}
 </div>
+</section>
 
+<section style="margin-top:34px;">
+<div class="sectionhead">
+<div><span>CONSCIOUS CONNECTIONS MEMBERS</span><h2>Discover Members</h2></div>
+<div class="chips"><a href="?mode=dating">Love & Dating</a><a href="?mode=friendship">Friendship</a><a href="?mode=all">Both</a></div>
+</div>
+<div class="grid">
+{% for p,score in cards %}
+<article class="card">
+{% if p.photo %}<img class="portrait" src="{{media_url(p.photo)}}" alt="{{p.name}}">{% else %}<span class="initial" style="width:72px;height:72px;font-size:24px;">{{p.name[:1]}}</span>{% endif %}
+<p><span class="badge">♡ Conscious Connections</span></p>
+<h3>{{p.name}}{% set person_age=age_from_birth_date(p.birth_date) %}{% if person_age %}, {{person_age}}{% endif %}</h3>
+<p class="muted">{{p.city or 'Community'}}</p>
+<p><b>{{p.connection_type or 'Love & Dating • Friendship'}}</b></p>
+{% if p.cc_occupation %}<p>{{p.cc_occupation}}</p>{% endif %}
+<div class="chips">{% if p.sun %}<span>Sun {{p.sun}}</span>{% endif %}{% if p.moon %}<span>Moon {{p.moon}}</span>{% endif %}{% if p.rising %}<span>Rising {{p.rising}}</span>{% endif %}</div>
+<p><b>{{score}}% Conscious Coordination</b></p>
+<div class="actions"><a class="btn" href="{{url_for('connection_profile',uid=p.id,mode=mode)}}">View Profile</a><a class="outline" href="{{url_for('compose_message',recipient_id=p.id,kind='dating' if mode!='friendship' else 'people')}}">Inbox</a></div>
+</article>
+{% else %}<div class="empty">Real Conscious Connections member profiles will appear here as members create them.</div>{% endfor %}
+</div>
 </section>
 
 {% endblock %}
 '''
+
 
 T["connection_profile.html"] = r'''
 
 {% extends 'base.html' %}
-
 {% block content %}
 
-<h1> {{person.name}} </h1>
+<div class="actions" style="margin-bottom:14px;"><a class="outline" href="{{url_for('connections',mode=mode)}}">← Back to Conscious Connections</a></div>
+
+<section class="card">
+{% if person.photo %}<img class="portrait" src="{{media_url(person.photo)}}" alt="{{person.name}}">{% endif %}
+<p><span class="badge">♡ Conscious Connections</span></p>
+<h1>{{person.name}}{% set person_age=age_from_birth_date(person.birth_date) %}{% if person_age %}, {{person_age}}{% endif %}</h1>
+<p class="muted">{{person.city}}</p>
+<h3>{{person.connection_type or 'Love & Dating • Friendship'}}</h3>
+{% if person.cc_gender or person.cc_seeking %}<p>{% if person.cc_gender %}{{person.cc_gender}}{% endif %}{% if person.cc_gender and person.cc_seeking %} • {% endif %}{% if person.cc_seeking %}Interested in {{person.cc_seeking}}{% endif %}</p>{% endif %}
+<div class="actions"><a class="btn" href="{{url_for('compose_message',recipient_id=person.id,kind='dating' if mode=='dating' else 'people')}}">Inbox {{person.name}}</a><a class="outline" href="{{url_for('retreat_build',connection=1)}}">Build a {{'Date' if mode=='dating' else 'Friendship'}} Retreat</a></div>
+</section>
+
+<section class="two">
+<article class="card">
+<span class="kicker">ABOUT</span>
+{% if person.cc_occupation %}<p><b>What I do</b><br>{{person.cc_occupation}}</p>{% endif %}
+{% if person.cc_height %}<p><b>Height</b><br>{{person.cc_height}}</p>{% endif %}
+{% if person.cc_weight %}<p><b>Weight</b><br>{{person.cc_weight}}</p>{% endif %}
+{% if person.cc_children %}<p><b>Children</b><br>{{person.cc_children}}</p>{% endif %}
+{% if person.bio %}<p><b>About me</b><br>{{person.bio}}</p>{% endif %}
+</article>
+<article class="card">
+<span class="kicker">WHAT I'M LOOKING FOR</span>
+{% if person.cc_looking_for %}<p><b>Looking for</b><br>{{person.cc_looking_for}}</p>{% endif %}
+{% if person.cc_values %}<p><b>What matters most</b><br>{{person.cc_values}}</p>{% endif %}
+{% if person.cc_style %}<p><b>Connection style</b><br>{{person.cc_style}}</p>{% endif %}
+{% if person.cc_first_connection %}<p><b>Ideal first connection</b><br>{{person.cc_first_connection}}</p>{% endif %}
+</article>
+</section>
+
+<section class="two">
+<article class="card">
+<span class="kicker">LIFESTYLE & EXPERIENCES</span>
+{% if person.cc_lifestyle %}<p><b>Lifestyle</b><br>{{person.cc_lifestyle}}</p>{% endif %}
+{% if person.cc_activities %}<p><b>Things I enjoy</b><br>{{person.cc_activities}}</p>{% endif %}
+{% if person.cc_retreat_interest %}<p><b>Connection retreats</b><br>{{person.cc_retreat_interest}}</p>{% endif %}
+</article>
+<article class="card">
+<span class="kicker">CONSCIOUS COORDINATION</span>
+<h2>{{score}}%</h2>
+<p>{{'Dating compatibility' if mode=='dating' else 'Friendship compatibility'}}</p>
+<div class="chips">
+<span>Sun {{person.sun or '—'}}</span><span>Moon {{person.moon or '—'}}</span><span>Rising {{person.rising or '—'}}</span>
+{% if me.membership_access %}<span>Mercury {{person.mercury or '—'}}</span><span>Venus {{person.venus or '—'}}</span><span>Mars {{person.mars or '—'}}</span><span>Jupiter {{person.jupiter or '—'}}</span><span>Saturn {{person.saturn or '—'}}</span><span>Uranus {{person.uranus or '—'}}</span><span>Neptune {{person.neptune or '—'}}</span><span>Pluto {{person.pluto or '—'}}</span>{% endif %}
+</div>
+</article>
+</section>
 
 <article class="card">
-
-<h2>
-
-{{score}}%
-Conscious Coordination
-
-</h2>
-
-<p> {{person.connection_type}} </p>
-
-<div class="chips">
-
-<span>
-
-Sun
-{{person.sun or '—'}}
-
-</span>
-
-<span>
-
-Moon
-{{person.moon or '—'}}
-
-</span>
-
-{% if me.membership_access %}
-
-<span> Mercury {{person.mercury or '—'}} </span>
-
-<span> Venus {{person.venus or '—'}} </span>
-
-<span> Mars {{person.mars or '—'}} </span>
-
-<span> Jupiter {{person.jupiter or '—'}} </span>
-
-<span> Saturn {{person.saturn or '—'}} </span>
-
-<span> Uranus {{person.uranus or '—'}} </span>
-
-<span> Neptune {{person.neptune or '—'}} </span>
-
-<span> Pluto {{person.pluto or '—'}} </span>
-
-{% endif %}
-
-</div>
-
-<p>
-
-<b>
-
-{{'Date idea' if mode=='dating' else 'Friendship idea'}}:
-
-</b>
-
-{{idea}}
-
-</p>
-
-<div class="actions">
-
-<a
-class="btn"
-href="{{url_for('compose_message',recipient_id=person.id,kind='dating' if mode=='dating' else 'people')}}"
-
-
-
-
-Message Privately
-
-</a>
-
-<a
-class="outline"
-href="{{url_for('retreat_build',connection=1)}}"
-
-
-
-
-Build a
-{{'Date' if mode=='dating' else 'Friendship'}}
-Retreat
-
-</a>
-
-</div>
-
+<span class="kicker">SUGGESTED CONNECTION</span>
+<h2>{{'Date Idea' if mode=='dating' else 'Friendship Idea'}}</h2>
+<p>{{idea}}</p>
+<div class="actions"><a class="btn" href="{{url_for('compose_message',recipient_id=person.id,kind='dating' if mode=='dating' else 'people')}}">Inbox {{person.name}}</a><a class="outline" href="{{url_for('retreat_build',connection=1)}}">Build a {{'Date' if mode=='dating' else 'Friendship'}} Retreat</a></div>
 </article>
 
 {% endblock %}
 '''
 
-============================================================
-BUSINESS NETWORK
-============================================================
+
+# ============================================================
+# BUSINESS NETWORK
+# ============================================================
 
 T["business.html"] = r'''
 
@@ -4346,13 +5201,22 @@ T["business.html"] = r'''
 
 {% block content %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> THE SEASONS WITHIN </span>
 
-<h1> Business Network </h1>
+<span class="kicker">
+THE SEASONS WITHIN
+</span>
+
+
+<h1>
+Business Network
+</h1>
+
 
 <p>
 
@@ -4365,56 +5229,66 @@ and hosted business apps.
 
 </p>
 
+
 </div>
 
+
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 </section>
 
+
 <form class="card">
 
+
 <input
-name="q"
-value="{{q}}"
-placeholder="Search businesses, creators, services or categories..."
-
-
+    name="q"
+    value="{{q}}"
+    placeholder="Search businesses, creators, services or categories..."
+>
 
 
 </form>
 
+
 {% if me %}
+
 
 <div class="actions">
 
+
 <a
-class="btn"
-href="{{url_for('business_setup')}}"
-
-
-
+    class="btn"
+    href="{{url_for('business_setup')}}"
+>
 
 Create / Manage My Business Listing
 
 </a>
 
+
 </div>
+
 
 {% endif %}
 
+
 <div class="grid">
+
 
 {% for b in businesses %}
 
+
 {% include 'business_card.html' %}
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -4423,13 +5297,19 @@ as they create profiles.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
+
 <article class="card">
 
-<b> Free business listing: </b>
+
+<b>
+Free business listing:
+</b>
 
 picture/logo,
 bio,
@@ -4437,7 +5317,9 @@ category,
 contact
 and business link.
 
+
 <br><br>
+
 
 <b>
 
@@ -4454,10 +5336,13 @@ events,
 collaborations
 and Retreat Constellation tools.
 
+
 </article>
+
 
 {% endblock %}
 '''
+
 
 T["business_setup.html"] = r'''
 
@@ -4465,345 +5350,365 @@ T["business_setup.html"] = r'''
 
 {% block content %}
 
-<h1> My Business Profile / App </h1>
 
-<form method="post" enctype="multipart/form-data" class="card" >
+<h1>
+My Business Profile / App
+</h1>
+
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    class="card"
+>
+
 
 <label>
 
 Business Logo
 
 <input
-type="file"
-name="logo"
-
-
-
+    type="file"
+    name="logo"
+>
 
 </label>
 
+
 {% if b and b.logo %}
 
+
 <img
-style="
-width:100px;
-height:100px;
-object-fit;
-border-radius:16px
-"
-src="{{media_url(b.logo)}}"
-alt=""
-
-
+    style="
+        width:100px;
+        height:100px;
+        object-fit:cover;
+        border-radius:16px
+    "
+    src="{{media_url(b.logo)}}"
+    alt=""
+>
 
 
 {% endif %}
+
 
 <label>
 
 Business Name
 
 <input
-name="business_name"
-value="{{b.business_name if b else ''}}"
-required
-
-
-
+    name="business_name"
+    value="{{b.business_name if b else ''}}"
+    required
+>
 
 </label>
+
 
 <label>
 
 Creator / Professional Title
 
 <input
-name="creator_title"
-value="{{b.creator_title if b else ''}}"
-
-
-
+    name="creator_title"
+    value="{{b.creator_title if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Tagline
 
 <input
-name="tagline"
-value="{{b.tagline if b else ''}}"
-
-
-
+    name="tagline"
+    value="{{b.tagline if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Description / Bio
 
-<textarea name="description" > {{b.description if b else ''}} </textarea>
+<textarea
+    name="description"
+>
+{{b.description if b else ''}}
+</textarea>
 
 </label>
+
 
 <label>
 
 Category
 
 <input
-name="category"
-value="{{b.category if b else ''}}"
-
-
-
+    name="category"
+    value="{{b.category if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 City
 
 <input
-name="city"
-value="{{b.city if b else ''}}"
-
-
-
+    name="city"
+    value="{{b.city if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Business / Website Link
 
 <input
-name="website"
-value="{{b.website if b else ''}}"
-
-
-
+    name="website"
+    value="{{b.website if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Contact Email
 
 <input
-name="contact_email"
-value="{{b.contact_email if b else me.email}}"
-
-
-
+    name="contact_email"
+    value="{{b.contact_email if b else me.email}}"
+>
 
 </label>
+
 
 <label>
 
 Phone
 
 <input
-name="phone"
-value="{{b.phone if b else ''}}"
-
-
-
+    name="phone"
+    value="{{b.phone if b else ''}}"
+>
 
 </label>
 
+
 {% if me.business_access %}
+
 
 <hr>
 
-<h2> Hosted App Media </h2>
+
+<h2>
+Hosted App Media
+</h2>
+
 
 <label>
 
 App Cover Image
 
 <input
-type="file"
-name="hero_image"
-
-
-
+    type="file"
+    name="hero_image"
+>
 
 </label>
+
 
 <label>
 
 Featured App Video
 
 <input
-type="file"
-name="featured_video"
-
-
-
+    type="file"
+    name="featured_video"
+>
 
 </label>
+
 
 <label>
 
 Instagram
 
 <input
-name="instagram"
-value="{{b.instagram if b else ''}}"
-
-
-
+    name="instagram"
+    value="{{b.instagram if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 TikTok
 
 <input
-name="tiktok"
-value="{{b.tiktok if b else ''}}"
-
-
-
+    name="tiktok"
+    value="{{b.tiktok if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 YouTube
 
 <input
-name="youtube"
-value="{{b.youtube if b else ''}}"
-
-
-
+    name="youtube"
+    value="{{b.youtube if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Booking Link
 
 <input
-name="booking_url"
-value="{{b.booking_url if b else ''}}"
-
-
-
+    name="booking_url"
+    value="{{b.booking_url if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Content Categories
 
 <input
-name="content_categories"
-value="{{b.content_categories if b else ''}}"
-
-
-
+    name="content_categories"
+    value="{{b.content_categories if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Audience Information
 
-<textarea name="audience_info" > {{b.audience_info if b else ''}} </textarea>
+<textarea
+    name="audience_info"
+>
+{{b.audience_info if b else ''}}
+</textarea>
 
 </label>
+
 
 <label>
 
 Previous Collaborations
 
-<textarea name="previous_collaborations" > {{b.previous_collaborations if b else ''}} </textarea>
+<textarea
+    name="previous_collaborations"
+>
+{{b.previous_collaborations if b else ''}}
+</textarea>
 
 </label>
+
 
 <label>
 
 Collaboration Interests
 
-<textarea name="collaboration_interests" > {{b.collaboration_interests if b else ''}} </textarea>
+<textarea
+    name="collaboration_interests"
+>
+{{b.collaboration_interests if b else ''}}
+</textarea>
 
 </label>
 
+
 <div class="two">
+
 
 <label>
 
 Followers
 
 <input
-name="followers"
-value="{{b.followers if b else ''}}"
-
-
-
+    name="followers"
+    value="{{b.followers if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Likes
 
 <input
-name="likes"
-value="{{b.likes if b else ''}}"
-
-
-
+    name="likes"
+    value="{{b.likes if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Views
 
 <input
-name="views"
-value="{{b.views if b else ''}}"
-
-
-
+    name="views"
+    value="{{b.views if b else ''}}"
+>
 
 </label>
+
 
 <label>
 
 Engagement Rate
 
 <input
-name="engagement_rate"
-value="{{b.engagement_rate if b else ''}}"
-
-
-
+    name="engagement_rate"
+    value="{{b.engagement_rate if b else ''}}"
+>
 
 </label>
 
+
 </div>
+
 
 <label>
 
+
 <input
-type="checkbox"
-name="retreat_participation"
-{% if b and b.retreat_participation %}checked{% endif %}
-
-
+    type="checkbox"
+    name="retreat_participation"
+    {% if b and b.retreat_participation %}checked{% endif %}
+>
 
 
 Participate in Retreat Constellations
 
+
 </label>
 
+
 {% endif %}
+
 
 <button class="btn">
 
@@ -4811,32 +5716,37 @@ Save Business Profile
 
 </button>
 
+
 </form>
+
 
 {% if b and me.business_access %}
 
+
 <a
-class="btn"
-href="{{url_for('business_manage')}}"
-
-
-
+    class="btn"
+    href="{{url_for('business_manage')}}"
+>
 
 Manage App Content,
 Services & Events
 
 </a>
 
+
 {% endif %}
+
 
 {% endblock %}
 '''
+
 
 T["business_manage.html"] = r'''
 
 {% extends 'base.html' %}
 
 {% block content %}
+
 
 <h1>
 
@@ -4846,39 +5756,66 @@ Hosted App
 
 </h1>
 
+
 <div class="two">
 
-<form method="post" enctype="multipart/form-data" class="card" >
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    class="card"
+>
+
 
 <input
-type="hidden"
-name="section"
-value="content"
+    type="hidden"
+    name="section"
+    value="content"
+>
 
 
+<h2>
+Add Content
+</h2>
 
-
-<h2> Add Content </h2>
 
 <select name="content_type">
 
-<option value="post"> Update </option>
 
-<option value="photo"> Photo </option>
+<option value="post">
+Update
+</option>
 
-<option value="video"> Video </option>
 
-<option value="media"> Featured Media </option>
+<option value="photo">
+Photo
+</option>
+
+
+<option value="video">
+Video
+</option>
+
+
+<option value="media">
+Featured Media
+</option>
+
 
 </select>
 
-<textarea name="caption" placeholder="Caption or update..." > </textarea>
+
+<textarea
+    name="caption"
+    placeholder="Caption or update..."
+>
+</textarea>
+
 
 <input
-type="file"
-name="media"
-
-
+    type="file"
+    name="media"
+>
 
 
 <button class="btn">
@@ -4887,57 +5824,87 @@ Publish Content
 
 </button>
 
+
 </form>
 
-<form method="post" class="card" >
+
+<form
+    method="post"
+    class="card"
+>
+
 
 <input
-type="hidden"
-name="section"
-value="item"
+    type="hidden"
+    name="section"
+    value="item"
+>
 
 
+<h2>
+Add App Offering
+</h2>
 
-
-<h2> Add App Offering </h2>
 
 <select name="item_type">
 
-<option value="service"> Service </option>
 
-<option value="class"> Class </option>
+<option value="service">
+Service
+</option>
 
-<option value="event"> Event / Meetup </option>
 
-<option value="retreat"> Retreat </option>
+<option value="class">
+Class
+</option>
 
-<option value="membership"> Membership </option>
 
-<option value="product"> Product </option>
+<option value="event">
+Event / Meetup
+</option>
+
+
+<option value="retreat">
+Retreat
+</option>
+
+
+<option value="membership">
+Membership
+</option>
+
+
+<option value="product">
+Product
+</option>
+
 
 </select>
 
-<input
-name="title"
-placeholder="Title"
-
-
-
-
-<textarea name="description" placeholder="Description" > </textarea>
 
 <input
-name="price"
-placeholder="Price"
+    name="title"
+    placeholder="Title"
+>
 
 
+<textarea
+    name="description"
+    placeholder="Description"
+>
+</textarea>
 
 
 <input
-name="action_url"
-placeholder="Booking / purchase link"
+    name="price"
+    placeholder="Price"
+>
 
 
+<input
+    name="action_url"
+    placeholder="Booking / purchase link"
+>
 
 
 <button class="btn">
@@ -4946,51 +5913,67 @@ Add to App
 
 </button>
 
+
 </form>
+
 
 </div>
 
-<h2> Published Content </h2>
+
+<h2>
+Published Content
+</h2>
+
 
 <div class="grid">
 
+
 {% for x in content %}
+
 
 <article class="card">
 
+
 {% if x.media_path %}
+
 
 {% if x.media_type=='video' %}
 
+
 <video
-class="content-video"
-src="{{media_url(x.media_path)}}"
-controls
-
-
-
-
+    class="content-video"
+    src="{{media_url(x.media_path)}}"
+    controls
+>
 </video>
+
 
 {% else %}
 
+
 <img
-class="content-media"
-src="{{media_url(x.media_path)}}"
-alt=""
-
-
+    class="content-media"
+    src="{{media_url(x.media_path)}}"
+    alt=""
+>
 
 
 {% endif %}
 
+
 {% endif %}
 
-<p> {{x.caption}} </p>
+
+<p>
+{{x.caption}}
+</p>
+
 
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -4999,9 +5982,12 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
 
+
 </div>
+
 
 <h2>
 
@@ -5011,11 +5997,15 @@ Events
 
 </h2>
 
+
 <div class="grid">
+
 
 {% for x in items %}
 
+
 <article class="card">
+
 
 <span class="badge">
 
@@ -5023,15 +6013,27 @@ Events
 
 </span>
 
-<h3> {{x.title}} </h3>
 
-<p> {{x.description}} </p>
+<h3>
+{{x.title}}
+</h3>
 
-<b> {{x.price}} </b>
+
+<p>
+{{x.description}}
+</p>
+
+
+<b>
+{{x.price}}
+</b>
+
 
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5040,12 +6042,16 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
+
 {% endblock %}
 '''
+
 
 T["business_app.html"] = r'''
 
@@ -5053,40 +6059,44 @@ T["business_app.html"] = r'''
 
 {% block content %}
 
+
 {% if not b.paid_business %}
+
 
 <section class="card">
 
+
 {% if b.logo %}
 
+
 <img
-style="
-width:120px;
-height:120px;
-object-fit;
-border-radius:20px
-"
-src="{{media_url(b.logo)}}"
-alt=""
-
-
+    style="
+        width:120px;
+        height:120px;
+        object-fit:cover;
+        border-radius:20px
+    "
+    src="{{media_url(b.logo)}}"
+    alt=""
+>
 
 
 {% else %}
 
+
 <img
-style="
-width:120px;
-height:120px;
-object-fit
-"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    style="
+        width:120px;
+        height:120px;
+        object-fit:contain
+    "
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 {% endif %}
+
 
 <span class="badge">
 
@@ -5094,358 +6104,469 @@ Free Business Listing
 
 </span>
 
-<h1> {{b.business_name}} </h1>
 
-<h3> {{b.creator_title or b.category}} </h3>
+<h1>
+{{b.business_name}}
+</h1>
 
-<p> {{b.description}} </p>
+
+<h3>
+{{b.creator_title or b.category}}
+</h3>
+
+
+<p>
+{{b.description}}
+</p>
+
 
 {% if b.city %}
 
-<p> {{b.city}} </p>
+
+<p>
+{{b.city}}
+</p>
+
 
 {% endif %}
 
+
 <div class="actions">
+
 
 {% if b.website %}
 
+
 <a
-class="btn"
-href="{{b.website}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="btn"
+    href="{{b.website}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Business Link
 
 </a>
 
+
 {% endif %}
+
 
 {% if me and me.id!=owner.id %}
 
+
 <a
-class="outline"
-href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
-
-
-
+    class="outline"
+    href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
+>
 
 Contact Business
 
 </a>
 
+
 {% endif %}
+
 
 </div>
 
+
 </section>
+
 
 {% else %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> HOSTED APP </span>
 
-<h1> {{b.business_name}} </h1>
+<span class="kicker">
+HOSTED APP
+</span>
 
-<h3> {{b.creator_title or b.category}} </h3>
 
-<p> {{b.tagline}} </p>
+<h1>
+{{b.business_name}}
+</h1>
+
+
+<h3>
+{{b.creator_title or b.category}}
+</h3>
+
+
+<p>
+{{b.tagline}}
+</p>
+
 
 <div class="actions">
 
+
 {% if me and me.id!=owner.id %}
 
+
 <a
-class="btn"
-href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
-
-
-
+    class="btn"
+    href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
+>
 
 Message / Contact
 
 </a>
 
+
 {% endif %}
+
 
 {% if b.booking_url %}
 
+
 <a
-class="outline"
-href="{{b.booking_url}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.booking_url}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Book / Apply
 
 </a>
 
+
 {% endif %}
+
 
 {% if me and me.id==owner.id %}
 
+
 <a
-class="outline"
-href="{{url_for('business_setup')}}"
-
-
-
+    class="outline"
+    href="{{url_for('business_setup')}}"
+>
 
 Edit App
 
 </a>
 
+
 <a
-class="outline"
-href="{{url_for('business_manage')}}"
-
-
-
+    class="outline"
+    href="{{url_for('business_manage')}}"
+>
 
 Manage Content
 
 </a>
 
+
 {% endif %}
 
-</div>
 
 </div>
+
+
+</div>
+
 
 {% if b.featured_video %}
 
+
 <video
-style="
-width(430px,45%);
-border-radius:18px;
-background:#000
-"
-src="{{media_url(b.featured_video)}}"
-controls
-playsinline
-
-
-
-
+    style="
+        width:min(430px,45%);
+        border-radius:18px;
+        background:#000
+    "
+    src="{{media_url(b.featured_video)}}"
+    controls
+    playsinline
+>
 </video>
+
 
 {% elif b.hero_image %}
 
+
 <img
-style="
-width(430px,45%);
-max-height:300px;
-object-fit;
-border-radius:18px
-"
-src="{{media_url(b.hero_image)}}"
-alt=""
-
-
+    style="
+        width:min(430px,45%);
+        max-height:300px;
+        object-fit:cover;
+        border-radius:18px
+    "
+    src="{{media_url(b.hero_image)}}"
+    alt=""
+>
 
 
 {% elif b.logo %}
 
+
 <img
-class="hero-logo"
-src="{{media_url(b.logo)}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{media_url(b.logo)}}"
+    alt=""
+>
 
 
 {% else %}
 
+
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 {% endif %}
 
+
 </section>
+
 
 <div class="grid">
 
+
 <article class="card">
 
-<h2> About </h2>
 
-<p> {{b.description}} </p>
+<h2>
+About
+</h2>
+
+
+<p>
+{{b.description}}
+</p>
+
 
 {% if b.city %}
 
+
 <p>
 
-<b> Location: </b>
+<b>
+Location:
+</b>
 
 {{b.city}}
 
 </p>
 
+
 {% endif %}
+
 
 {% if b.website %}
 
+
 <a
-class="outline"
-href="{{b.website}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.website}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Website
 
 </a>
 
+
 {% endif %}
+
 
 </article>
 
+
 {% if b.media_kit_enabled %}
+
 
 <article class="card">
 
-<h2> Media Kit </h2>
+
+<h2>
+Media Kit
+</h2>
+
 
 <p>
 
-<b> Content: </b>
+<b>
+Content:
+</b>
 
 {{b.content_categories}}
 
 </p>
 
+
 <p>
 
-<b> Audience: </b>
+<b>
+Audience:
+</b>
 
 {{b.audience_info}}
 
 </p>
 
+
 <div class="media-kit-grid">
 
-<div class="stat">
-
-<b> {{b.followers or '—'}} </b>
-
-<br>
-
-<small> Followers </small>
-
-</div>
 
 <div class="stat">
 
-<b> {{b.likes or '—'}} </b>
+<b>
+{{b.followers or '—'}}
+</b>
 
 <br>
 
-<small> Likes </small>
+<small>
+Followers
+</small>
 
 </div>
+
 
 <div class="stat">
 
-<b> {{b.views or '—'}} </b>
+<b>
+{{b.likes or '—'}}
+</b>
 
 <br>
 
-<small> Views </small>
+<small>
+Likes
+</small>
 
 </div>
+
 
 <div class="stat">
 
-<b> {{b.engagement_rate or '—'}} </b>
+<b>
+{{b.views or '—'}}
+</b>
 
 <br>
 
-<small> Engagement </small>
+<small>
+Views
+</small>
 
 </div>
 
+
+<div class="stat">
+
+<b>
+{{b.engagement_rate or '—'}}
+</b>
+
+<br>
+
+<small>
+Engagement
+</small>
+
 </div>
+
+
+</div>
+
 
 <p>
 
-<b> Previous Collaborations: </b>
+<b>
+Previous Collaborations:
+</b>
 
 {{b.previous_collaborations}}
 
 </p>
 
+
 <p>
 
-<b> Collaboration Interests: </b>
+<b>
+Collaboration Interests:
+</b>
 
 {{b.collaboration_interests}}
 
 </p>
 
+
 </article>
 
+
 {% endif %}
+
 
 </div>
 
-<h2> Content </h2>
+
+<h2>
+Content
+</h2>
+
 
 <div class="grid">
 
+
 {% for x in content %}
+
 
 <article class="card">
 
+
 {% if x.media_path %}
+
 
 {% if x.media_type=='video' %}
 
+
 <video
-class="content-video"
-src="{{media_url(x.media_path)}}"
-controls
-
-
-
-
+    class="content-video"
+    src="{{media_url(x.media_path)}}"
+    controls
+>
 </video>
+
 
 {% else %}
 
+
 <img
-class="content-media"
-src="{{media_url(x.media_path)}}"
-alt=""
-
-
+    class="content-media"
+    src="{{media_url(x.media_path)}}"
+    alt=""
+>
 
 
 {% endif %}
 
+
 {% endif %}
 
-<p> {{x.caption}} </p>
+
+<p>
+{{x.caption}}
+</p>
+
 
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5454,9 +6575,12 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
 
+
 </div>
+
 
 <h2>
 
@@ -5470,11 +6594,15 @@ Meetups
 
 </h2>
 
+
 <div class="grid">
+
 
 {% for x in items %}
 
+
 <article class="card">
+
 
 <span class="badge">
 
@@ -5482,36 +6610,51 @@ Meetups
 
 </span>
 
-<h3> {{x.title}} </h3>
 
-<p> {{x.description}} </p>
+<h3>
+{{x.title}}
+</h3>
 
-<b> {{x.price}} </b>
+
+<p>
+{{x.description}}
+</p>
+
+
+<b>
+{{x.price}}
+</b>
+
 
 {% if x.action_url %}
 
+
 <p>
 
+
 <a
-class="outline"
-href="{{x.action_url}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{x.action_url}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Open Link
 
 </a>
 
+
 </p>
+
 
 {% endif %}
 
+
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5521,11 +6664,15 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
+
 <section class="card">
+
 
 <h2>
 
@@ -5534,118 +6681,129 @@ Connect With
 
 </h2>
 
+
 <div class="actions">
+
 
 {% if me and me.id!=owner.id %}
 
+
 <a
-class="btn"
-href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
-
-
-
+    class="btn"
+    href="{{url_for('compose_message',recipient_id=owner.id,kind='business')}}"
+>
 
 Message / Contact
 
 </a>
 
+
 <a
-class="outline"
-href="{{url_for('collaborate',slug=b.slug)}}"
-
-
-
+    class="outline"
+    href="{{url_for('collaborate',slug=b.slug)}}"
+>
 
 Collaborate
 
 </a>
 
+
 {% endif %}
+
 
 {% if b.retreat_participation %}
 
+
 <a
-class="outline"
-href="{{url_for('retreats')}}"
-
-
-
+    class="outline"
+    href="{{url_for('retreats')}}"
+>
 
 Retreats & Meetups
 
 </a>
 
+
 {% endif %}
+
 
 {% if b.instagram %}
 
+
 <a
-class="outline"
-href="{{b.instagram}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.instagram}}"
+    target="_blank"
+    rel="noopener"
+>
 
 Instagram
 
 </a>
 
+
 {% endif %}
+
 
 {% if b.tiktok %}
 
+
 <a
-class="outline"
-href="{{b.tiktok}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.tiktok}}"
+    target="_blank"
+    rel="noopener"
+>
 
 TikTok
 
 </a>
 
+
 {% endif %}
+
 
 {% if b.youtube %}
 
+
 <a
-class="outline"
-href="{{b.youtube}}"
-target="_blank"
-rel="noopener"
-
-
-
+    class="outline"
+    href="{{b.youtube}}"
+    target="_blank"
+    rel="noopener"
+>
 
 YouTube
 
 </a>
 
+
 {% endif %}
+
 
 </div>
 
+
 </section>
 
+
 {% endif %}
+
 
 {% endblock %}
 '''
 
-============================================================
-COLLABORATION
-============================================================
+
+# ============================================================
+# COLLABORATION
+# ============================================================
 
 T["collaborate.html"] = r'''
 
 {% extends 'base.html' %}
 
 {% block content %}
+
 
 <h1>
 
@@ -5654,29 +6812,65 @@ Collaborate With
 
 </h1>
 
-<form method="post" class="card" >
+
+<form
+    method="post"
+    class="card"
+>
+
 
 <select name="request_type">
 
-<option> Creator Collaboration </option>
 
-<option> Brand Collaboration </option>
+<option>
+Creator Collaboration
+</option>
 
-<option> Business Visit / Feature </option>
 
-<option> Retreat Collaboration </option>
+<option>
+Brand Collaboration
+</option>
 
-<option> Event Appearance </option>
 
-<option> Interview / Podcast </option>
+<option>
+Business Visit / Feature
+</option>
 
-<option> Content Collaboration </option>
 
-<option> Other </option>
+<option>
+Retreat Collaboration
+</option>
+
+
+<option>
+Event Appearance
+</option>
+
+
+<option>
+Interview / Podcast
+</option>
+
+
+<option>
+Content Collaboration
+</option>
+
+
+<option>
+Other
+</option>
+
 
 </select>
 
-<textarea name="message" placeholder="Tell {{b.business_name}} about the collaboration..." > </textarea>
+
+<textarea
+    name="message"
+    placeholder="Tell {{b.business_name}} about the collaboration..."
+>
+</textarea>
+
 
 <button class="btn">
 
@@ -5684,14 +6878,17 @@ Send Collaboration Request
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
 
-============================================================
-INBOX
-============================================================
+
+# ============================================================
+# INBOX
+# ============================================================
 
 T["messages.html"] = r'''
 
@@ -5699,23 +6896,43 @@ T["messages.html"] = r'''
 
 {% block content %}
 
-<h1> My Inbox </h1>
+
+<h1>
+My Inbox
+</h1>
+
 
 <div class="chips">
 
-<span> People </span>
 
-<span> Dating </span>
+<span>
+People
+</span>
 
-<span> Business </span>
 
-<span> Retreats </span>
+<span>
+Dating
+</span>
+
+
+<span>
+Business
+</span>
+
+
+<span>
+Retreats
+</span>
+
 
 </div>
 
+
 {% for m in inbox %}
 
+
 <article class="card">
+
 
 <span class="badge">
 
@@ -5723,13 +6940,18 @@ T["messages.html"] = r'''
 
 </span>
 
+
 <h3>
 
 {{m.subject or 'Message'}}
 
 </h3>
 
-<b> {{m.sender_name}} </b>
+
+<b>
+{{m.sender_name}}
+</b>
+
 
 <small>
 
@@ -5737,22 +6959,27 @@ T["messages.html"] = r'''
 
 </small>
 
-<p> {{m.body}} </p>
+
+<p>
+{{m.body}}
+</p>
+
 
 <a
-class="outline"
-href="{{url_for('compose_message',recipient_id=m.sender_id,kind=m.message_type)}}"
-
-
-
+    class="outline"
+    href="{{url_for('compose_message',recipient_id=m.sender_id,kind=m.message_type)}}"
+>
 
 Reply
 
 </a>
 
+
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5761,16 +6988,20 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
+
 
 {% endblock %}
 '''
+
 
 T["compose_message.html"] = r'''
 
 {% extends 'base.html' %}
 
 {% block content %}
+
 
 <h1>
 
@@ -5779,7 +7010,12 @@ Message
 
 </h1>
 
-<form method="post" class="card" >
+
+<form
+    method="post"
+    class="card"
+>
+
 
 <span class="badge">
 
@@ -5787,15 +7023,20 @@ Message
 
 </span>
 
+
 <input
-name="subject"
-placeholder="Subject"
-value="{{subject}}"
+    name="subject"
+    placeholder="Subject"
+    value="{{subject}}"
+>
 
 
+<textarea
+    name="body"
+    placeholder="Write your private message..."
+>
+</textarea>
 
-
-<textarea name="body" placeholder="Write your private message..." > </textarea>
 
 <button class="btn">
 
@@ -5803,14 +7044,17 @@ Send Message
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
 
-============================================================
-NOTIFICATIONS
-============================================================
+
+# ============================================================
+# NOTIFICATIONS
+# ============================================================
 
 T["notifications.html"] = r'''
 
@@ -5818,11 +7062,17 @@ T["notifications.html"] = r'''
 
 {% block content %}
 
-<h1> My Notifications </h1>
+
+<h1>
+My Notifications
+</h1>
+
 
 {% for n in notifications %}
 
+
 <article class="card">
+
 
 <span class="badge">
 
@@ -5830,28 +7080,38 @@ T["notifications.html"] = r'''
 
 </span>
 
-<h3> {{n.title}} </h3>
 
-<p> {{n.body}} </p>
+<h3>
+{{n.title}}
+</h3>
+
+
+<p>
+{{n.body}}
+</p>
+
 
 {% if n.link %}
 
+
 <a
-class="outline"
-href="{{n.link}}"
-
-
-
+    class="outline"
+    href="{{n.link}}"
+>
 
 Open
 
 </a>
 
+
 {% endif %}
+
 
 </article>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5863,14 +7123,17 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
+
 
 {% endblock %}
 '''
 
-============================================================
-RETREATS
-============================================================
+
+# ============================================================
+# RETREATS
+# ============================================================
 
 T["retreats.html"] = r'''
 
@@ -5878,13 +7141,22 @@ T["retreats.html"] = r'''
 
 {% block content %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> THE SEASONS WITHIN </span>
 
-<h1> Retreats </h1>
+<span class="kicker">
+THE SEASONS WITHIN
+</span>
+
+
+<h1>
+Retreats
+</h1>
+
 
 <p>
 
@@ -5893,43 +7165,45 @@ and custom Retreat Constellations.
 
 </p>
 
+
 <div class="actions">
 
+
 <a
-class="btn"
-href="{{url_for('retreat_build')}}"
-
-
-
+    class="btn"
+    href="{{url_for('retreat_build')}}"
+>
 
 Build My Retreat Constellation
 
 </a>
 
+
 <a
-class="outline"
-href="{{url_for('business')}}"
-
-
-
+    class="outline"
+    href="{{url_for('business')}}"
+>
 
 Explore Wellness Partners
 
 </a>
 
-</div>
 
 </div>
+
+
+</div>
+
 
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 </section>
+
 
 <h2>
 
@@ -5937,13 +7211,18 @@ Participating Wellness Partners
 
 </h2>
 
+
 <div class="grid">
+
 
 {% for b in partners %}
 
+
 {% include 'business_card.html' %}
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -5952,24 +7231,34 @@ will appear here.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
-<h2> Upcoming Retreats </h2>
+
+<h2>
+Upcoming Retreats
+</h2>
+
 
 <div class="grid">
 
+
 {% for r in retreats %}
 
+
 <a
-class="card"
-href="{{url_for('retreat_detail',rid=r.id)}}"
+    class="card"
+    href="{{url_for('retreat_detail',rid=r.id)}}"
+>
 
 
+<h3>
+{{r.title}}
+</h3>
 
-
-<h3> {{r.title}} </h3>
 
 <p>
 
@@ -5979,9 +7268,14 @@ href="{{url_for('retreat_detail',rid=r.id)}}"
 
 </p>
 
-<small> {{r.preferred_dates}} </small>
+
+<small>
+{{r.preferred_dates}}
+</small>
+
 
 {% if r.connection_retreat %}
+
 
 <p>
 
@@ -5993,11 +7287,15 @@ Conscious Connections Retreat
 
 </p>
 
+
 {% endif %}
+
 
 </a>
 
+
 {% else %}
+
 
 <div class="empty">
 
@@ -6007,12 +7305,16 @@ after they are created.
 
 </div>
 
+
 {% endfor %}
+
 
 </div>
 
+
 {% endblock %}
 '''
+
 
 T["retreat_build.html"] = r'''
 
@@ -6020,83 +7322,106 @@ T["retreat_build.html"] = r'''
 
 {% block content %}
 
+
 <h1>
 
 {{'Build a Date / Friendship Retreat' if connection else 'Build My Retreat Constellation'}}
 
 </h1>
 
-<form method="post" class="card" >
 
-<input
-type="hidden"
-name="connection_retreat"
-value="{{1 if connection else 0}}"
-
-
+<form
+    method="post"
+    class="card"
+>
 
 
 <input
-name="title"
-placeholder="Retreat name"
-required
+    type="hidden"
+    name="connection_retreat"
+    value="{{1 if connection else 0}}"
+>
 
 
+<input
+    name="title"
+    placeholder="Retreat name"
+    required
+>
 
 
 <select name="season">
 
-<option> Spring </option>
 
-<option> Summer </option>
+<option>
+Spring
+</option>
 
-<option> Autumn </option>
 
-<option> Winter </option>
+<option>
+Summer
+</option>
+
+
+<option>
+Autumn
+</option>
+
+
+<option>
+Winter
+</option>
+
 
 </select>
 
-<input
-name="retreat_type"
-value="{{'Date / Friendship Retreat' if connection else ''}}"
-placeholder="Solo, Couples, Family, Creator..."
-
-
-
 
 <input
-name="area"
-placeholder="Destination / preferred area"
-
-
+    name="retreat_type"
+    value="{{'Date / Friendship Retreat' if connection else ''}}"
+    placeholder="Solo, Couples, Family, Creator..."
+>
 
 
 <input
-name="preferred_dates"
-placeholder="Preferred dates"
-
-
-
-
-<input
-name="guests"
-type="number"
-min="1"
-value="{{2 if connection else 1}}"
-
-
+    name="area"
+    placeholder="Destination / preferred area"
+>
 
 
 <input
-name="budget"
-placeholder="Accommodation budget"
+    name="preferred_dates"
+    placeholder="Preferred dates"
+>
 
 
+<input
+    name="guests"
+    type="number"
+    min="1"
+    value="{{2 if connection else 1}}"
+>
 
 
-<textarea name="lodging_preferences" placeholder="Private property, bedrooms, water, nature, accessibility, luxury preferences..." > </textarea>
+<input
+    name="budget"
+    placeholder="Accommodation budget"
+>
 
-<textarea name="wellness_interests" placeholder="Yoga, Reiki, massage, sound, creator meetup, meditation..." > </textarea>
+
+<textarea
+    name="lodging_preferences"
+    placeholder="Private property, bedrooms, water, nature, accessibility, luxury preferences..."
+>
+</textarea>
+
+
+<textarea
+    name="wellness_interests"
+    placeholder="Yoga, Reiki, massage, sound, creator meetup, meditation..."
+>
+</textarea>
+
 
 <button class="btn">
 
@@ -6104,10 +7429,13 @@ Create Retreat Constellation
 
 </button>
 
+
 </form>
+
 
 {% endblock %}
 '''
+
 
 T["retreat_detail.html"] = r'''
 
@@ -6115,61 +7443,93 @@ T["retreat_detail.html"] = r'''
 
 {% block content %}
 
-<h1> {{r.title}} </h1>
+
+<h1>
+{{r.title}}
+</h1>
+
 
 <div class="two">
 
+
 <article class="card">
 
-<span class="kicker"> RETREAT PLAN </span>
+
+<span class="kicker">
+RETREAT PLAN
+</span>
+
 
 <p>
 
-<b> Season: </b>
+<b>
+Season:
+</b>
 
 {{r.season}}
 
 </p>
 
+
 <p>
 
-<b> Area: </b>
+<b>
+Area:
+</b>
 
 {{r.area}}
 
 </p>
 
+
 <p>
 
-<b> Dates: </b>
+<b>
+Dates:
+</b>
 
 {{r.preferred_dates}}
 
 </p>
 
+
 <p>
 
-<b> Guests: </b>
+<b>
+Guests:
+</b>
 
 {{r.guests}}
 
 </p>
 
+
 <p>
 
-<b> Budget: </b>
+<b>
+Budget:
+</b>
 
 {{r.budget}}
 
 </p>
 
+
 </article>
+
 
 <article class="card">
 
-<span class="kicker"> YOUR RETREAT LOCATION </span>
 
-<h2> {{r.location_status}} </h2>
+<span class="kicker">
+YOUR RETREAT LOCATION
+</span>
+
+
+<h2>
+{{r.location_status}}
+</h2>
+
 
 <p>
 
@@ -6183,14 +7543,15 @@ and lodging budget.
 
 </p>
 
+
 <form method="post">
 
+
 <input
-type="hidden"
-name="action"
-value="location"
-
-
+    type="hidden"
+    name="action"
+    value="location"
+>
 
 
 <button class="btn">
@@ -6199,23 +7560,39 @@ Request Retreat Location Search
 
 </button>
 
+
 </form>
+
 
 </article>
 
+
 </div>
 
-<h2> Retreat Constellation </h2>
+
+<h2>
+Retreat Constellation
+</h2>
+
 
 <div class="grid">
 
+
 {% for p in partners %}
+
 
 <article class="card">
 
-<h3> {{p.business_name}} </h3>
 
-<p> {{p.creator_title or p.category}} </p>
+<h3>
+{{p.business_name}}
+</h3>
+
+
+<p>
+{{p.creator_title or p.category}}
+</p>
+
 
 <p>
 
@@ -6224,31 +7601,37 @@ Status:
 
 </p>
 
+
 <a
-class="outline"
-href="{{url_for('business_app',slug=p.slug)}}"
-
-
-
+    class="outline"
+    href="{{url_for('business_app',slug=p.slug)}}"
+>
 
 Open Business App
 
 </a>
 
+
 </article>
+
 
 {% endfor %}
 
+
 </div>
 
-<form method="post" class="card" >
+
+<form
+    method="post"
+    class="card"
+>
+
 
 <input
-type="hidden"
-name="action"
-value="partner"
-
-
+    type="hidden"
+    name="action"
+    value="partner"
+>
 
 
 <h3>
@@ -6258,9 +7641,12 @@ Wellness Partner
 
 </h3>
 
+
 <select name="business_id">
 
+
 {% for b in eligible %}
+
 
 <option value="{{b.id}}">
 
@@ -6270,9 +7656,12 @@ Wellness Partner
 
 </option>
 
+
 {% endfor %}
 
+
 </select>
+
 
 <button class="btn">
 
@@ -6280,11 +7669,17 @@ Request Partner Availability
 
 </button>
 
+
 </form>
 
-<h2> Retreat Coordination </h2>
+
+<h2>
+Retreat Coordination
+</h2>
+
 
 <article class="card">
+
 
 <p>
 
@@ -6296,17 +7691,23 @@ and retreat details.
 
 </p>
 
+
 <form method="post">
 
+
 <input
-type="hidden"
-name="action"
-value="message"
+    type="hidden"
+    name="action"
+    value="message"
+>
 
 
+<textarea
+    name="body"
+    placeholder="Message about dates, availability, location or retreat details..."
+>
+</textarea>
 
-
-<textarea name="body" placeholder="Message about dates, availability, location or retreat details..." > </textarea>
 
 <button class="btn">
 
@@ -6314,30 +7715,47 @@ Send Retreat Message
 
 </button>
 
+
 </form>
 
+
 </article>
+
 
 {% for m in msgs %}
 
+
 <article class="card">
 
-<b> {{m.sender_name}} </b>
 
-<small> {{m.created_at}} </small>
+<b>
+{{m.sender_name}}
+</b>
 
-<p> {{m.body}} </p>
+
+<small>
+{{m.created_at}}
+</small>
+
+
+<p>
+{{m.body}}
+</p>
+
 
 </article>
 
+
 {% endfor %}
+
 
 {% endblock %}
 '''
 
-============================================================
-MEMBERSHIP
-============================================================
+
+# ============================================================
+# MEMBERSHIP
+# ============================================================
 
 T["membership.html"] = r'''
 
@@ -6345,11 +7763,17 @@ T["membership.html"] = r'''
 
 {% block content %}
 
+
 <section class="hero">
+
 
 <div>
 
-<span class="kicker"> MEMBERSHIP </span>
+
+<span class="kicker">
+MEMBERSHIP
+</span>
+
 
 <h1>
 
@@ -6358,23 +7782,30 @@ Discover Your Seasons Within.
 
 </h1>
 
+
 </div>
 
+
 <img
-class="hero-logo"
-src="{{url_for('static',filename='seasons-within-logo.png')}}"
-alt=""
-
-
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
 
 
 </section>
 
+
 <div class="grid">
+
 
 <article class="card">
 
-<h2> Free </h2>
+
+<h2>
+Free
+</h2>
+
 
 <p>
 
@@ -6394,9 +7825,12 @@ free business listing
 
 </p>
 
+
 </article>
 
+
 <article class="card">
+
 
 <h2>
 
@@ -6406,6 +7840,7 @@ The Seasons Within Membership
 ${{MEMBER_PRICE}}/month
 
 </h2>
+
 
 <p>
 
@@ -6426,9 +7861,12 @@ and connection notifications
 
 </p>
 
+
 </article>
 
+
 <article class="card">
+
 
 <h2>
 
@@ -6438,6 +7876,7 @@ Business Network
 ${{BUSINESS_PRICE}}/month
 
 </h2>
+
 
 <p>
 
@@ -6463,16 +7902,20 @@ Retreat Constellation participation
 
 </p>
 
+
 </article>
 
+
 </div>
+
 
 {% endblock %}
 '''
 
-============================================================
-PRIVATE ADMIN
-============================================================
+
+# ============================================================
+# PRIVATE ADMIN
+# ============================================================
 
 T["admin.html"] = r'''
 
@@ -6480,15 +7923,25 @@ T["admin.html"] = r'''
 
 {% block content %}
 
-<h1> Private Admin </h1>
+
+<h1>
+Private Admin
+</h1>
+
 
 <div class="grid">
 
+
 <article class="card">
 
-<h2> Users </h2>
+
+<h2>
+Users
+</h2>
+
 
 {% for u in users %}
+
 
 <p>
 
@@ -6498,21 +7951,31 @@ T["admin.html"] = r'''
 
 {% if u.is_admin %}
 
-<b> ADMIN </b>
+<b>
+ADMIN
+</b>
 
 {% endif %}
 
 </p>
 
+
 {% endfor %}
+
 
 </article>
 
+
 <article class="card">
 
-<h2> Businesses </h2>
+
+<h2>
+Businesses
+</h2>
+
 
 {% for b in businesses %}
+
 
 <p>
 
@@ -6522,15 +7985,23 @@ T["admin.html"] = r'''
 
 </p>
 
+
 {% endfor %}
+
 
 </article>
 
+
 <article class="card">
 
-<h2> Retreats </h2>
+
+<h2>
+Retreats
+</h2>
+
 
 {% for r in retreats %}
+
 
 <p>
 
@@ -6540,2395 +8011,478 @@ T["admin.html"] = r'''
 
 </p>
 
+
 {% endfor %}
+
 
 </article>
 
+
 </div>
+
 
 {% endblock %}
 '''
 
-============================================================
-JINJA
-============================================================
+
+# ============================================================
+# JINJA
+# ============================================================
 
 app.jinja_loader = DictLoader(
-T
+    T
 )
+
 
 app.jinja_env.globals.update(
 
-media_url=
-    media_url,
+    media_url=
+        media_url,
 
-is_admin=
-    admin,
+    is_admin=
+        admin,
 
-is_video=
-    is_video,
+    is_video=
+        is_video,
 
-MEMBER_PRICE=
-    MEMBER_PRICE,
+    age_from_birth_date=
+        age_from_birth_date,
 
-BUSINESS_PRICE=
-    BUSINESS_PRICE,
+    MEMBER_PRICE=
+        MEMBER_PRICE,
 
+    BUSINESS_PRICE=
+        BUSINESS_PRICE,
 )
+
 
 @app.context_processor
 def context():
 
-return {
-    "me":
-        me()
-}
-============================================================
-UPLOADS
-============================================================
+    return {
+        "me":
+            me()
+    }
+
+
+# ============================================================
+# UPLOADS
+# ============================================================
 
 @app.route(
-"/uploads/path:filename"
+    "/uploads/<path:filename>"
 )
 def uploads(filename):
 
-return send_from_directory(
-    UPLOADS,
-    filename
-)
-============================================================
-PUBLIC HOME
-============================================================
+    return send_from_directory(
+        UPLOADS,
+        filename
+    )
+
+
+# ============================================================
+# PUBLIC HOME
+# ============================================================
 
 @app.route("/")
 def public_home():
 
-connection = conn()
+    connection = conn()
 
 
-businesses = connection.execute(
-    """
-    SELECT *
+    businesses = connection.execute(
+        """
+        SELECT *
 
-    FROM businesses
+        FROM businesses
 
-    WHERE status='active'
+        WHERE status='active'
 
-    ORDER BY
-        featured_order ASC,
-        id ASC
+        ORDER BY
+            featured_order ASC,
+            id ASC
 
-    LIMIT 10
-    """
-).fetchall()
-
-
-connection.close()
+        LIMIT 10
+        """
+    ).fetchall()
 
 
-return render_template(
+    connection.close()
 
-    "public.html",
 
-    businesses=
-        businesses,
+    return render_template(
 
-    sky=
-        current_sky(),
-)
+        "public.html",
+
+        businesses=
+            businesses,
+
+        sky=
+            current_sky(),
+    )
+
 
 @app.route("/home")
 def home():
 
-return redirect(
-    url_for(
-        "public_home"
+    return redirect(
+        url_for(
+            "public_home"
+        )
     )
-)
-============================================================
-JOIN
-============================================================
+
+
+# ============================================================
+# JOIN
+# ============================================================
 
 @app.route(
-"/join",
-methods=[
-"GET",
-"POST"
-]
+    "/join",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
 def join():
 
-if request.method == "POST":
+    if request.method == "POST":
 
-    name = request.form.get(
-        "name",
-        ""
-    ).strip()
-
-
-    email = request.form.get(
-        "email",
-        ""
-    ).strip().lower()
+        name = request.form.get(
+            "name",
+            ""
+        ).strip()
 
 
-    password = request.form.get(
-        "password",
-        ""
-    )
+        email = request.form.get(
+            "email",
+            ""
+        ).strip().lower()
 
 
-    if (
-        not name
-        or "@" not in email
-        or len(password) < 6
-    ):
-
-        flash(
-            "Enter your name, a valid email "
-            "and a password of at least 6 characters."
+        password = request.form.get(
+            "password",
+            ""
         )
 
 
-    else:
-
-        connection = conn()
-
-
-        try:
-
-            cursor = connection.execute(
-                """
-                INSERT INTO users(
-
-                    name,
-
-                    email,
-
-                    password,
-
-                    community_enabled,
-
-                    conscious_connections_enabled,
-
-                    business_interest
-                )
-
-                VALUES(
-
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?
-                )
-                """,
-                (
-
-                    name,
-
-                    email,
-
-                    hp(
-                        password
-                    ),
-
-                    (
-                        1
-                        if request.form.get(
-                            "community_enabled"
-                        )
-                        else 0
-                    ),
-
-                    (
-                        1
-                        if request.form.get(
-                            "conscious_connections_enabled"
-                        )
-                        else 0
-                    ),
-
-                    (
-                        1
-                        if request.form.get(
-                            "business_interest"
-                        )
-                        else 0
-                    ),
-                )
-            )
-
-
-            connection.commit()
-
-
-            session[
-                "uid"
-            ] = cursor.lastrowid
-
-
-            connection.close()
-
-
-            return redirect(
-                url_for(
-                    "onboarding"
-                )
-            )
-
-
-        except sqlite3.IntegrityError:
-
-            connection.close()
-
+        if (
+            not name
+            or "@" not in email
+            or len(password) < 6
+        ):
 
             flash(
-                "That email already has an account."
+                "Enter your name, a valid email "
+                "and a password of at least 6 characters."
             )
 
 
-return render_template(
-    "join.html"
-)
-============================================================
-ONBOARDING
-============================================================
+        else:
+
+            connection = conn()
+
+
+            try:
+
+                cursor = connection.execute(
+                    """
+                    INSERT INTO users(
+
+                        name,
+
+                        email,
+
+                        password,
+
+                        community_enabled,
+
+                        conscious_connections_enabled,
+
+                        business_interest
+                    )
+
+                    VALUES(
+
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+
+                        name,
+
+                        email,
+
+                        hp(
+                            password
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "community_enabled"
+                            )
+                            else 0
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "conscious_connections_enabled"
+                            )
+                            else 0
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "business_interest"
+                            )
+                            else 0
+                        ),
+                    )
+                )
+
+
+                connection.commit()
+
+
+                session[
+                    "uid"
+                ] = cursor.lastrowid
+
+
+                connection.close()
+
+
+                return redirect(
+                    url_for(
+                        "onboarding"
+                    )
+                )
+
+
+            except sqlite3.IntegrityError:
+
+                connection.close()
+
+
+                flash(
+                    "That email already has an account."
+                )
+
+
+    return render_template(
+        "join.html"
+    )
+
+
+# ============================================================
+# ONBOARDING
+# ============================================================
 
 @app.route(
-"/onboarding",
-methods=[
-"GET",
-"POST"
-]
+    "/onboarding",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
 @login_required
 def onboarding():
 
-user = me()
+    user = me()
 
 
-if request.method == "POST":
+    if request.method == "POST":
 
-    connection = conn()
+        connection = conn()
 
 
-    if user[
-        "conscious_connections_enabled"
-    ]:
+        if user[
+            "conscious_connections_enabled"
+        ]:
 
-        connection.execute(
-            """
-            UPDATE users
+            connection.execute(
+                """
+                UPDATE users
 
-            SET connection_type=?
+                SET connection_type=?
 
-            WHERE id=?
-            """,
-            (
+                WHERE id=?
+                """,
+                (
 
-                request.form.get(
-                    "connection_type",
-                    "Both"
-                ),
+                    request.form.get(
+                        "connection_type",
+                        "Both"
+                    ),
 
-                user[
-                    "id"
-                ],
+                    user[
+                        "id"
+                    ],
+                )
             )
-        )
 
 
-    connection.commit()
+        connection.commit()
 
-    connection.close()
-
-
-    return redirect(
-        url_for(
-            "profile_edit"
-        )
-    )
-
-
-return render_template(
-    "onboarding.html",
-    u=user
-)
-============================================================
-LOGIN
-============================================================
-
-@app.route(
-"/login",
-methods=[
-"GET",
-"POST"
-]
-)
-def login():
-
-if request.method == "POST":
-
-    email = request.form.get(
-        "email",
-        ""
-    ).strip().lower()
-
-
-    password = request.form.get(
-        "password",
-        ""
-    )
-
-
-    connection = conn()
-
-
-    user = connection.execute(
-        """
-        SELECT *
-
-        FROM users
-
-        WHERE lower(email)=?
-        """,
-        (
-            email,
-        )
-    ).fetchone()
-
-
-    connection.close()
-
-
-    if (
-        user
-        and
-        user[
-            "password"
-        ] == hp(
-            password
-        )
-    ):
-
-        session[
-            "uid"
-        ] = user[
-            "id"
-        ]
+        connection.close()
 
 
         return redirect(
-
-            request.args.get(
-                "next"
-            )
-
-            or
-
             url_for(
-                "public_home"
+                "profile_edit"
             )
         )
 
 
-    flash(
-        "Email or password not recognized."
+    return render_template(
+        "onboarding.html",
+        u=user
     )
 
 
-return render_template(
-    "login.html"
-)
-
-@app.route("/logout")
-def logout():
-
-session.clear()
-
-
-return redirect(
-    url_for(
-        "public_home"
-    )
-)
-============================================================
-COMMUNITY
-============================================================
+# ============================================================
+# LOGIN
+# ============================================================
 
 @app.route(
-"/community",
-methods=[
-"GET",
-"POST"
-]
+    "/login",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
-@login_required
-def community():
+def login():
 
-user = me()
+    if request.method == "POST":
+
+        email = request.form.get(
+            "email",
+            ""
+        ).strip().lower()
 
 
-if not user[
-    "community_enabled"
-]:
-
-    return redirect(
-        url_for(
-            "profile"
+        password = request.form.get(
+            "password",
+            ""
         )
-    )
 
 
-connection = conn()
+        connection = conn()
 
 
-if request.method == "POST":
-
-    body = request.form.get(
-        "body",
-        ""
-    ).strip()
-
-
-    media = save_file(
-
-        request.files.get(
-            "photo"
-        ),
-
-        f"community{user['id']}"
-    )
-
-
-    if (
-        media
-        and is_video(
-            media
-        )
-    ):
-
-        media = ""
-
-
-    if (
-        body
-        or media
-    ):
-
-        connection.execute(
+        user = connection.execute(
             """
-            INSERT INTO posts(
+            SELECT *
 
-                user_id,
+            FROM users
 
-                body,
-
-                media_path,
-
-                media_type
-            )
-
-            VALUES(
-
-                ?,
-                ?,
-                ?,
-                ?
-            )
+            WHERE lower(email)=?
             """,
             (
-
-                user[
-                    "id"
-                ],
-
-                body,
-
-                media,
-
-                (
-                    "image"
-                    if media
-                    else ""
-                ),
+                email,
             )
-        )
-
-
-        connection.commit()
-
-
-posts = connection.execute(
-    """
-    SELECT
-
-        p.*,
-
-        u.name,
-
-        u.photo
-
-    FROM posts p
-
-    JOIN users u
-    ON u.id=p.user_id
-
-    ORDER BY
-        p.id DESC
-
-    LIMIT 50
-    """
-).fetchall()
-
-
-businesses = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE status='active'
-
-    ORDER BY
-        featured_order,
-        id
-
-    LIMIT 6
-    """
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "community.html",
-
-    posts=
-        posts,
-
-    businesses=
-        businesses,
-
-    reflection=
-        journal_reflection(
-            user
-        ),
-)
-============================================================
-PROFILE
-============================================================
-
-@app.route("/profile")
-@login_required
-def profile():
-
-user = me()
-
-
-return render_template(
-
-    "profile.html",
-
-    u=
-        user,
-
-    reflection=
-        journal_reflection(
-            user
-        ),
-)
-
-@app.route(
-"/profile/edit",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def profile_edit():
-
-user = me()
-
-
-if request.method == "POST":
-
-    photo = (
-
-        save_file(
-
-            request.files.get(
-                "photo"
-            ),
-
-            f"user{user['id']}"
-        )
-
-        or
-
-        user[
-            "photo"
-        ]
-    )
-
-
-    connection = conn()
-
-
-    connection.execute(
-        """
-        UPDATE users
-
-        SET
-
-            name=?,
-
-            city=?,
-
-            profile_headline=?,
-
-            bio=?,
-
-            birth_date=?,
-
-            birth_time=?,
-
-            time_known=?,
-
-            connection_type=?,
-
-            photo=?
-
-        WHERE id=?
-        """,
-        (
-
-            request.form.get(
-                "name",
-                ""
-            ).strip(),
-
-            request.form.get(
-                "city",
-                ""
-            ).strip(),
-
-            request.form.get(
-                "profile_headline",
-                ""
-            ).strip(),
-
-            request.form.get(
-                "bio",
-                ""
-            ).strip(),
-
-            request.form.get(
-                "birth_date",
-                ""
-            ).strip(),
-
-            request.form.get(
-                "birth_time",
-                ""
-            ).strip(),
-
-            (
-                1
-                if request.form.get(
-                    "time_known"
-                )
-                else 0
-            ),
-
-            request.form.get(
-                "connection_type",
-                user[
-                    "connection_type"
-                ]
-            ),
-
-            photo,
-
-            user[
-                "id"
-            ],
-        )
-    )
-
-
-    connection.commit()
-
-
-    updated = connection.execute(
-        """
-        SELECT *
-        FROM users
-        WHERE id=?
-        """,
-        (
-            user[
-                "id"
-            ],
-        )
-    ).fetchone()
-
-
-    chart = chart_for(
-        updated
-    )
-
-
-    if chart:
-
-        placements = [
-
-            chart.get(
-                placement,
-                {}
-            ).get(
-                "sign",
-                ""
-            )
-
-            for placement
-
-            in (
-                "Sun",
-                "Moon",
-                "Mercury",
-                "Venus",
-                "Mars",
-                "Jupiter",
-                "Saturn",
-                "Uranus",
-                "Neptune",
-                "Pluto",
-            )
-        ]
-
-
-        connection.execute(
-            """
-            UPDATE users
-
-            SET
-
-                sun=?,
-
-                moon=?,
-
-                mercury=?,
-
-                venus=?,
-
-                mars=?,
-
-                jupiter=?,
-
-                saturn=?,
-
-                uranus=?,
-
-                neptune=?,
-
-                pluto=?
-
-            WHERE id=?
-            """,
-            (
-                *placements,
-
-                user[
-                    "id"
-                ],
-            )
-        )
-
-
-        connection.commit()
-
-
-    connection.close()
-
-
-    flash(
-        "Profile saved."
-    )
-
-
-    return redirect(
-        url_for(
-            "profile"
-        )
-    )
-
-
-return render_template(
-    "profile_edit.html",
-    u=user
-)
-============================================================
-JOURNAL
-============================================================
-
-@app.route(
-"/journal",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def journal():
-
-user = me()
-
-connection = conn()
-
-
-if request.method == "POST":
-
-    body = request.form.get(
-        "body",
-        ""
-    ).strip()
-
-
-    if body:
-
-        connection.execute(
-            """
-            INSERT INTO journals(
-
-                user_id,
-
-                body,
-
-                sky_json
-            )
-
-            VALUES(
-
-                ?,
-                ?,
-                ?
-            )
-            """,
-            (
-
-                user[
-                    "id"
-                ],
-
-                body,
-
-                json.dumps(
-                    current_sky()
-                ),
-            )
-        )
-
-
-        connection.commit()
-
-
-entries = connection.execute(
-    """
-    SELECT *
-
-    FROM journals
-
-    WHERE user_id=?
-
-    ORDER BY
-        id DESC
-    """,
-    (
-        user[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "journal.html",
-
-    reflection=
-        journal_reflection(
-            user
-        ),
-
-    entries=
-        entries,
-)
-============================================================
-ENABLE CONSCIOUS CONNECTIONS
-============================================================
-
-@app.route(
-"/connections/join",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def enable_connections():
-
-user = me()
-
-
-if request.method == "POST":
-
-    connection = conn()
-
-
-    connection.execute(
-        """
-        UPDATE users
-
-        SET
-
-            conscious_connections_enabled=1,
-
-            connection_type=?
-
-        WHERE id=?
-        """,
-        (
-
-            request.form.get(
-                "connection_type",
-                "Both"
-            ),
-
-            user[
-                "id"
-            ],
-        )
-    )
-
-
-    connection.commit()
-
-    connection.close()
-
-
-    return redirect(
-        url_for(
-            "connections"
-        )
-    )
-
-
-return render_template(
-    "connections_join.html"
-)
-============================================================
-CONSCIOUS CONNECTIONS COMMUNITY
-============================================================
-
-@app.route(
-"/connections",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def connections():
-
-user = me()
-
-
-if not user[
-    "conscious_connections_enabled"
-]:
-
-    return redirect(
-        url_for(
-            "enable_connections"
-        )
-    )
-
-
-mode = request.args.get(
-    "mode",
-    "all"
-)
-
-
-connection = conn()
-
-
-host_media = bool(
-
-    admin(
-        user
-    )
-
-    or
-
-    (
-        user[
-            "email"
-        ]
-        or ""
-    ).lower()
-
-    ==
-
-    GALAXY_EMAIL
-)
-
-
-if request.method == "POST":
-
-    body = request.form.get(
-        "body",
-        ""
-    ).strip()
-
-
-    media = ""
-
-    media_type = ""
-
-
-    if host_media:
-
-        media = save_file(
-
-            request.files.get(
-                "media"
-            ),
-
-            f"connections{user['id']}"
-        )
-
-
-        media_type = (
-
-            "video"
-
-            if is_video(
-                media
-            )
-
-            else (
-
-                "image"
-
-                if media
-
-                else ""
-            )
-        )
-
-
-    if (
-        body
-        or media
-    ):
-
-        connection.execute(
-            """
-            INSERT INTO connection_posts(
-
-                user_id,
-
-                body,
-
-                media_path,
-
-                media_type
-            )
-
-            VALUES(
-
-                ?,
-                ?,
-                ?,
-                ?
-            )
-            """,
-            (
-
-                user[
-                    "id"
-                ],
-
-                body,
-
-                media,
-
-                media_type,
-            )
-        )
-
-
-        connection.commit()
-
-
-posts = connection.execute(
-    """
-    SELECT
-
-        p.*,
-
-        u.name,
-
-        u.photo
-
-    FROM connection_posts p
-
-    JOIN users u
-    ON u.id=p.user_id
-
-    WHERE
-        u.conscious_connections_enabled=1
-
-    ORDER BY
-        p.id DESC
-
-    LIMIT 50
-    """
-).fetchall()
-
-
-people = connection.execute(
-    """
-    SELECT *
-
-    FROM users
-
-    WHERE
-
-        id<>?
-
-        AND conscious_connections_enabled=1
-
-    ORDER BY
-        id DESC
-    """,
-    (
-        user[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-filtered = []
-
-
-for person in people:
-
-    connection_type = (
-
-        person[
-            "connection_type"
-        ]
-
-        or
-
-        "Both"
-    )
-
-
-    if mode == "dating":
-
-        if connection_type in (
-            "Love & Dating",
-            "Both",
-        ):
-
-            filtered.append(
-                person
-            )
-
-
-    elif mode == "friendship":
-
-        if connection_type in (
-            "Friendship",
-            "Both",
-        ):
-
-            filtered.append(
-                person
-            )
-
-
-    else:
-
-        filtered.append(
-            person
-        )
-
-
-score_mode = (
-
-    "friendship"
-
-    if mode == "friendship"
-
-    else "dating"
-)
-
-
-cards = [
-
-    (
-        person,
-
-        coord(
-            user,
-            person,
-            score_mode
-        )
-    )
-
-    for person
-
-    in filtered
-]
-
-
-businesses = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE
-
-        status='active'
-
-        AND retreat_participation=1
-
-    ORDER BY
-        featured_order,
-        id
-
-    LIMIT 8
-    """
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "connections.html",
-
-    posts=
-        posts,
-
-    cards=
-        cards,
-
-    businesses=
-        businesses,
-
-    mode=
-        mode,
-
-    host_media=
-        host_media,
-)
-============================================================
-CONNECTION PROFILE / COMPATIBILITY
-============================================================
-
-@app.route(
-"/connections/profile/int:uid"
-)
-@login_required
-def connection_profile(uid):
-
-user = me()
-
-
-if not user[
-    "conscious_connections_enabled"
-]:
-
-    return redirect(
-        url_for(
-            "enable_connections"
-        )
-    )
-
-
-connection = conn()
-
-
-person = connection.execute(
-    """
-    SELECT *
-
-    FROM users
-
-    WHERE
-
-        id=?
-
-        AND conscious_connections_enabled=1
-    """,
-    (
-        uid,
-    )
-).fetchone()
-
-
-connection.close()
-
-
-if not person:
-
-    abort(
-        404
-    )
-
-
-mode = request.args.get(
-    "mode",
-    "dating"
-)
-
-
-if mode not in (
-    "dating",
-    "friendship",
-):
-
-    mode = "dating"
-
-
-return render_template(
-
-    "connection_profile.html",
-
-    person=
-        person,
-
-    mode=
-        mode,
-
-    score=
-        coord(
-            user,
-            person,
-            mode
-        ),
-
-    idea=
-        date_idea(
-            user,
-            person,
-            mode
-        ),
-)
-============================================================
-CREATORS ARE PART OF BUSINESS NETWORK
-============================================================
-
-@app.route("/creators")
-def creators():
-
-return redirect(
-    url_for(
-        "business"
-    )
-)
-============================================================
-BUSINESS DIRECTORY
-============================================================
-
-@app.route("/business")
-def business():
-
-query = request.args.get(
-    "q",
-    ""
-).strip()
-
-
-connection = conn()
-
-
-rows = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE
-
-        status='active'
-
-        AND (
-
-            ?=''
-
-            OR business_name LIKE ?
-
-            OR category LIKE ?
-
-            OR description LIKE ?
-
-            OR creator_title LIKE ?
-        )
-
-    ORDER BY
-
-        featured_order,
-
-        id
-    """,
-    (
-
-        query,
-
-        f"%{query}%",
-
-        f"%{query}%",
-
-        f"%{query}%",
-
-        f"%{query}%",
-    )
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "business.html",
-
-    businesses=
-        rows,
-
-    q=
-        query,
-)
-============================================================
-BUSINESS SETUP
-============================================================
-
-@app.route(
-"/business/setup",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def business_setup():
-
-user = me()
-
-connection = conn()
-
-
-business_record = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE owner_id=?
-    """,
-    (
-        user[
-            "id"
-        ],
-    )
-).fetchone()
-
-
-if request.method == "POST":
-
-    business_name = request.form.get(
-        "business_name",
-        ""
-    ).strip()
-
-
-    if not business_name:
-
-        flash(
-            "Business name required."
-        )
+        ).fetchone()
 
 
         connection.close()
 
 
-        return render_template(
-            "business_setup.html",
-            b=business_record
-        )
-
-
-    logo = (
-
-        save_file(
-
-            request.files.get(
-                "logo"
-            ),
-
-            f"biz{user['id']}-logo"
-        )
-
-        or
-
-        (
-            business_record[
-                "logo"
-            ]
-
-            if business_record
-
-            else ""
-        )
-    )
-
-
-    hero_image = (
-
-        business_record[
-            "hero_image"
-        ]
-
-        if business_record
-
-        else ""
-    )
-
-
-    featured_video = (
-
-        business_record[
-            "featured_video"
-        ]
-
-        if business_record
-
-        else ""
-    )
-
-
-    if user[
-        "business_access"
-    ]:
-
-        hero_image = (
-
-            save_file(
-
-                request.files.get(
-                    "hero_image"
-                ),
-
-                f"biz{user['id']}-hero"
+        if (
+            user
+            and
+            user[
+                "password"
+            ] == hp(
+                password
             )
+        ):
 
-            or hero_image
-        )
-
-
-        featured_video = (
-
-            save_file(
-
-                request.files.get(
-                    "featured_video"
-                ),
-
-                f"biz{user['id']}-video"
-            )
-
-            or featured_video
-        )
-
-
-    values = {
-
-        "business_name":
-            business_name,
-
-        "creator_title":
-            request.form.get(
-                "creator_title",
-                ""
-            ).strip(),
-
-        "tagline":
-            request.form.get(
-                "tagline",
-                ""
-            ).strip(),
-
-        "description":
-            request.form.get(
-                "description",
-                ""
-            ).strip(),
-
-        "category":
-            request.form.get(
-                "category",
-                ""
-            ).strip(),
-
-        "city":
-            request.form.get(
-                "city",
-                ""
-            ).strip(),
-
-        "website":
-            request.form.get(
-                "website",
-                ""
-            ).strip(),
-
-        "contact_email":
-            request.form.get(
-                "contact_email",
-                ""
-            ).strip(),
-
-        "phone":
-            request.form.get(
-                "phone",
-                ""
-            ).strip(),
-
-        "logo":
-            logo,
-
-        "hero_image":
-            hero_image,
-
-        "featured_video":
-            featured_video,
-
-        "instagram":
-
-            request.form.get(
-                "instagram",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
+            session[
+                "uid"
+            ] = user[
+                "id"
             ]
 
-            else (
 
-                business_record[
-                    "instagram"
-                ]
+            return redirect(
 
-                if business_record
+                request.args.get(
+                    "next"
+                )
 
-                else ""
-            ),
+                or
 
-        "tiktok":
-
-            request.form.get(
-                "tiktok",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "tiktok"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "youtube":
-
-            request.form.get(
-                "youtube",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "youtube"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "booking_url":
-
-            request.form.get(
-                "booking_url",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "booking_url"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "content_categories":
-
-            request.form.get(
-                "content_categories",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "content_categories"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "audience_info":
-
-            request.form.get(
-                "audience_info",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "audience_info"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "previous_collaborations":
-
-            request.form.get(
-                "previous_collaborations",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "previous_collaborations"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "collaboration_interests":
-
-            request.form.get(
-                "collaboration_interests",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "collaboration_interests"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "followers":
-
-            request.form.get(
-                "followers",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "followers"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "likes":
-
-            request.form.get(
-                "likes",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "likes"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "views":
-
-            request.form.get(
-                "views",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "views"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "engagement_rate":
-
-            request.form.get(
-                "engagement_rate",
-                ""
-            ).strip()
-
-            if user[
-                "business_access"
-            ]
-
-            else (
-
-                business_record[
-                    "engagement_rate"
-                ]
-
-                if business_record
-
-                else ""
-            ),
-
-        "retreat_participation":
-
-            1
-
-            if (
-
-                user[
-                    "business_access"
-                ]
-
-                and
-
-                request.form.get(
-                    "retreat_participation"
+                url_for(
+                    "public_home"
                 )
             )
 
-            else (
 
-                business_record[
-                    "retreat_participation"
-                ]
-
-                if (
-                    business_record
-                    and
-                    not user[
-                        "business_access"
-                    ]
-                )
-
-                else 0
-            ),
-    }
-
-
-    if business_record:
-
-        connection.execute(
-            """
-            UPDATE businesses
-
-            SET
-
-                business_name=:business_name,
-
-                creator_title=:creator_title,
-
-                tagline=:tagline,
-
-                description=:description,
-
-                category=:category,
-
-                city=:city,
-
-                website=:website,
-
-                contact_email=:contact_email,
-
-                phone=:phone,
-
-                logo=:logo,
-
-                hero_image=:hero_image,
-
-                featured_video=:featured_video,
-
-                instagram=:instagram,
-
-                tiktok=:tiktok,
-
-                youtube=:youtube,
-
-                booking_url=:booking_url,
-
-                content_categories=:content_categories,
-
-                audience_info=:audience_info,
-
-                previous_collaborations=:previous_collaborations,
-
-                collaboration_interests=:collaboration_interests,
-
-                followers=:followers,
-
-                likes=:likes,
-
-                views=:views,
-
-                engagement_rate=:engagement_rate,
-
-                retreat_participation=:retreat_participation,
-
-                status='active'
-
-            WHERE owner_id=:owner_id
-            """,
-            {
-
-                **values,
-
-                "owner_id":
-                    user[
-                        "id"
-                    ],
-            }
+        flash(
+            "Email or password not recognized."
         )
 
 
-    else:
-
-        connection.execute(
-            """
-            INSERT INTO businesses(
-
-                owner_id,
-
-                slug,
-
-                business_name,
-
-                creator_title,
-
-                tagline,
-
-                description,
-
-                category,
-
-                city,
-
-                website,
-
-                contact_email,
-
-                phone,
-
-                logo,
-
-                hero_image,
-
-                featured_video,
-
-                instagram,
-
-                tiktok,
-
-                youtube,
-
-                booking_url,
-
-                content_categories,
-
-                audience_info,
-
-                previous_collaborations,
-
-                collaboration_interests,
-
-                followers,
-
-                likes,
-
-                views,
-
-                engagement_rate,
-
-                retreat_participation,
-
-                paid_business,
-
-                media_kit_enabled,
-
-                status
-            )
-
-            VALUES(
-
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-
-                'active'
-            )
-            """,
-            (
-
-                user[
-                    "id"
-                ],
-
-                slugify(
-                    business_name
-                ),
-
-                values[
-                    "business_name"
-                ],
-
-                values[
-                    "creator_title"
-                ],
-
-                values[
-                    "tagline"
-                ],
-
-                values[
-                    "description"
-                ],
-
-                values[
-                    "category"
-                ],
-
-                values[
-                    "city"
-                ],
-
-                values[
-                    "website"
-                ],
-
-                values[
-                    "contact_email"
-                ],
-
-                values[
-                    "phone"
-                ],
-
-                values[
-                    "logo"
-                ],
-
-                values[
-                    "hero_image"
-                ],
-
-                values[
-                    "featured_video"
-                ],
-
-                values[
-                    "instagram"
-                ],
-
-                values[
-                    "tiktok"
-                ],
-
-                values[
-                    "youtube"
-                ],
-
-                values[
-                    "booking_url"
-                ],
-
-                values[
-                    "content_categories"
-                ],
-
-                values[
-                    "audience_info"
-                ],
-
-                values[
-                    "previous_collaborations"
-                ],
-
-                values[
-                    "collaboration_interests"
-                ],
-
-                values[
-                    "followers"
-                ],
-
-                values[
-                    "likes"
-                ],
-
-                values[
-                    "views"
-                ],
-
-                values[
-                    "engagement_rate"
-                ],
-
-                values[
-                    "retreat_participation"
-                ],
-
-                (
-                    1
-                    if user[
-                        "business_access"
-                    ]
-                    else 0
-                ),
-
-                (
-                    1
-                    if user[
-                        "creator_access"
-                    ]
-                    else 0
-                ),
-            )
-        )
-
-
-    connection.commit()
-
-    connection.close()
-
-
-    flash(
-        "Business profile saved."
+    return render_template(
+        "login.html"
     )
+
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
 
 
     return redirect(
         url_for(
-            "business"
+            "public_home"
         )
     )
 
 
-connection.close()
-
-
-return render_template(
-    "business_setup.html",
-    b=business_record
-)
-============================================================
-BUSINESS APP MANAGER
-============================================================
+# ============================================================
+# COMMUNITY
+# ============================================================
 
 @app.route(
-"/business/manage",
-methods=[
-"GET",
-"POST"
-]
+    "/community",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
 @login_required
-def business_manage():
+def community():
 
-user = me()
-
-
-if not user[
-    "business_access"
-]:
-
-    return (
-        "Hosted Business App access required.",
-        403
-    )
+    user = me()
 
 
-connection = conn()
+    if not user[
+        "community_enabled"
+    ]:
 
-
-business_record = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE owner_id=?
-    """,
-    (
-        user[
-            "id"
-        ],
-    )
-).fetchone()
-
-
-if not business_record:
-
-    connection.close()
-
-
-    return redirect(
-        url_for(
-            "business_setup"
+        return redirect(
+            url_for(
+                "profile"
+            )
         )
-    )
 
 
-if request.method == "POST":
-
-    section = request.form.get(
-        "section"
-    )
+    connection = conn()
 
 
-    if section == "content":
+    if request.method == "POST":
 
-        caption = request.form.get(
-            "caption",
+        body = request.form.get(
+            "body",
             ""
         ).strip()
 
@@ -8936,46 +8490,35 @@ if request.method == "POST":
         media = save_file(
 
             request.files.get(
-                "media"
+                "photo"
             ),
 
-            f"bizcontent{business_record['id']}"
-        )
-
-
-        media_type = (
-
-            "video"
-
-            if is_video(
-                media
-            )
-
-            else (
-
-                "image"
-
-                if media
-
-                else ""
-            )
+            f"community{user['id']}"
         )
 
 
         if (
-            caption
+            media
+            and is_video(
+                media
+            )
+        ):
+
+            media = ""
+
+
+        if (
+            body
             or media
         ):
 
             connection.execute(
                 """
-                INSERT INTO business_content(
+                INSERT INTO posts(
 
-                    business_id,
+                    user_id,
 
-                    content_type,
-
-                    caption,
+                    body,
 
                     media_path,
 
@@ -8987,26 +8530,24 @@ if request.method == "POST":
                     ?,
                     ?,
                     ?,
-                    ?,
                     ?
                 )
                 """,
                 (
 
-                    business_record[
+                    user[
                         "id"
                     ],
 
-                    request.form.get(
-                        "content_type",
-                        "post"
-                    ),
-
-                    caption,
+                    body,
 
                     media,
 
-                    media_type,
+                    (
+                        "image"
+                        if media
+                        else ""
+                    ),
                 )
             )
 
@@ -9014,36 +8555,1461 @@ if request.method == "POST":
             connection.commit()
 
 
-            flash(
-                "Content published to your Hosted App."
+    posts = connection.execute(
+        """
+        SELECT
+
+            p.*,
+
+            u.name,
+
+            u.photo
+
+        FROM posts p
+
+        JOIN users u
+        ON u.id=p.user_id
+
+        ORDER BY
+            p.id DESC
+
+        LIMIT 50
+        """
+    ).fetchall()
+
+
+    businesses = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE status='active'
+
+        ORDER BY
+            featured_order,
+            id
+
+        LIMIT 6
+        """
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "community.html",
+
+        posts=
+            posts,
+
+        businesses=
+            businesses,
+
+        reflection=
+            journal_reflection(
+                user
+            ),
+    )
+
+
+# ============================================================
+# PROFILE
+# ============================================================
+
+@app.route("/profile")
+@login_required
+def profile():
+
+    user = me()
+
+
+    return render_template(
+
+        "profile.html",
+
+        u=
+            user,
+
+        reflection=
+            journal_reflection(
+                user
+            ),
+    )
+
+
+@app.route(
+    "/profile/edit",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def profile_edit():
+
+    user = me()
+
+
+    if request.method == "POST":
+
+        photo = (
+
+            save_file(
+
+                request.files.get(
+                    "photo"
+                ),
+
+                f"user{user['id']}"
+            )
+
+            or
+
+            user[
+                "photo"
+            ]
+        )
+
+
+        connection = conn()
+
+
+        connection.execute(
+            """
+            UPDATE users
+
+            SET
+
+                name=?,
+
+                city=?,
+
+                profile_headline=?,
+
+                bio=?,
+
+                birth_date=?,
+
+                birth_time=?,
+
+                time_known=?,
+
+                connection_type=?,
+
+                photo=?
+
+            WHERE id=?
+            """,
+            (
+
+                request.form.get(
+                    "name",
+                    ""
+                ).strip(),
+
+                request.form.get(
+                    "city",
+                    ""
+                ).strip(),
+
+                request.form.get(
+                    "profile_headline",
+                    ""
+                ).strip(),
+
+                request.form.get(
+                    "bio",
+                    ""
+                ).strip(),
+
+                request.form.get(
+                    "birth_date",
+                    ""
+                ).strip(),
+
+                request.form.get(
+                    "birth_time",
+                    ""
+                ).strip(),
+
+                (
+                    1
+                    if request.form.get(
+                        "time_known"
+                    )
+                    else 0
+                ),
+
+                request.form.get(
+                    "connection_type",
+                    user[
+                        "connection_type"
+                    ]
+                ),
+
+                photo,
+
+                user[
+                    "id"
+                ],
+            )
+        )
+
+
+        connection.commit()
+
+
+        updated = connection.execute(
+            """
+            SELECT *
+            FROM users
+            WHERE id=?
+            """,
+            (
+                user[
+                    "id"
+                ],
+            )
+        ).fetchone()
+
+
+        chart = chart_for(
+            updated
+        )
+
+
+        if chart:
+
+            placements = [
+
+                chart.get(
+                    placement,
+                    {}
+                ).get(
+                    "sign",
+                    ""
+                )
+
+                for placement
+
+                in (
+                    "Sun",
+                    "Moon",
+                    "Mercury",
+                    "Venus",
+                    "Mars",
+                    "Jupiter",
+                    "Saturn",
+                    "Uranus",
+                    "Neptune",
+                    "Pluto",
+                )
+            ]
+
+
+            connection.execute(
+                """
+                UPDATE users
+
+                SET
+
+                    sun=?,
+
+                    moon=?,
+
+                    mercury=?,
+
+                    venus=?,
+
+                    mars=?,
+
+                    jupiter=?,
+
+                    saturn=?,
+
+                    uranus=?,
+
+                    neptune=?,
+
+                    pluto=?
+
+                WHERE id=?
+                """,
+                (
+                    *placements,
+
+                    user[
+                        "id"
+                    ],
+                )
             )
 
 
-    elif section == "item":
+            connection.commit()
 
-        title = request.form.get(
-            "title",
+
+        connection.close()
+
+
+        flash(
+            "Profile saved."
+        )
+
+
+        return redirect(
+            url_for(
+                "profile"
+            )
+        )
+
+
+    return render_template(
+        "profile_edit.html",
+        u=user
+    )
+
+
+# ============================================================
+# JOURNAL
+# ============================================================
+
+@app.route(
+    "/journal",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def journal():
+
+    user = me()
+
+    connection = conn()
+
+
+    if request.method == "POST":
+
+        body = request.form.get(
+            "body",
             ""
         ).strip()
 
 
-        if title:
+        if body:
 
             connection.execute(
                 """
-                INSERT INTO business_items(
+                INSERT INTO journals(
 
-                    business_id,
+                    user_id,
 
-                    item_type,
+                    body,
 
-                    title,
+                    sky_json
+                )
+
+                VALUES(
+
+                    ?,
+                    ?,
+                    ?
+                )
+                """,
+                (
+
+                    user[
+                        "id"
+                    ],
+
+                    body,
+
+                    json.dumps(
+                        current_sky()
+                    ),
+                )
+            )
+
+
+            connection.commit()
+
+
+    entries = connection.execute(
+        """
+        SELECT *
+
+        FROM journals
+
+        WHERE user_id=?
+
+        ORDER BY
+            id DESC
+        """,
+        (
+            user[
+                "id"
+            ],
+        )
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "journal.html",
+
+        reflection=
+            journal_reflection(
+                user
+            ),
+
+        entries=
+            entries,
+    )
+
+
+# ============================================================
+# ENABLE CONSCIOUS CONNECTIONS
+# ============================================================
+
+@app.route(
+    "/connections/join",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def enable_connections():
+
+    user = me()
+
+    if request.method == "POST":
+
+        def picked(name):
+            return " • ".join(
+                request.form.getlist(name)[:3]
+            )
+
+        connection = conn()
+
+        connection.execute(
+            """
+            UPDATE users
+            SET
+                conscious_connections_enabled=1,
+                connection_type=?,
+                cc_gender=?,
+                cc_seeking=?,
+                cc_looking_for=?,
+                cc_children=?,
+                cc_lifestyle=?,
+                cc_activities=?,
+                cc_values=?,
+                cc_style=?,
+                cc_first_connection=?,
+                cc_retreat_interest=?,
+                cc_occupation=?,
+                cc_height=?,
+                cc_weight=?
+            WHERE id=?
+            """,
+            (
+                request.form.get("connection_type", "Both"),
+                request.form.get("cc_gender", "").strip(),
+                request.form.get("cc_seeking", "").strip(),
+                picked("cc_looking_for"),
+                request.form.get("cc_children", "").strip(),
+                picked("cc_lifestyle"),
+                picked("cc_activities"),
+                picked("cc_values"),
+                request.form.get("cc_style", "").strip(),
+                request.form.get("cc_first_connection", "").strip(),
+                request.form.get("cc_retreat_interest", "").strip(),
+                request.form.get("cc_occupation", "").strip()[:80],
+                request.form.get("cc_height", "").strip()[:20],
+                request.form.get("cc_weight", "").strip()[:20],
+                user["id"],
+            )
+        )
+
+        connection.commit()
+        connection.close()
+
+        flash("Conscious Connections profile saved.")
+
+        return redirect(url_for("connections"))
+
+    return render_template(
+        "connections_join.html",
+        u=user
+    )
+
+
+# ============================================================
+# CONSCIOUS CONNECTIONS COMMUNITY
+# ============================================================
+
+@app.route(
+    "/connections",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def connections():
+
+    user = me()
+
+    if not user["conscious_connections_enabled"]:
+        return redirect(url_for("enable_connections"))
+
+    mode = request.args.get("mode", "all")
+    connection = conn()
+
+    galaxy = connection.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE lower(email)=?
+        """,
+        (GALAXY_EMAIL,)
+    ).fetchone()
+
+    host_can_post = bool(
+        (user["email"] or "").lower() == GALAXY_EMAIL
+    )
+
+    if request.method == "POST":
+
+        if not host_can_post:
+            connection.close()
+            return redirect(url_for("connections"))
+
+        body = request.form.get("body", "").strip()
+        media = save_file(
+            request.files.get("media"),
+            f"connections{user['id']}"
+        )
+        media_type = (
+            "video" if is_video(media)
+            else ("image" if media else "")
+        )
+
+        if body or media:
+            connection.execute(
+                """
+                INSERT INTO connection_posts(
+                    user_id, body, media_path, media_type
+                )
+                VALUES(?, ?, ?, ?)
+                """,
+                (user["id"], body, media, media_type)
+            )
+            connection.commit()
+
+        connection.close()
+        return redirect(url_for("connections", mode=mode))
+
+    posts = connection.execute(
+        """
+        SELECT p.*, u.name, u.photo
+        FROM connection_posts p
+        JOIN users u ON u.id=p.user_id
+        WHERE lower(u.email)=?
+        ORDER BY p.id DESC
+        LIMIT 50
+        """,
+        (GALAXY_EMAIL,)
+    ).fetchall()
+
+    people = connection.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE id<>?
+          AND conscious_connections_enabled=1
+          AND lower(email)<>?
+        ORDER BY id DESC
+        """,
+        (user["id"], GALAXY_EMAIL)
+    ).fetchall()
+
+    filtered = []
+    for person in people:
+        connection_type = person["connection_type"] or "Both"
+        if mode == "dating":
+            if connection_type in ("Love & Dating", "Both"):
+                filtered.append(person)
+        elif mode == "friendship":
+            if connection_type in ("Friendship", "Both"):
+                filtered.append(person)
+        else:
+            filtered.append(person)
+
+    score_mode = "friendship" if mode == "friendship" else "dating"
+    cards = [
+        (person, coord(user, person, score_mode))
+        for person in filtered
+    ]
+
+    businesses = connection.execute(
+        """
+        SELECT *
+        FROM businesses
+        WHERE status='active'
+          AND retreat_participation=1
+        ORDER BY featured_order, id
+        LIMIT 8
+        """
+    ).fetchall()
+
+    connection.close()
+
+    return render_template(
+        "connections.html",
+        posts=posts,
+        cards=cards,
+        businesses=businesses,
+        mode=mode,
+        galaxy=galaxy,
+        host_can_post=host_can_post,
+    )
+
+
+# ============================================================
+# CONNECTION PROFILE / COMPATIBILITY
+# ============================================================
+
+@app.route(
+    "/connections/profile/<int:uid>"
+)
+@login_required
+def connection_profile(uid):
+
+    user = me()
+
+
+    if not user[
+        "conscious_connections_enabled"
+    ]:
+
+        return redirect(
+            url_for(
+                "enable_connections"
+            )
+        )
+
+
+    connection = conn()
+
+
+    person = connection.execute(
+        """
+        SELECT *
+
+        FROM users
+
+        WHERE
+
+            id=?
+
+            AND conscious_connections_enabled=1
+        """,
+        (
+            uid,
+        )
+    ).fetchone()
+
+
+    connection.close()
+
+
+    if not person:
+
+        abort(
+            404
+        )
+
+
+    mode = request.args.get(
+        "mode",
+        "dating"
+    )
+
+
+    if mode not in (
+        "dating",
+        "friendship",
+    ):
+
+        mode = "dating"
+
+
+    return render_template(
+
+        "connection_profile.html",
+
+        person=
+            person,
+
+        mode=
+            mode,
+
+        score=
+            coord(
+                user,
+                person,
+                mode
+            ),
+
+        idea=
+            date_idea(
+                user,
+                person,
+                mode
+            ),
+    )
+
+
+# ============================================================
+# CREATORS ARE PART OF BUSINESS NETWORK
+# ============================================================
+
+@app.route("/creators")
+def creators():
+
+    return redirect(
+        url_for(
+            "business"
+        )
+    )
+
+
+# ============================================================
+# BUSINESS DIRECTORY
+# ============================================================
+
+@app.route("/business")
+def business():
+
+    query = request.args.get(
+        "q",
+        ""
+    ).strip()
+
+
+    connection = conn()
+
+
+    rows = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE
+
+            status='active'
+
+            AND (
+
+                ?=''
+
+                OR business_name LIKE ?
+
+                OR category LIKE ?
+
+                OR description LIKE ?
+
+                OR creator_title LIKE ?
+            )
+
+        ORDER BY
+
+            featured_order,
+
+            id
+        """,
+        (
+
+            query,
+
+            f"%{query}%",
+
+            f"%{query}%",
+
+            f"%{query}%",
+
+            f"%{query}%",
+        )
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "business.html",
+
+        businesses=
+            rows,
+
+        q=
+            query,
+    )
+
+
+# ============================================================
+# BUSINESS SETUP
+# ============================================================
+
+@app.route(
+    "/business/setup",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def business_setup():
+
+    user = me()
+
+    connection = conn()
+
+
+    business_record = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE owner_id=?
+        """,
+        (
+            user[
+                "id"
+            ],
+        )
+    ).fetchone()
+
+
+    if request.method == "POST":
+
+        business_name = request.form.get(
+            "business_name",
+            ""
+        ).strip()
+
+
+        if not business_name:
+
+            flash(
+                "Business name required."
+            )
+
+
+            connection.close()
+
+
+            return render_template(
+                "business_setup.html",
+                b=business_record
+            )
+
+
+        logo = (
+
+            save_file(
+
+                request.files.get(
+                    "logo"
+                ),
+
+                f"biz{user['id']}-logo"
+            )
+
+            or
+
+            (
+                business_record[
+                    "logo"
+                ]
+
+                if business_record
+
+                else ""
+            )
+        )
+
+
+        hero_image = (
+
+            business_record[
+                "hero_image"
+            ]
+
+            if business_record
+
+            else ""
+        )
+
+
+        featured_video = (
+
+            business_record[
+                "featured_video"
+            ]
+
+            if business_record
+
+            else ""
+        )
+
+
+        if user[
+            "business_access"
+        ]:
+
+            hero_image = (
+
+                save_file(
+
+                    request.files.get(
+                        "hero_image"
+                    ),
+
+                    f"biz{user['id']}-hero"
+                )
+
+                or hero_image
+            )
+
+
+            featured_video = (
+
+                save_file(
+
+                    request.files.get(
+                        "featured_video"
+                    ),
+
+                    f"biz{user['id']}-video"
+                )
+
+                or featured_video
+            )
+
+
+        values = {
+
+            "business_name":
+                business_name,
+
+            "creator_title":
+                request.form.get(
+                    "creator_title",
+                    ""
+                ).strip(),
+
+            "tagline":
+                request.form.get(
+                    "tagline",
+                    ""
+                ).strip(),
+
+            "description":
+                request.form.get(
+                    "description",
+                    ""
+                ).strip(),
+
+            "category":
+                request.form.get(
+                    "category",
+                    ""
+                ).strip(),
+
+            "city":
+                request.form.get(
+                    "city",
+                    ""
+                ).strip(),
+
+            "website":
+                request.form.get(
+                    "website",
+                    ""
+                ).strip(),
+
+            "contact_email":
+                request.form.get(
+                    "contact_email",
+                    ""
+                ).strip(),
+
+            "phone":
+                request.form.get(
+                    "phone",
+                    ""
+                ).strip(),
+
+            "logo":
+                logo,
+
+            "hero_image":
+                hero_image,
+
+            "featured_video":
+                featured_video,
+
+            "instagram":
+
+                request.form.get(
+                    "instagram",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "instagram"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "tiktok":
+
+                request.form.get(
+                    "tiktok",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "tiktok"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "youtube":
+
+                request.form.get(
+                    "youtube",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "youtube"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "booking_url":
+
+                request.form.get(
+                    "booking_url",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "booking_url"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "content_categories":
+
+                request.form.get(
+                    "content_categories",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "content_categories"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "audience_info":
+
+                request.form.get(
+                    "audience_info",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "audience_info"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "previous_collaborations":
+
+                request.form.get(
+                    "previous_collaborations",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "previous_collaborations"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "collaboration_interests":
+
+                request.form.get(
+                    "collaboration_interests",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "collaboration_interests"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "followers":
+
+                request.form.get(
+                    "followers",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "followers"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "likes":
+
+                request.form.get(
+                    "likes",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "likes"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "views":
+
+                request.form.get(
+                    "views",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "views"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "engagement_rate":
+
+                request.form.get(
+                    "engagement_rate",
+                    ""
+                ).strip()
+
+                if user[
+                    "business_access"
+                ]
+
+                else (
+
+                    business_record[
+                        "engagement_rate"
+                    ]
+
+                    if business_record
+
+                    else ""
+                ),
+
+            "retreat_participation":
+
+                1
+
+                if (
+
+                    user[
+                        "business_access"
+                    ]
+
+                    and
+
+                    request.form.get(
+                        "retreat_participation"
+                    )
+                )
+
+                else (
+
+                    business_record[
+                        "retreat_participation"
+                    ]
+
+                    if (
+                        business_record
+                        and
+                        not user[
+                            "business_access"
+                        ]
+                    )
+
+                    else 0
+                ),
+        }
+
+
+        if business_record:
+
+            connection.execute(
+                """
+                UPDATE businesses
+
+                SET
+
+                    business_name=:business_name,
+
+                    creator_title=:creator_title,
+
+                    tagline=:tagline,
+
+                    description=:description,
+
+                    category=:category,
+
+                    city=:city,
+
+                    website=:website,
+
+                    contact_email=:contact_email,
+
+                    phone=:phone,
+
+                    logo=:logo,
+
+                    hero_image=:hero_image,
+
+                    featured_video=:featured_video,
+
+                    instagram=:instagram,
+
+                    tiktok=:tiktok,
+
+                    youtube=:youtube,
+
+                    booking_url=:booking_url,
+
+                    content_categories=:content_categories,
+
+                    audience_info=:audience_info,
+
+                    previous_collaborations=:previous_collaborations,
+
+                    collaboration_interests=:collaboration_interests,
+
+                    followers=:followers,
+
+                    likes=:likes,
+
+                    views=:views,
+
+                    engagement_rate=:engagement_rate,
+
+                    retreat_participation=:retreat_participation,
+
+                    status='active'
+
+                WHERE owner_id=:owner_id
+                """,
+                {
+
+                    **values,
+
+                    "owner_id":
+                        user[
+                            "id"
+                        ],
+                }
+            )
+
+
+        else:
+
+            connection.execute(
+                """
+                INSERT INTO businesses(
+
+                    owner_id,
+
+                    slug,
+
+                    business_name,
+
+                    creator_title,
+
+                    tagline,
 
                     description,
 
-                    price,
+                    category,
 
-                    action_url
+                    city,
+
+                    website,
+
+                    contact_email,
+
+                    phone,
+
+                    logo,
+
+                    hero_image,
+
+                    featured_video,
+
+                    instagram,
+
+                    tiktok,
+
+                    youtube,
+
+                    booking_url,
+
+                    content_categories,
+
+                    audience_info,
+
+                    previous_collaborations,
+
+                    collaboration_interests,
+
+                    followers,
+
+                    likes,
+
+                    views,
+
+                    engagement_rate,
+
+                    retreat_participation,
+
+                    paid_business,
+
+                    media_kit_enabled,
+
+                    status
                 )
 
                 VALUES(
@@ -9053,504 +10019,705 @@ if request.method == "POST":
                     ?,
                     ?,
                     ?,
-                    ?
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+
+                    'active'
                 )
                 """,
                 (
 
-                    business_record[
+                    user[
                         "id"
                     ],
 
-                    request.form.get(
-                        "item_type",
-                        "service"
+                    slugify(
+                        business_name
                     ),
 
-                    title,
+                    values[
+                        "business_name"
+                    ],
 
-                    request.form.get(
-                        "description",
-                        ""
-                    ).strip(),
+                    values[
+                        "creator_title"
+                    ],
 
-                    request.form.get(
-                        "price",
-                        ""
-                    ).strip(),
+                    values[
+                        "tagline"
+                    ],
 
-                    request.form.get(
-                        "action_url",
-                        ""
-                    ).strip(),
+                    values[
+                        "description"
+                    ],
+
+                    values[
+                        "category"
+                    ],
+
+                    values[
+                        "city"
+                    ],
+
+                    values[
+                        "website"
+                    ],
+
+                    values[
+                        "contact_email"
+                    ],
+
+                    values[
+                        "phone"
+                    ],
+
+                    values[
+                        "logo"
+                    ],
+
+                    values[
+                        "hero_image"
+                    ],
+
+                    values[
+                        "featured_video"
+                    ],
+
+                    values[
+                        "instagram"
+                    ],
+
+                    values[
+                        "tiktok"
+                    ],
+
+                    values[
+                        "youtube"
+                    ],
+
+                    values[
+                        "booking_url"
+                    ],
+
+                    values[
+                        "content_categories"
+                    ],
+
+                    values[
+                        "audience_info"
+                    ],
+
+                    values[
+                        "previous_collaborations"
+                    ],
+
+                    values[
+                        "collaboration_interests"
+                    ],
+
+                    values[
+                        "followers"
+                    ],
+
+                    values[
+                        "likes"
+                    ],
+
+                    values[
+                        "views"
+                    ],
+
+                    values[
+                        "engagement_rate"
+                    ],
+
+                    values[
+                        "retreat_participation"
+                    ],
+
+                    (
+                        1
+                        if user[
+                            "business_access"
+                        ]
+                        else 0
+                    ),
+
+                    (
+                        1
+                        if user[
+                            "creator_access"
+                        ]
+                        else 0
+                    ),
                 )
             )
 
 
-            connection.commit()
+        connection.commit()
+
+        connection.close()
 
 
-            flash(
-                "Added to your Hosted App."
+        flash(
+            "Business profile saved."
+        )
+
+
+        return redirect(
+            url_for(
+                "business"
             )
+        )
 
-
-content = connection.execute(
-    """
-    SELECT *
-
-    FROM business_content
-
-    WHERE
-
-        business_id=?
-
-        AND active=1
-
-    ORDER BY
-        id DESC
-    """,
-    (
-        business_record[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-items = connection.execute(
-    """
-    SELECT *
-
-    FROM business_items
-
-    WHERE
-
-        business_id=?
-
-        AND active=1
-
-    ORDER BY
-        id DESC
-    """,
-    (
-        business_record[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "business_manage.html",
-
-    b=
-        business_record,
-
-    content=
-        content,
-
-    items=
-        items,
-)
-============================================================
-BUSINESS APP
-============================================================
-
-@app.route(
-"/app/<slug>"
-)
-def business_app(slug):
-
-connection = conn()
-
-
-business_record = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE
-
-        slug=?
-
-        AND status='active'
-    """,
-    (
-        slug,
-    )
-).fetchone()
-
-
-if not business_record:
 
     connection.close()
 
-    abort(
-        404
+
+    return render_template(
+        "business_setup.html",
+        b=business_record
     )
 
 
-owner = connection.execute(
-    """
-    SELECT *
-
-    FROM users
-
-    WHERE id=?
-    """,
-    (
-        business_record[
-            "owner_id"
-        ],
-    )
-).fetchone()
-
-
-content = connection.execute(
-    """
-    SELECT *
-
-    FROM business_content
-
-    WHERE
-
-        business_id=?
-
-        AND active=1
-
-    ORDER BY id DESC
-    """,
-    (
-        business_record[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-items = connection.execute(
-    """
-    SELECT *
-
-    FROM business_items
-
-    WHERE
-
-        business_id=?
-
-        AND active=1
-
-    ORDER BY id DESC
-    """,
-    (
-        business_record[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "business_app.html",
-
-    b=
-        business_record,
-
-    owner=
-        owner,
-
-    content=
-        content,
-
-    items=
-        items,
-)
-============================================================
-COLLABORATIONS
-============================================================
+# ============================================================
+# BUSINESS APP MANAGER
+# ============================================================
 
 @app.route(
-"/app/<slug>/collaborate",
-methods=[
-"GET",
-"POST"
-]
+    "/business/manage",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def business_manage():
+
+    user = me()
+
+
+    if not user[
+        "business_access"
+    ]:
+
+        return (
+            "Hosted Business App access required.",
+            403
+        )
+
+
+    connection = conn()
+
+
+    business_record = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE owner_id=?
+        """,
+        (
+            user[
+                "id"
+            ],
+        )
+    ).fetchone()
+
+
+    if not business_record:
+
+        connection.close()
+
+
+        return redirect(
+            url_for(
+                "business_setup"
+            )
+        )
+
+
+    if request.method == "POST":
+
+        section = request.form.get(
+            "section"
+        )
+
+
+        if section == "content":
+
+            caption = request.form.get(
+                "caption",
+                ""
+            ).strip()
+
+
+            media = save_file(
+
+                request.files.get(
+                    "media"
+                ),
+
+                f"bizcontent{business_record['id']}"
+            )
+
+
+            media_type = (
+
+                "video"
+
+                if is_video(
+                    media
+                )
+
+                else (
+
+                    "image"
+
+                    if media
+
+                    else ""
+                )
+            )
+
+
+            if (
+                caption
+                or media
+            ):
+
+                connection.execute(
+                    """
+                    INSERT INTO business_content(
+
+                        business_id,
+
+                        content_type,
+
+                        caption,
+
+                        media_path,
+
+                        media_type
+                    )
+
+                    VALUES(
+
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+
+                        business_record[
+                            "id"
+                        ],
+
+                        request.form.get(
+                            "content_type",
+                            "post"
+                        ),
+
+                        caption,
+
+                        media,
+
+                        media_type,
+                    )
+                )
+
+
+                connection.commit()
+
+
+                flash(
+                    "Content published to your Hosted App."
+                )
+
+
+        elif section == "item":
+
+            title = request.form.get(
+                "title",
+                ""
+            ).strip()
+
+
+            if title:
+
+                connection.execute(
+                    """
+                    INSERT INTO business_items(
+
+                        business_id,
+
+                        item_type,
+
+                        title,
+
+                        description,
+
+                        price,
+
+                        action_url
+                    )
+
+                    VALUES(
+
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+
+                        business_record[
+                            "id"
+                        ],
+
+                        request.form.get(
+                            "item_type",
+                            "service"
+                        ),
+
+                        title,
+
+                        request.form.get(
+                            "description",
+                            ""
+                        ).strip(),
+
+                        request.form.get(
+                            "price",
+                            ""
+                        ).strip(),
+
+                        request.form.get(
+                            "action_url",
+                            ""
+                        ).strip(),
+                    )
+                )
+
+
+                connection.commit()
+
+
+                flash(
+                    "Added to your Hosted App."
+                )
+
+
+    content = connection.execute(
+        """
+        SELECT *
+
+        FROM business_content
+
+        WHERE
+
+            business_id=?
+
+            AND active=1
+
+        ORDER BY
+            id DESC
+        """,
+        (
+            business_record[
+                "id"
+            ],
+        )
+    ).fetchall()
+
+
+    items = connection.execute(
+        """
+        SELECT *
+
+        FROM business_items
+
+        WHERE
+
+            business_id=?
+
+            AND active=1
+
+        ORDER BY
+            id DESC
+        """,
+        (
+            business_record[
+                "id"
+            ],
+        )
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "business_manage.html",
+
+        b=
+            business_record,
+
+        content=
+            content,
+
+        items=
+            items,
+    )
+
+
+# ============================================================
+# BUSINESS APP
+# ============================================================
+
+@app.route(
+    "/app/<slug>"
+)
+def business_app(slug):
+
+    connection = conn()
+
+
+    business_record = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE
+
+            slug=?
+
+            AND status='active'
+        """,
+        (
+            slug,
+        )
+    ).fetchone()
+
+
+    if not business_record:
+
+        connection.close()
+
+        abort(
+            404
+        )
+
+
+    owner = connection.execute(
+        """
+        SELECT *
+
+        FROM users
+
+        WHERE id=?
+        """,
+        (
+            business_record[
+                "owner_id"
+            ],
+        )
+    ).fetchone()
+
+
+    content = connection.execute(
+        """
+        SELECT *
+
+        FROM business_content
+
+        WHERE
+
+            business_id=?
+
+            AND active=1
+
+        ORDER BY id DESC
+        """,
+        (
+            business_record[
+                "id"
+            ],
+        )
+    ).fetchall()
+
+
+    items = connection.execute(
+        """
+        SELECT *
+
+        FROM business_items
+
+        WHERE
+
+            business_id=?
+
+            AND active=1
+
+        ORDER BY id DESC
+        """,
+        (
+            business_record[
+                "id"
+            ],
+        )
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "business_app.html",
+
+        b=
+            business_record,
+
+        owner=
+            owner,
+
+        content=
+            content,
+
+        items=
+            items,
+    )
+
+
+# ============================================================
+# COLLABORATIONS
+# ============================================================
+
+@app.route(
+    "/app/<slug>/collaborate",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
 @login_required
 def collaborate(slug):
 
-user = me()
+    user = me()
 
-connection = conn()
-
-
-business_record = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE
-
-        slug=?
-
-        AND status='active'
-    """,
-    (
-        slug,
-    )
-).fetchone()
+    connection = conn()
 
 
-if not business_record:
-
-    connection.close()
-
-    abort(
-        404
-    )
-
-
-if request.method == "POST":
-
-    message = request.form.get(
-        "message",
-        ""
-    ).strip()
-
-
-    request_type = request.form.get(
-        "request_type",
-        "Collaboration"
-    )
-
-
-    connection.execute(
+    business_record = connection.execute(
         """
-        INSERT INTO collaboration_requests(
+        SELECT *
 
-            business_id,
+        FROM businesses
 
-            sender_id,
+        WHERE
 
-            request_type,
+            slug=?
 
-            message
-        )
-
-        VALUES(
-
-            ?,
-            ?,
-            ?,
-            ?
-        )
+            AND status='active'
         """,
         (
-
-            business_record[
-                "id"
-            ],
-
-            user[
-                "id"
-            ],
-
-            request_type,
-
-            message,
+            slug,
         )
-    )
+    ).fetchone()
 
 
-    connection.execute(
-        """
-        INSERT INTO messages(
+    if not business_record:
 
-            sender_id,
+        connection.close()
 
-            recipient_id,
-
-            message_type,
-
-            subject,
-
-            body
+        abort(
+            404
         )
 
-        VALUES(
 
-            ?,
-            ?,
-            ?,
-            ?,
-            ?
+    if request.method == "POST":
+
+        message = request.form.get(
+            "message",
+            ""
+        ).strip()
+
+
+        request_type = request.form.get(
+            "request_type",
+            "Collaboration"
         )
-        """,
-        (
 
-            user[
-                "id"
-            ],
 
-            business_record[
-                "owner_id"
-            ],
+        connection.execute(
+            """
+            INSERT INTO collaboration_requests(
 
-            "business",
+                business_id,
 
-            "Collaboration Request",
+                sender_id,
 
-            message,
+                request_type,
+
+                message
+            )
+
+            VALUES(
+
+                ?,
+                ?,
+                ?,
+                ?
+            )
+            """,
+            (
+
+                business_record[
+                    "id"
+                ],
+
+                user[
+                    "id"
+                ],
+
+                request_type,
+
+                message,
+            )
         )
-    )
 
-
-    connection.commit()
-
-    connection.close()
-
-
-    flash(
-        "Collaboration request sent."
-    )
-
-
-    return redirect(
-        url_for(
-            "business_app",
-            slug=slug
-        )
-    )
-
-
-connection.close()
-
-
-return render_template(
-    "collaborate.html",
-    b=business_record
-)
-============================================================
-INBOX
-============================================================
-
-@app.route("/messages")
-@login_required
-def messages():
-
-user = me()
-
-connection = conn()
-
-
-inbox = connection.execute(
-    """
-    SELECT
-
-        m.*,
-
-        u.name sender_name
-
-    FROM messages m
-
-    JOIN users u
-    ON u.id=m.sender_id
-
-    WHERE
-        m.recipient_id=?
-
-    ORDER BY
-        m.id DESC
-    """,
-    (
-        user[
-            "id"
-        ],
-    )
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-    "messages.html",
-    inbox=inbox
-)
-
-@app.route(
-"/message/int:recipient_id",
-methods=[
-"GET",
-"POST"
-]
-)
-@login_required
-def compose_message(
-recipient_id
-):
-
-user = me()
-
-
-kind = request.args.get(
-    "kind",
-    "people"
-)
-
-
-connection = conn()
-
-
-recipient = connection.execute(
-    """
-    SELECT *
-
-    FROM users
-
-    WHERE id=?
-    """,
-    (
-        recipient_id,
-    )
-).fetchone()
-
-
-if not recipient:
-
-    connection.close()
-
-    abort(
-        404
-    )
-
-
-if request.method == "POST":
-
-    body = request.form.get(
-        "body",
-        ""
-    ).strip()
-
-
-    subject = request.form.get(
-        "subject",
-        ""
-    ).strip()
-
-
-    if body:
 
         connection.execute(
             """
@@ -9582,13 +10749,15 @@ if request.method == "POST":
                     "id"
                 ],
 
-                recipient_id,
+                business_record[
+                    "owner_id"
+                ],
 
-                kind,
+                "business",
 
-                subject,
+                "Collaboration Request",
 
-                body,
+                message,
             )
         )
 
@@ -9599,393 +10768,133 @@ if request.method == "POST":
 
 
         flash(
-            "Message sent."
+            "Collaboration request sent."
         )
 
 
         return redirect(
             url_for(
-                "messages"
+                "business_app",
+                slug=slug
             )
         )
 
 
-connection.close()
+    connection.close()
 
 
-return render_template(
-
-    "compose_message.html",
-
-    recipient=
-        recipient,
-
-    kind=
-        kind,
-
-    subject=
-        "",
-)
-============================================================
-NOTIFICATIONS
-============================================================
-
-@app.route("/notifications")
-@login_required
-def notifications():
-
-user = me()
-
-connection = conn()
-
-
-rows = connection.execute(
-    """
-    SELECT *
-
-    FROM notifications
-
-    WHERE user_id=?
-
-    ORDER BY
-        id DESC
-    """,
-    (
-        user[
-            "id"
-        ],
+    return render_template(
+        "collaborate.html",
+        b=business_record
     )
-).fetchall()
 
 
-connection.close()
+# ============================================================
+# INBOX
+# ============================================================
 
-
-return render_template(
-    "notifications.html",
-    notifications=rows
-)
-============================================================
-RETREATS
-============================================================
-
-@app.route("/retreats")
-def retreats():
-
-connection = conn()
-
-
-retreat_rows = connection.execute(
-    """
-    SELECT *
-
-    FROM retreats
-
-    WHERE status<>'cancelled'
-
-    ORDER BY
-        id DESC
-    """
-).fetchall()
-
-
-partners = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    WHERE
-
-        status='active'
-
-        AND retreat_participation=1
-
-    ORDER BY
-
-        featured_order,
-
-        id
-    """
-).fetchall()
-
-
-connection.close()
-
-
-return render_template(
-
-    "retreats.html",
-
-    retreats=
-        retreat_rows,
-
-    partners=
-        partners,
-)
-
-@app.route(
-"/retreats/build",
-methods=[
-"GET",
-"POST"
-]
-)
+@app.route("/messages")
 @login_required
-def retreat_build():
-
-connection_mode = (
-    request.args.get(
-        "connection"
-    )
-    == "1"
-)
-
-
-if request.method == "POST":
+def messages():
 
     user = me()
 
     connection = conn()
 
 
-    cursor = connection.execute(
+    inbox = connection.execute(
         """
-        INSERT INTO retreats(
+        SELECT
 
-            owner_id,
+            m.*,
 
-            title,
+            u.name sender_name
 
-            season,
+        FROM messages m
 
-            retreat_type,
+        JOIN users u
+        ON u.id=m.sender_id
 
-            area,
+        WHERE
+            m.recipient_id=?
 
-            preferred_dates,
-
-            guests,
-
-            budget,
-
-            lodging_preferences,
-
-            wellness_interests,
-
-            connection_retreat
-        )
-
-        VALUES(
-
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            ?
-        )
+        ORDER BY
+            m.id DESC
         """,
         (
-
             user[
                 "id"
             ],
-
-            request.form.get(
-                "title",
-                "My Retreat"
-            ).strip(),
-
-            request.form.get(
-                "season",
-                ""
-            ),
-
-            request.form.get(
-                "retreat_type",
-                ""
-            ),
-
-            request.form.get(
-                "area",
-                ""
-            ),
-
-            request.form.get(
-                "preferred_dates",
-                ""
-            ),
-
-            int(
-                request.form.get(
-                    "guests"
-                )
-                or 1
-            ),
-
-            request.form.get(
-                "budget",
-                ""
-            ),
-
-            request.form.get(
-                "lodging_preferences",
-                ""
-            ),
-
-            request.form.get(
-                "wellness_interests",
-                ""
-            ),
-
-            (
-                1
-                if request.form.get(
-                    "connection_retreat"
-                )
-                == "1"
-                else 0
-            ),
         )
-    )
-
-
-    connection.commit()
-
-
-    retreat_id = (
-        cursor.lastrowid
-    )
+    ).fetchall()
 
 
     connection.close()
 
 
-    return redirect(
-        url_for(
-            "retreat_detail",
-            rid=retreat_id
-        )
+    return render_template(
+        "messages.html",
+        inbox=inbox
     )
 
-
-return render_template(
-
-    "retreat_build.html",
-
-    connection=
-        connection_mode,
-)
 
 @app.route(
-"/retreat/int:rid",
-methods=[
-"GET",
-"POST"
-]
+    "/message/<int:recipient_id>",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
 @login_required
-def retreat_detail(rid):
+def compose_message(
+    recipient_id
+):
 
-user = me()
-
-connection = conn()
-
-
-retreat_record = connection.execute(
-    """
-    SELECT *
-
-    FROM retreats
-
-    WHERE id=?
-    """,
-    (
-        rid,
-    )
-).fetchone()
+    user = me()
 
 
-if not retreat_record:
-
-    connection.close()
-
-    abort(
-        404
+    kind = request.args.get(
+        "kind",
+        "people"
     )
 
 
-if request.method == "POST":
-
-    action = request.form.get(
-        "action"
-    )
+    connection = conn()
 
 
-    if action == "partner":
+    recipient = connection.execute(
+        """
+        SELECT *
 
-        connection.execute(
-            """
-            INSERT OR IGNORE
-            INTO retreat_partners(
+        FROM users
 
-                retreat_id,
+        WHERE id=?
+        """,
+        (
+            recipient_id,
+        )
+    ).fetchone()
 
-                business_id
-            )
 
-            VALUES(
+    if not recipient:
 
-                ?,
-                ?
-            )
-            """,
-            (
+        connection.close()
 
-                rid,
-
-                int(
-                    request.form.get(
-                        "business_id"
-                    )
-                ),
-            )
+        abort(
+            404
         )
 
 
-        connection.commit()
-
-
-    elif action == "location":
-
-        connection.execute(
-            """
-            UPDATE retreats
-
-            SET
-                location_status='Search Requested'
-
-            WHERE id=?
-            """,
-            (
-                rid,
-            )
-        )
-
-
-        connection.commit()
-
-
-    elif action == "message":
+    if request.method == "POST":
 
         body = request.form.get(
             "body",
+            ""
+        ).strip()
+
+
+        subject = request.form.get(
+            "subject",
             ""
         ).strip()
 
@@ -9994,11 +10903,15 @@ if request.method == "POST":
 
             connection.execute(
                 """
-                INSERT INTO retreat_messages(
-
-                    retreat_id,
+                INSERT INTO messages(
 
                     sender_id,
+
+                    recipient_id,
+
+                    message_type,
+
+                    subject,
 
                     body
                 )
@@ -10007,16 +10920,22 @@ if request.method == "POST":
 
                     ?,
                     ?,
+                    ?,
+                    ?,
                     ?
                 )
                 """,
                 (
 
-                    rid,
-
                     user[
                         "id"
                     ],
+
+                    recipient_id,
+
+                    kind,
+
+                    subject,
 
                     body,
                 )
@@ -10025,191 +10944,633 @@ if request.method == "POST":
 
             connection.commit()
 
+            connection.close()
 
-partners = connection.execute(
-    """
-    SELECT
 
-        rp.*,
+            flash(
+                "Message sent."
+            )
 
-        b.*
 
-    FROM retreat_partners rp
+            return redirect(
+                url_for(
+                    "messages"
+                )
+            )
 
-    JOIN businesses b
-    ON b.id=rp.business_id
 
-    WHERE
-        rp.retreat_id=?
-    """,
-    (
-        rid,
+    connection.close()
+
+
+    return render_template(
+
+        "compose_message.html",
+
+        recipient=
+            recipient,
+
+        kind=
+            kind,
+
+        subject=
+            "",
     )
-).fetchall()
 
 
-eligible = connection.execute(
-    """
-    SELECT *
+# ============================================================
+# NOTIFICATIONS
+# ============================================================
 
-    FROM businesses
+@app.route("/notifications")
+@login_required
+def notifications():
 
-    WHERE
+    user = me()
 
-        status='active'
-
-        AND retreat_participation=1
-
-    ORDER BY
-
-        featured_order,
-
-        id
-    """
-).fetchall()
+    connection = conn()
 
 
-messages_rows = connection.execute(
-    """
-    SELECT
+    rows = connection.execute(
+        """
+        SELECT *
 
-        rm.*,
+        FROM notifications
 
-        u.name sender_name
+        WHERE user_id=?
 
-    FROM retreat_messages rm
+        ORDER BY
+            id DESC
+        """,
+        (
+            user[
+                "id"
+            ],
+        )
+    ).fetchall()
 
-    JOIN users u
-    ON u.id=rm.sender_id
 
-    WHERE
-        retreat_id=?
+    connection.close()
 
-    ORDER BY
-        rm.id
-    """,
-    (
-        rid,
+
+    return render_template(
+        "notifications.html",
+        notifications=rows
     )
-).fetchall()
 
 
-connection.close()
+# ============================================================
+# RETREATS
+# ============================================================
+
+@app.route("/retreats")
+def retreats():
+
+    connection = conn()
 
 
-return render_template(
+    retreat_rows = connection.execute(
+        """
+        SELECT *
 
-    "retreat_detail.html",
+        FROM retreats
 
-    r=
-        retreat_record,
+        WHERE status<>'cancelled'
 
-    partners=
-        partners,
+        ORDER BY
+            id DESC
+        """
+    ).fetchall()
 
-    eligible=
-        eligible,
 
-    msgs=
-        messages_rows,
+    partners = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE
+
+            status='active'
+
+            AND retreat_participation=1
+
+        ORDER BY
+
+            featured_order,
+
+            id
+        """
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "retreats.html",
+
+        retreats=
+            retreat_rows,
+
+        partners=
+            partners,
+    )
+
+
+@app.route(
+    "/retreats/build",
+    methods=[
+        "GET",
+        "POST"
+    ]
 )
-============================================================
-MEMBERSHIP
-============================================================
+@login_required
+def retreat_build():
+
+    connection_mode = (
+        request.args.get(
+            "connection"
+        )
+        == "1"
+    )
+
+
+    if request.method == "POST":
+
+        user = me()
+
+        connection = conn()
+
+
+        cursor = connection.execute(
+            """
+            INSERT INTO retreats(
+
+                owner_id,
+
+                title,
+
+                season,
+
+                retreat_type,
+
+                area,
+
+                preferred_dates,
+
+                guests,
+
+                budget,
+
+                lodging_preferences,
+
+                wellness_interests,
+
+                connection_retreat
+            )
+
+            VALUES(
+
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?
+            )
+            """,
+            (
+
+                user[
+                    "id"
+                ],
+
+                request.form.get(
+                    "title",
+                    "My Retreat"
+                ).strip(),
+
+                request.form.get(
+                    "season",
+                    ""
+                ),
+
+                request.form.get(
+                    "retreat_type",
+                    ""
+                ),
+
+                request.form.get(
+                    "area",
+                    ""
+                ),
+
+                request.form.get(
+                    "preferred_dates",
+                    ""
+                ),
+
+                int(
+                    request.form.get(
+                        "guests"
+                    )
+                    or 1
+                ),
+
+                request.form.get(
+                    "budget",
+                    ""
+                ),
+
+                request.form.get(
+                    "lodging_preferences",
+                    ""
+                ),
+
+                request.form.get(
+                    "wellness_interests",
+                    ""
+                ),
+
+                (
+                    1
+                    if request.form.get(
+                        "connection_retreat"
+                    )
+                    == "1"
+                    else 0
+                ),
+            )
+        )
+
+
+        connection.commit()
+
+
+        retreat_id = (
+            cursor.lastrowid
+        )
+
+
+        connection.close()
+
+
+        return redirect(
+            url_for(
+                "retreat_detail",
+                rid=retreat_id
+            )
+        )
+
+
+    return render_template(
+
+        "retreat_build.html",
+
+        connection=
+            connection_mode,
+    )
+
+
+@app.route(
+    "/retreat/<int:rid>",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def retreat_detail(rid):
+
+    user = me()
+
+    connection = conn()
+
+
+    retreat_record = connection.execute(
+        """
+        SELECT *
+
+        FROM retreats
+
+        WHERE id=?
+        """,
+        (
+            rid,
+        )
+    ).fetchone()
+
+
+    if not retreat_record:
+
+        connection.close()
+
+        abort(
+            404
+        )
+
+
+    if request.method == "POST":
+
+        action = request.form.get(
+            "action"
+        )
+
+
+        if action == "partner":
+
+            connection.execute(
+                """
+                INSERT OR IGNORE
+                INTO retreat_partners(
+
+                    retreat_id,
+
+                    business_id
+                )
+
+                VALUES(
+
+                    ?,
+                    ?
+                )
+                """,
+                (
+
+                    rid,
+
+                    int(
+                        request.form.get(
+                            "business_id"
+                        )
+                    ),
+                )
+            )
+
+
+            connection.commit()
+
+
+        elif action == "location":
+
+            connection.execute(
+                """
+                UPDATE retreats
+
+                SET
+                    location_status='Search Requested'
+
+                WHERE id=?
+                """,
+                (
+                    rid,
+                )
+            )
+
+
+            connection.commit()
+
+
+        elif action == "message":
+
+            body = request.form.get(
+                "body",
+                ""
+            ).strip()
+
+
+            if body:
+
+                connection.execute(
+                    """
+                    INSERT INTO retreat_messages(
+
+                        retreat_id,
+
+                        sender_id,
+
+                        body
+                    )
+
+                    VALUES(
+
+                        ?,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+
+                        rid,
+
+                        user[
+                            "id"
+                        ],
+
+                        body,
+                    )
+                )
+
+
+                connection.commit()
+
+
+    partners = connection.execute(
+        """
+        SELECT
+
+            rp.*,
+
+            b.*
+
+        FROM retreat_partners rp
+
+        JOIN businesses b
+        ON b.id=rp.business_id
+
+        WHERE
+            rp.retreat_id=?
+        """,
+        (
+            rid,
+        )
+    ).fetchall()
+
+
+    eligible = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE
+
+            status='active'
+
+            AND retreat_participation=1
+
+        ORDER BY
+
+            featured_order,
+
+            id
+        """
+    ).fetchall()
+
+
+    messages_rows = connection.execute(
+        """
+        SELECT
+
+            rm.*,
+
+            u.name sender_name
+
+        FROM retreat_messages rm
+
+        JOIN users u
+        ON u.id=rm.sender_id
+
+        WHERE
+            retreat_id=?
+
+        ORDER BY
+            rm.id
+        """,
+        (
+            rid,
+        )
+    ).fetchall()
+
+
+    connection.close()
+
+
+    return render_template(
+
+        "retreat_detail.html",
+
+        r=
+            retreat_record,
+
+        partners=
+            partners,
+
+        eligible=
+            eligible,
+
+        msgs=
+            messages_rows,
+    )
+
+
+# ============================================================
+# MEMBERSHIP
+# ============================================================
 
 @app.route("/membership")
 def membership():
 
-return render_template(
-    "membership.html"
-)
-============================================================
-PRIVATE ADMIN
-============================================================
+    return render_template(
+        "membership.html"
+    )
+
+
+# ============================================================
+# PRIVATE ADMIN
+# ============================================================
 
 @app.route("/admin")
 @admin_required
 def admin_page():
 
-connection = conn()
+    connection = conn()
 
 
-users = connection.execute(
-    """
-    SELECT *
+    users = connection.execute(
+        """
+        SELECT *
 
-    FROM users
+        FROM users
 
-    ORDER BY
-        id DESC
-    """
-).fetchall()
-
-
-businesses = connection.execute(
-    """
-    SELECT *
-
-    FROM businesses
-
-    ORDER BY
-        featured_order,
-        id
-    """
-).fetchall()
+        ORDER BY
+            id DESC
+        """
+    ).fetchall()
 
 
-retreats_rows = connection.execute(
-    """
-    SELECT *
+    businesses = connection.execute(
+        """
+        SELECT *
 
-    FROM retreats
+        FROM businesses
 
-    ORDER BY
-        id DESC
-    """
-).fetchall()
-
-
-connection.close()
+        ORDER BY
+            featured_order,
+            id
+        """
+    ).fetchall()
 
 
-return render_template(
+    retreats_rows = connection.execute(
+        """
+        SELECT *
 
-    "admin.html",
+        FROM retreats
 
-    users=
-        users,
+        ORDER BY
+            id DESC
+        """
+    ).fetchall()
 
-    businesses=
-        businesses,
 
-    retreats=
-        retreats_rows,
-)
-============================================================
-START DATABASE
-============================================================
+    connection.close()
+
+
+    return render_template(
+
+        "admin.html",
+
+        users=
+            users,
+
+        businesses=
+            businesses,
+
+        retreats=
+            retreats_rows,
+    )
+
+
+# ============================================================
+# START DATABASE
+# ============================================================
 
 init_db()
 
-============================================================
-RUN
-============================================================
 
-if name == "main":
+# ============================================================
+# RUN
+# ============================================================
 
-app.run(
+if __name__ == "__main__":
 
-    host=
-        "0.0.0.0",
+    app.run(
 
-    port=
-        int(
-            os.environ.get(
-                "PORT",
-                "5055"
+        host=
+            "0.0.0.0",
+
+        port=
+            int(
+                os.environ.get(
+                    "PORT",
+                    "5055"
+                )
             )
-        )
-)
-Close
+    )
