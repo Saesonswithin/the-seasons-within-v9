@@ -32,7 +32,7 @@ except Exception:
 
 
 # ============================================================
-# APP / STORAGE
+# THE SEASONS WITHIN
 # ============================================================
 
 BASE = Path(__file__).resolve().parent
@@ -88,12 +88,12 @@ GALAXY_EMAIL = os.environ.get(
 
 
 ADMIN_EMAILS = {
-    email.strip().lower()
-    for email in os.environ.get(
+    x.strip().lower()
+    for x in os.environ.get(
         "ADMIN_EMAILS",
         ""
     ).split(",")
-    if email.strip()
+    if x.strip()
 }
 
 
@@ -149,11 +149,15 @@ def conn():
     return connection
 
 
-def table_columns(connection, table):
+def table_columns(
+    connection,
+    table
+):
 
     return {
         row[1]
-        for row in connection.execute(
+        for row
+        in connection.execute(
             f"PRAGMA table_info({table})"
         ).fetchall()
     }
@@ -187,7 +191,8 @@ def hp(password):
 
     return hashlib.sha256(
         (
-            "tsw::" + password
+            "tsw::"
+            + password
         ).encode()
     ).hexdigest()
 
@@ -198,7 +203,10 @@ def slugify(text):
         re.sub(
             r"[^a-z0-9]+",
             "-",
-            (text or "").lower()
+            (
+                text
+                or ""
+            ).lower()
         )
         .strip("-")
         or secrets.token_hex(4)
@@ -212,9 +220,12 @@ def me():
     )
 
     if not user_id:
+
         return None
 
+
     connection = conn()
+
 
     user = connection.execute(
         """
@@ -227,7 +238,9 @@ def me():
         )
     ).fetchone()
 
+
     connection.close()
+
 
     return user
 
@@ -235,12 +248,24 @@ def me():
 def admin(user):
 
     return bool(
+
         user
+
         and (
-            user["is_admin"]
-            or (
-                user["email"] or ""
+
+            user[
+                "is_admin"
+            ]
+
+            or
+
+            (
+                user[
+                    "email"
+                ]
+                or ""
             ).lower()
+
             in ADMIN_EMAILS
         )
     )
@@ -263,10 +288,12 @@ def login_required(function):
                 )
             )
 
+
         return function(
             *args,
             **kwargs
         )
+
 
     return wrapped
 
@@ -281,6 +308,7 @@ def admin_required(function):
 
         user = me()
 
+
         if not user:
 
             return redirect(
@@ -289,17 +317,22 @@ def admin_required(function):
                 )
             )
 
-        if not admin(user):
+
+        if not admin(
+            user
+        ):
 
             return (
                 "Admin access required",
                 403
             )
 
+
         return function(
             *args,
             **kwargs
         )
+
 
     return wrapped
 
@@ -311,7 +344,9 @@ def admin_required(function):
 def media_url(path):
 
     if not path:
+
         return ""
+
 
     return url_for(
         "uploads",
@@ -328,7 +363,9 @@ def save_file(
         not file_storage
         or not file_storage.filename
     ):
+
         return ""
+
 
     extension = Path(
         secure_filename(
@@ -336,7 +373,9 @@ def save_file(
         )
     ).suffix.lower()
 
+
     allowed = {
+
         ".jpg",
         ".jpeg",
         ".png",
@@ -347,18 +386,26 @@ def save_file(
         ".m4v",
     }
 
+
     if extension not in allowed:
+
         return ""
 
+
     filename = (
+
         f"{prefix}-"
+
         f"{secrets.token_hex(8)}"
+
         f"{extension}"
     )
+
 
     file_storage.save(
         UPLOADS / filename
     )
+
 
     return filename
 
@@ -366,12 +413,16 @@ def save_file(
 def is_video(path):
 
     if not path:
+
         return False
 
+
     return (
+
         Path(path)
         .suffix
         .lower()
+
         in {
             ".mp4",
             ".mov",
@@ -388,26 +439,33 @@ def season_now():
 
     month = date.today().month
 
+
     if month in (
         12,
         1,
         2,
     ):
+
         return "Winter"
+
 
     if month in (
         3,
         4,
         5,
     ):
+
         return "Spring"
+
 
     if month in (
         6,
         7,
         8,
     ):
+
         return "Summer"
+
 
     return "Autumn"
 
@@ -419,12 +477,18 @@ def zdeg(degree):
         % 360
     )
 
+
     index = int(
         degree // 30
     )
 
+
     return (
-        SIGNS[index],
+
+        SIGNS[
+            index
+        ],
+
         round(
             degree
             - index * 30,
@@ -433,7 +497,9 @@ def zdeg(degree):
     )
 
 
-def moon_symbol(phase):
+def moon_symbol(
+    phase
+):
 
     return {
 
@@ -492,6 +558,7 @@ def current_sky():
 
 
     if not swe:
+
         return sky
 
 
@@ -500,6 +567,7 @@ def current_sky():
         now = datetime.now(
             timezone.utc
         )
+
 
         julian_day = swe.julday(
 
@@ -511,7 +579,9 @@ def current_sky():
 
             (
                 now.hour
+
                 + now.minute / 60
+
                 + now.second / 3600
             ),
         )
@@ -559,22 +629,28 @@ def current_sky():
             body_id
         ) in bodies.items():
 
+
             position = swe.calc_ut(
                 julian_day,
                 body_id
             )[0][0]
 
+
             sign, degree = zdeg(
                 position
             )
+
 
             degrees[
                 body_name
             ] = position
 
+
             sky[
                 "positions"
-            ][body_name] = {
+            ][
+                body_name
+            ] = {
 
                 "sign":
                     sign,
@@ -607,8 +683,17 @@ def current_sky():
 
 
         angle = (
-            degrees["Moon"]
-            - degrees["Sun"]
+
+            degrees[
+                "Moon"
+            ]
+
+            -
+
+            degrees[
+                "Sun"
+            ]
+
         ) % 360
 
 
@@ -665,6 +750,7 @@ def current_sky():
             cutoff,
             phase_name
         ) in phases:
+
 
             if angle < cutoff:
 
@@ -732,12 +818,16 @@ def chart_for(user):
         ):
 
             hours, minutes = [
+
                 int(value)
+
                 for value
+
                 in user[
                     "birth_time"
                 ].split(":")[:2]
             ]
+
 
             hour = (
                 hours
@@ -799,17 +889,21 @@ def chart_for(user):
             body_id
         ) in bodies.items():
 
+
             position = swe.calc_ut(
                 julian_day,
                 body_id
             )[0][0]
+
 
             sign, degree = zdeg(
                 position
             )
 
 
-            result[name] = {
+            result[
+                name
+            ] = {
 
                 "sign":
                     sign,
@@ -834,21 +928,31 @@ def chart_for(user):
 
 
 # ============================================================
-# PRIVATE JOURNAL REFLECTION
+# PRIVATE JOURNAL
 # ============================================================
 
-def journal_reflection(user):
+def journal_reflection(
+    user
+):
 
     sky = current_sky()
 
 
     natal_reference = (
 
-        user["moon"]
+        user[
+            "moon"
+        ]
 
-        or user["sun"]
+        or
 
-        or "your natal chart"
+        user[
+            "sun"
+        ]
+
+        or
+
+        "your natal chart"
 
     ) if user else "your natal chart"
 
@@ -859,6 +963,7 @@ def journal_reflection(user):
             sky,
 
         "headline":
+
             (
                 f"Reflect through "
                 f"{natal_reference} "
@@ -867,6 +972,7 @@ def journal_reflection(user):
             ),
 
         "prompt":
+
             (
                 "What are you noticing within yourself today, "
                 "and what deserves your conscious attention?"
@@ -891,58 +997,31 @@ def coord(
 
         "dating": {
 
-            "sun":
-                4,
-
-            "moon":
-                10,
-
-            "mercury":
-                6,
-
-            "venus":
-                10,
-
-            "mars":
-                8,
-        },
-
-
-        "business": {
-
-            "sun":
-                6,
-
-            "moon":
-                3,
-
-            "mercury":
-                10,
-
-            "venus":
-                3,
-
-            "mars":
-                7,
+            "sun": 4,
+            "moon": 10,
+            "mercury": 6,
+            "venus": 10,
+            "mars": 8,
         },
 
 
         "friendship": {
 
-            "sun":
-                7,
+            "sun": 7,
+            "moon": 8,
+            "mercury": 7,
+            "venus": 4,
+            "mars": 4,
+        },
 
-            "moon":
-                8,
 
-            "mercury":
-                7,
+        "business": {
 
-            "venus":
-                4,
-
-            "mars":
-                4,
+            "sun": 6,
+            "moon": 3,
+            "mercury": 10,
+            "venus": 3,
+            "mars": 7,
         },
     }
 
@@ -960,14 +1039,17 @@ def coord(
         weight
     ) in selected.items():
 
+
         if (
             person_a[
                 placement
             ]
-            and person_b[
+            and
+            person_b[
                 placement
             ]
         ):
+
 
             if (
                 person_a[
@@ -982,33 +1064,37 @@ def coord(
                 score += weight
 
 
-            elif abs(
+            else:
 
-                SIGNS.index(
-                    person_a[
-                        placement
-                    ]
+                difference = abs(
+
+                    SIGNS.index(
+                        person_a[
+                            placement
+                        ]
+                    )
+
+                    -
+
+                    SIGNS.index(
+                        person_b[
+                            placement
+                        ]
+                    )
                 )
 
-                -
 
-                SIGNS.index(
-                    person_b[
-                        placement
-                    ]
-                )
-
-            ) in (
-                2,
-                4,
-                8,
-                10,
-            ):
-
-                score += max(
+                if difference in (
                     2,
-                    weight // 2
-                )
+                    4,
+                    8,
+                    10,
+                ):
+
+                    score += max(
+                        2,
+                        weight // 2
+                    )
 
 
     return max(
@@ -1017,6 +1103,102 @@ def coord(
             95,
             score
         )
+    )
+
+
+def date_idea(
+    person_a,
+    person_b,
+    mode="dating"
+):
+
+    if mode == "friendship":
+
+        return (
+            "Try a wellness class, café conversation, "
+            "nature walk, creator meetup or shared community experience."
+        )
+
+
+    combination = {
+
+        person_a[
+            "venus"
+        ],
+
+        person_b[
+            "venus"
+        ],
+
+        person_a[
+            "moon"
+        ],
+
+        person_b[
+            "moon"
+        ],
+    }
+
+
+    if (
+        "Pisces"
+        in combination
+        or
+        "Cancer"
+        in combination
+    ):
+
+        return (
+            "Consider a waterfront walk, relaxing wellness experience, "
+            "sound session or intimate conversation setting."
+        )
+
+
+    if (
+        "Leo"
+        in combination
+        or
+        "Aries"
+        in combination
+    ):
+
+        return (
+            "Consider live music, a creative class, "
+            "movement experience or energetic local event."
+        )
+
+
+    if (
+        "Libra"
+        in combination
+        or
+        "Taurus"
+        in combination
+    ):
+
+        return (
+            "Consider an art experience, beautiful dinner setting, "
+            "massage or spa experience, or garden outing."
+        )
+
+
+    if (
+        "Gemini"
+        in combination
+        or
+        "Aquarius"
+        in combination
+    ):
+
+        return (
+            "Consider a bookstore, coffee conversation, "
+            "unique workshop, community event or creative experience."
+        )
+
+
+    return (
+        "Choose an experience that supports conversation, "
+        "shared interests and the way both of you naturally connect."
     )
 
 
@@ -1171,6 +1353,24 @@ def init_db():
         );
 
 
+        CREATE TABLE IF NOT EXISTS connection_posts(
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            body TEXT NOT NULL,
+
+            media_path TEXT DEFAULT '',
+
+            media_type TEXT DEFAULT '',
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+
         CREATE TABLE IF NOT EXISTS journals(
 
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1260,6 +1460,8 @@ def init_db():
             wellness_interests TEXT DEFAULT '',
 
             location_status TEXT DEFAULT 'Searching',
+
+            connection_retreat INTEGER DEFAULT 0,
 
             status TEXT DEFAULT 'planning',
 
@@ -1374,8 +1576,40 @@ def init_db():
     )
 
 
-    # Add new Hosted App fields safely
-    # even if the existing database is older.
+    # --------------------------------------------------------
+    # SAFE MIGRATIONS
+    # --------------------------------------------------------
+
+    user_migrations = {
+
+        "community_enabled":
+            "INTEGER DEFAULT 1",
+
+        "conscious_connections_enabled":
+            "INTEGER DEFAULT 0",
+
+        "connection_type":
+            "TEXT DEFAULT ''",
+
+        "business_interest":
+            "INTEGER DEFAULT 0",
+
+        "last_moon_sign":
+            "TEXT DEFAULT ''",
+    }
+
+
+    for (
+        column_name,
+        definition
+    ) in user_migrations.items():
+
+        ensure_column(
+            connection,
+            "users",
+            column_name,
+            definition
+        )
 
 
     business_migrations = {
@@ -1407,17 +1641,40 @@ def init_db():
         )
 
 
+    post_migrations = {
+
+        "media_path":
+            "TEXT DEFAULT ''",
+
+        "media_type":
+            "TEXT DEFAULT ''",
+    }
+
+
+    for (
+        column_name,
+        definition
+    ) in post_migrations.items():
+
+        ensure_column(
+            connection,
+            "posts",
+            column_name,
+            definition
+        )
+
+
     ensure_column(
         connection,
-        "users",
-        "last_moon_sign",
-        "TEXT DEFAULT ''"
+        "retreats",
+        "connection_retreat",
+        "INTEGER DEFAULT 0"
     )
 
 
-    # ========================================================
-    # DELETE ALL KNOWN MOCK DATA FROM PREVIOUS BUILDS
-    # ========================================================
+    # --------------------------------------------------------
+    # REMOVE OLD MOCK MEMBERS / BUSINESSES
+    # --------------------------------------------------------
 
     for email in DEMO_EMAILS:
 
@@ -1450,7 +1707,8 @@ def init_db():
 
     placeholders = ",".join(
         "?"
-        for _ in DEMO_SLUGS
+        for _
+        in DEMO_SLUGS
     )
 
 
@@ -1463,11 +1721,9 @@ def init_db():
     )
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # GALAXY EVE
-    # CREATE ONCE
-    # DO NOT OVERWRITE HER EDITS LATER
-    # ========================================================
+    # --------------------------------------------------------
 
     galaxy_user = connection.execute(
         """
@@ -1503,27 +1759,33 @@ def init_db():
 
                 business_access,
 
-                membership_access
+                membership_access,
 
+                community_enabled,
+
+                conscious_connections_enabled,
+
+                connection_type,
+
+                business_interest
             )
 
-            VALUES (
+            VALUES(
 
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
 
                 1,
-
+                1,
+                1,
+                1,
+                1,
                 1,
 
-                1,
+                'Both',
 
                 1
             )
@@ -1543,8 +1805,7 @@ def init_db():
 
                 (
                     "Wellness creator documenting connection, "
-                    "self-discovery, experiences and "
-                    "Conscious Coordination."
+                    "self-discovery, experiences and Conscious Coordination."
                 ),
 
                 (
@@ -1579,7 +1840,20 @@ def init_db():
 
                 business_access=1,
 
-                membership_access=1
+                membership_access=1,
+
+                community_enabled=1,
+
+                conscious_connections_enabled=1,
+
+                connection_type=
+                    CASE
+                    WHEN connection_type=''
+                    THEN 'Both'
+                    ELSE connection_type
+                    END,
+
+                business_interest=1
 
             WHERE id=?
             """,
@@ -1632,33 +1906,22 @@ def init_db():
                 featured_order,
 
                 status
-
             )
 
-            VALUES (
+            VALUES(
 
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
 
                 1,
-
                 1,
-
                 1,
-
                 1,
 
                 'active'
@@ -1720,10 +1983,6 @@ def init_db():
         )
 
 
-    # ========================================================
-    # ADMIN EMAILS
-    # ========================================================
-
     for email in ADMIN_EMAILS:
 
         connection.execute(
@@ -1741,18 +2000,19 @@ def init_db():
 
 
     connection.commit()
+
     connection.close()
 
 
 # ============================================================
-# HTML TEMPLATES
+# TEMPLATES
 # ============================================================
 
 T = {}
 
 
 # ============================================================
-# GLOBAL SHELL
+# GLOBAL APP SHELL
 # ============================================================
 
 T["base.html"] = r'''
@@ -1773,7 +2033,6 @@ T["base.html"] = r'''
 The Seasons Within
 </title>
 
-
 <style>
 
 :root {
@@ -1788,43 +2047,24 @@ The Seasons Within
 
     --blush:#fff1ef;
 
-    --cream:#fffaf8;
-
     --line:#eadff1;
 
     --muted:#786a85;
 
-    --white:#ffffff;
-
     --shadow:
         0 14px 36px
-        rgba(
-            72,
-            42,
-            96,
-            .08
-        );
+        rgba(72,42,96,.08);
 }
 
 
 * {
-
-    box-sizing:
-        border-box;
-}
-
-
-html {
-
-    scroll-behavior:
-        smooth;
+    box-sizing:border-box;
 }
 
 
 body {
 
-    margin:
-        0;
+    margin:0;
 
     background:
         linear-gradient(
@@ -1846,31 +2086,25 @@ body {
 
 a {
 
-    text-decoration:
-        none;
+    text-decoration:none;
 
-    color:
-        inherit;
+    color:inherit;
 }
 
 
 img {
 
-    max-width:
-        100%;
+    max-width:100%;
 }
 
 
 .top {
 
-    position:
-        sticky;
+    position:sticky;
 
-    top:
-        0;
+    top:0;
 
-    z-index:
-        50;
+    z-index:50;
 
     background:
         rgba(
@@ -1886,15 +2120,6 @@ img {
     border-bottom:
         1px solid
         var(--line);
-
-    box-shadow:
-        0 6px 22px
-        rgba(
-            72,
-            42,
-            96,
-            .04
-        );
 }
 
 
@@ -1909,56 +2134,44 @@ img {
     min-height:
         82px;
 
-    margin:
-        auto;
+    margin:auto;
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         auto 1fr auto;
 
-    align-items:
-        center;
+    align-items:center;
 
-    gap:
-        24px;
+    gap:24px;
 }
 
 
 .brand {
 
-    display:
-        flex;
+    display:flex;
 
-    align-items:
-        center;
+    align-items:center;
 
-    gap:
-        10px;
+    gap:10px;
 }
 
 
 .brand img {
 
-    width:
-        52px;
+    width:52px;
 
-    height:
-        52px;
+    height:52px;
 
-    object-fit:
-        contain;
+    object-fit:contain;
 }
 
 
 .brandcopy {
 
-    display:
-        flex;
+    display:flex;
 
-    flex-direction:
-        column;
+    flex-direction:column;
 }
 
 
@@ -1972,36 +2185,27 @@ img {
 
 .brandcopy small {
 
-    font-size:
-        10px;
+    font-size:10px;
 
-    text-transform:
-        uppercase;
+    text-transform:uppercase;
 
-    letter-spacing:
-        1.2px;
+    letter-spacing:1.2px;
 
-    color:
-        var(--muted);
+    color:var(--muted);
 
-    margin-top:
-        4px;
+    margin-top:4px;
 }
 
 
 .nav {
 
-    display:
-        flex;
+    display:flex;
 
-    justify-content:
-        center;
+    justify-content:center;
 
-    gap:
-        6px;
+    gap:6px;
 
-    flex-wrap:
-        wrap;
+    flex-wrap:wrap;
 }
 
 
@@ -2013,14 +2217,11 @@ img {
     border-radius:
         999px;
 
-    font-size:
-        14px;
+    font-size:14px;
 
-    font-weight:
-        700;
+    font-weight:700;
 
-    color:
-        #62546d;
+    color:#62546d;
 }
 
 
@@ -2031,44 +2232,27 @@ img {
     background:
         var(--lav);
 
-    color:
-        #68428a;
+    color:#68428a;
 }
 
 
 .account {
 
-    display:
-        flex;
+    display:flex;
 
-    align-items:
-        center;
+    align-items:center;
 
-    gap:
-        10px;
-}
-
-
-.account a {
-
-    font-size:
-        13px;
-
-    font-weight:
-        700;
+    gap:10px;
 }
 
 
 .acct {
 
-    display:
-        flex;
+    display:flex;
 
-    align-items:
-        center;
+    align-items:center;
 
-    gap:
-        7px;
+    gap:7px;
 
     padding:
         5px 9px;
@@ -2080,8 +2264,7 @@ img {
     border-radius:
         999px;
 
-    background:
-        white;
+    background:white;
 }
 
 
@@ -2089,27 +2272,21 @@ img {
 
 .initial {
 
-    width:
-        30px;
+    width:30px;
 
-    height:
-        30px;
+    height:30px;
 
-    border-radius:
-        50%;
+    border-radius:50%;
 
-    object-fit:
-        cover;
+    object-fit:cover;
 }
 
 
 .initial {
 
-    display:
-        grid;
+    display:grid;
 
-    place-items:
-        center;
+    place-items:center;
 
     background:
         linear-gradient(
@@ -2118,8 +2295,7 @@ img {
             #c58dbe
         );
 
-    color:
-        white;
+    color:white;
 }
 
 
@@ -2153,23 +2329,19 @@ img {
     border-radius:
         26px;
 
-    padding:
-        32px;
+    padding:32px;
 
     box-shadow:
         var(--shadow);
 
-    display:
-        flex;
+    display:flex;
 
-    align-items:
-        center;
+    align-items:center;
 
     justify-content:
         space-between;
 
-    gap:
-        24px;
+    gap:24px;
 }
 
 
@@ -2186,21 +2358,17 @@ img {
 
 .hero-logo {
 
-    width:
-        140px;
+    width:140px;
 
-    height:
-        140px;
+    height:140px;
 
-    object-fit:
-        contain;
+    object-fit:contain;
 }
 
 
 .card {
 
-    background:
-        white;
+    background:white;
 
     border:
         1px solid
@@ -2209,8 +2377,7 @@ img {
     border-radius:
         20px;
 
-    padding:
-        20px;
+    padding:20px;
 
     box-shadow:
         var(--shadow);
@@ -2222,8 +2389,7 @@ img {
 
 .grid {
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         repeat(
@@ -2234,55 +2400,46 @@ img {
             )
         );
 
-    gap:
-        16px;
+    gap:16px;
 }
 
 
 .two {
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         1fr 1fr;
 
-    gap:
-        16px;
+    gap:16px;
 }
 
 
 .sectionhead {
 
-    display:
-        flex;
+    display:flex;
 
     justify-content:
         space-between;
 
-    align-items:
-        end;
+    align-items:end;
 
-    gap:
-        18px;
+    gap:18px;
 }
 
 
-.sectionhead span,
+.kicker,
 
-.kicker {
+.sectionhead span {
 
-    font-size:
-        11px;
+    font-size:11px;
 
     letter-spacing:
         1.3px;
 
-    font-weight:
-        800;
+    font-weight:800;
 
-    color:
-        #8b6a9a;
+    color:#8b6a9a;
 }
 
 
@@ -2300,8 +2457,7 @@ h3 {
 
 h2 {
 
-    font-size:
-        30px;
+    font-size:30px;
 }
 
 
@@ -2311,17 +2467,13 @@ h2 {
 
 button {
 
-    display:
-        inline-flex;
+    display:inline-flex;
 
-    align-items:
-        center;
+    align-items:center;
 
-    justify-content:
-        center;
+    justify-content:center;
 
-    min-height:
-        42px;
+    min-height:42px;
 
     padding:
         10px 16px;
@@ -2329,8 +2481,7 @@ button {
     border-radius:
         11px;
 
-    font-weight:
-        700;
+    font-weight:700;
 }
 
 
@@ -2349,8 +2500,7 @@ button {
             var(--purple2)
         );
 
-    color:
-        white;
+    color:white;
 }
 
 
@@ -2360,24 +2510,19 @@ button {
         1px solid
         #cdb6dd;
 
-    background:
-        white;
+    background:white;
 
-    color:
-        #68428a;
+    color:#68428a;
 }
 
 
 .actions {
 
-    display:
-        flex;
+    display:flex;
 
-    gap:
-        10px;
+    gap:10px;
 
-    flex-wrap:
-        wrap;
+    flex-wrap:wrap;
 }
 
 
@@ -2387,21 +2532,17 @@ textarea,
 
 select {
 
-    width:
-        100%;
+    width:100%;
 
-    padding:
-        11px;
+    padding:11px;
 
     border:
         1px solid
         var(--line);
 
-    border-radius:
-        10px;
+    border-radius:10px;
 
-    background:
-        #fff;
+    background:#fff;
 
     margin:
         5px 0 12px;
@@ -2410,21 +2551,17 @@ select {
 
 textarea {
 
-    min-height:
-        105px;
+    min-height:105px;
 }
 
 
 .chips {
 
-    display:
-        flex;
+    display:flex;
 
-    gap:
-        7px;
+    gap:7px;
 
-    flex-wrap:
-        wrap;
+    flex-wrap:wrap;
 }
 
 
@@ -2441,8 +2578,7 @@ textarea {
     border-radius:
         999px;
 
-    font-size:
-        12px;
+    font-size:12px;
 }
 
 
@@ -2467,44 +2603,35 @@ textarea {
     background:
         #f0e4f8;
 
-    padding:
-        11px;
+    padding:11px;
 
-    border-radius:
-        10px;
+    border-radius:10px;
 }
 
 
 .portrait {
 
-    width:
-        110px;
+    width:110px;
 
-    height:
-        110px;
+    height:110px;
 
-    object-fit:
-        cover;
+    object-fit:cover;
 
-    border-radius:
-        50%;
+    border-radius:50%;
 }
 
 
 .empty {
 
-    text-align:
-        center;
+    text-align:center;
 
     border:
         1px dashed
         #d9c8e5;
 
-    border-radius:
-        18px;
+    border-radius:18px;
 
-    padding:
-        28px;
+    padding:28px;
 
     color:
         var(--muted);
@@ -2513,47 +2640,38 @@ textarea {
 
 .moon-card {
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         130px 1fr;
 
-    gap:
-        20px;
+    gap:20px;
 
-    align-items:
-        center;
+    align-items:center;
 }
 
 
 .moon-picture {
 
-    width:
-        120px;
+    width:120px;
 
-    height:
-        120px;
+    height:120px;
 
-    border-radius:
-        50%;
+    border-radius:50%;
 
-    display:
-        grid;
+    display:grid;
 
-    place-items:
-        center;
+    place-items:center;
 
     background:
         radial-gradient(
             circle at 35% 30%,
-            #ffffff,
+            #fff,
             #ece6f0 58%,
             #c8bdd0 100%
         );
 
-    font-size:
-        78px;
+    font-size:78px;
 
     box-shadow:
 
@@ -2581,18 +2699,15 @@ textarea {
 
 .business-store-card {
 
-    padding:
-        0;
+    padding:0;
 
-    overflow:
-        hidden;
+    overflow:hidden;
 }
 
 
 .store-media {
 
-    height:
-        210px;
+    height:210px;
 
     background:
         linear-gradient(
@@ -2601,14 +2716,11 @@ textarea {
             #fff0ed
         );
 
-    display:
-        grid;
+    display:grid;
 
-    place-items:
-        center;
+    place-items:center;
 
-    overflow:
-        hidden;
+    overflow:hidden;
 }
 
 
@@ -2616,57 +2728,45 @@ textarea {
 
 .store-media video {
 
-    width:
-        100%;
+    width:100%;
 
-    height:
-        100%;
+    height:100%;
 
-    object-fit:
-        cover;
+    object-fit:cover;
 }
 
 
 .store-logo-fallback {
 
-    width:
-        110px !important;
+    width:110px !important;
 
-    height:
-        110px !important;
+    height:110px !important;
 
-    object-fit:
-        contain !important;
+    object-fit:contain !important;
 }
 
 
 .store-body {
 
-    padding:
-        18px;
+    padding:18px;
 }
 
 
 .store-links {
 
-    display:
-        flex;
+    display:flex;
 
-    flex-wrap:
-        wrap;
+    flex-wrap:wrap;
 
-    gap:
-        8px;
+    gap:8px;
 
-    margin-top:
-        14px;
+    margin-top:14px;
 }
 
 
 .badge {
 
-    display:
-        inline-block;
+    display:inline-block;
 
     padding:
         6px 8px;
@@ -2677,43 +2777,34 @@ textarea {
     background:
         var(--lav);
 
-    font-size:
-        11px;
+    font-size:11px;
 
-    font-weight:
-        800;
+    font-weight:800;
 
-    color:
-        #68428a;
+    color:#68428a;
 }
 
 
 .posthead {
 
-    display:
-        flex;
+    display:flex;
 
     justify-content:
         space-between;
 
-    gap:
-        10px;
+    gap:10px;
 
-    align-items:
-        center;
+    align-items:center;
 }
 
 
 .postperson {
 
-    display:
-        flex;
+    display:flex;
 
-    align-items:
-        center;
+    align-items:center;
 
-    gap:
-        9px;
+    gap:9px;
 }
 
 
@@ -2721,35 +2812,57 @@ textarea {
 
 .avatar {
 
-    width:
-        42px;
+    width:42px;
 
-    height:
-        42px;
+    height:42px;
 
-    border-radius:
-        50%;
+    border-radius:50%;
 
-    object-fit:
-        cover;
+    object-fit:cover;
 }
 
 
-.community-banner {
+.post-image {
 
-    background:
-        linear-gradient(
-            135deg,
-            #f6ecfb,
-            #fff6f1
-        );
+    width:100%;
+
+    max-height:480px;
+
+    object-fit:cover;
+
+    border-radius:15px;
+
+    margin-top:12px;
+}
+
+
+.content-media {
+
+    width:100%;
+
+    max-height:420px;
+
+    object-fit:cover;
+
+    border-radius:14px;
+}
+
+
+.content-video {
+
+    width:100%;
+
+    max-height:420px;
+
+    border-radius:14px;
+
+    background:#000;
 }
 
 
 .profile-tools {
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         repeat(
@@ -2760,8 +2873,7 @@ textarea {
             )
         );
 
-    gap:
-        12px;
+    gap:12px;
 }
 
 
@@ -2771,21 +2883,17 @@ textarea {
         1px solid
         var(--line);
 
-    border-radius:
-        16px;
+    border-radius:16px;
 
-    padding:
-        16px;
+    padding:16px;
 
-    background:
-        white;
+    background:white;
 }
 
 
 .media-kit-grid {
 
-    display:
-        grid;
+    display:grid;
 
     grid-template-columns:
         repeat(
@@ -2796,8 +2904,7 @@ textarea {
             )
         );
 
-    gap:
-        10px;
+    gap:10px;
 }
 
 
@@ -2806,50 +2913,15 @@ textarea {
     background:
         var(--lav);
 
-    border-radius:
-        14px;
+    border-radius:14px;
 
-    padding:
-        14px;
-}
-
-
-.content-media {
-
-    width:
-        100%;
-
-    max-height:
-        420px;
-
-    object-fit:
-        cover;
-
-    border-radius:
-        14px;
-}
-
-
-.content-video {
-
-    width:
-        100%;
-
-    max-height:
-        420px;
-
-    border-radius:
-        14px;
-
-    background:
-        #000;
+    padding:14px;
 }
 
 
 .mobilebar {
 
-    display:
-        none;
+    display:none;
 }
 
 
@@ -2866,8 +2938,7 @@ textarea {
 
     .account {
 
-        display:
-            none;
+        display:none;
     }
 
 
@@ -2892,38 +2963,31 @@ textarea {
 
     body {
 
-        padding-bottom:
-            78px;
+        padding-bottom:78px;
     }
 
 
     .topin {
 
-        display:
-            flex;
+        display:flex;
 
-        justify-content:
-            center;
+        justify-content:center;
 
-        min-height:
-            70px;
+        min-height:70px;
     }
 
 
     .brand img {
 
-        width:
-            45px;
+        width:45px;
 
-        height:
-            45px;
+        height:45px;
     }
 
 
     .brandcopy strong {
 
-        font-size:
-            18px;
+        font-size:18px;
     }
 
 
@@ -2931,8 +2995,7 @@ textarea {
 
     .account {
 
-        display:
-            none;
+        display:none;
     }
 
 
@@ -2944,15 +3007,13 @@ textarea {
                 700px
             );
 
-        margin-top:
-            20px;
+        margin-top:20px;
     }
 
 
     .hero {
 
-        padding:
-            22px;
+        padding:22px;
 
         align-items:
             flex-start;
@@ -2961,18 +3022,15 @@ textarea {
 
     .hero h1 {
 
-        font-size:
-            35px;
+        font-size:35px;
     }
 
 
     .hero-logo {
 
-        width:
-            82px;
+        width:82px;
 
-        height:
-            82px;
+        height:82px;
     }
 
 
@@ -2985,33 +3043,26 @@ textarea {
 
     .moon-picture {
 
-        width:
-            84px;
+        width:84px;
 
-        height:
-            84px;
+        height:84px;
 
-        font-size:
-            52px;
+        font-size:52px;
     }
 
 
     .mobilebar {
 
-        position:
-            fixed;
+        position:fixed;
 
-        left:
-            50%;
+        left:50%;
 
-        bottom:
-            10px;
+        bottom:10px;
 
         transform:
             translateX(-50%);
 
-        z-index:
-            60;
+        z-index:60;
 
         width:
             min(
@@ -3019,17 +3070,14 @@ textarea {
                 620px
             );
 
-        display:
-            flex;
+        display:flex;
 
         justify-content:
             space-around;
 
-        gap:
-            4px;
+        gap:4px;
 
-        padding:
-            7px;
+        padding:7px;
 
         background:
             rgba(
@@ -3043,8 +3091,7 @@ textarea {
             1px solid
             var(--line);
 
-        border-radius:
-            20px;
+        border-radius:20px;
 
         box-shadow:
             0 14px 36px
@@ -3059,29 +3106,22 @@ textarea {
 
     .mobilebar a {
 
-        display:
-            flex;
+        display:flex;
 
         flex-direction:
             column;
 
-        align-items:
-            center;
+        align-items:center;
 
-        gap:
-            3px;
+        gap:3px;
 
-        padding:
-            7px;
+        padding:7px;
 
-        border-radius:
-            12px;
+        border-radius:12px;
 
-        font-size:
-            9px;
+        font-size:9px;
 
-        font-weight:
-            800;
+        font-weight:800;
 
         color:
             var(--muted);
@@ -3093,15 +3133,13 @@ textarea {
         background:
             var(--lav);
 
-        color:
-            #68428a;
+        color:#68428a;
     }
 
 
     .mobilebar b {
 
-        font-size:
-            17px;
+        font-size:17px;
     }
 }
 
@@ -3115,6 +3153,7 @@ textarea {
 
 <header class="top">
 
+
 <div class="topin">
 
 
@@ -3123,23 +3162,30 @@ textarea {
     href="{{url_for('public_home')}}"
 >
 
+
 <img
+
     src="{{url_for('static',filename='seasons-within-logo.png')}}"
+
     alt="The Seasons Within"
 >
 
 
 <span class="brandcopy">
 
+
 <strong>
 The Seasons Within
 </strong>
+
 
 <small>
 Conscious Coordination
 </small>
 
+
 </span>
+
 
 </a>
 
@@ -3159,14 +3205,16 @@ Home
 
 {% if me %}
 
+
 <a
     href="{{url_for('profile')}}"
-    class="{% if request.endpoint in ['profile','profile_edit','journal','community','messages','notifications','connections'] %}active{% endif %}"
+    class="{% if request.endpoint in ['profile','profile_edit','journal','community','messages','notifications','connections','connection_profile'] %}active{% endif %}"
 >
 
 My Profile
 
 </a>
+
 
 {% endif %}
 
@@ -3218,16 +3266,20 @@ Membership
 
 {% if me.photo %}
 
+
 <img
     src="{{media_url(me.photo)}}"
     alt=""
 >
 
+
 {% else %}
+
 
 <span class="initial">
 {{me.name[:1]}}
 </span>
+
 
 {% endif %}
 
@@ -3241,7 +3293,9 @@ Membership
 
 
 <a href="{{url_for('logout')}}">
+
 Log Out
+
 </a>
 
 
@@ -3249,7 +3303,9 @@ Log Out
 
 
 <a href="{{url_for('login')}}">
+
 Log In
+
 </a>
 
 
@@ -3271,12 +3327,15 @@ Join Free
 
 </div>
 
+
 </header>
 
 
 {% with messages=get_flashed_messages() %}
 
+
 {% if messages %}
+
 
 <div class="flash">
 
@@ -3284,7 +3343,9 @@ Join Free
 
 </div>
 
+
 {% endif %}
+
 
 {% endwith %}
 
@@ -3303,7 +3364,6 @@ Join Free
 
 <a
     href="{{url_for('public_home')}}"
-    class="{% if request.endpoint in ['public_home','home'] %}active{% endif %}"
 >
 
 <b>⌂</b>
@@ -3315,9 +3375,9 @@ Home
 
 {% if me %}
 
+
 <a
     href="{{url_for('profile')}}"
-    class="{% if request.endpoint in ['profile','profile_edit','journal','community','messages','notifications','connections'] %}active{% endif %}"
 >
 
 <b>◉</b>
@@ -3326,12 +3386,12 @@ Profile
 
 </a>
 
+
 {% endif %}
 
 
 <a
     href="{{url_for('business')}}"
-    class="{% if request.endpoint in ['business','business_setup','business_app','business_manage'] %}active{% endif %}"
 >
 
 <b>◇</b>
@@ -3343,7 +3403,6 @@ Business
 
 <a
     href="{{url_for('retreats')}}"
-    class="{% if request.endpoint in ['retreats','retreat_build','retreat_detail'] %}active{% endif %}"
 >
 
 <b>✦</b>
@@ -3355,7 +3414,6 @@ Retreats
 
 <a
     href="{{url_for('membership')}}"
-    class="{% if request.endpoint=='membership' %}active{% endif %}"
 >
 
 <b>♡</b>
@@ -3375,223 +3433,10 @@ Membership
 
 
 # ============================================================
-# PUBLIC HOME = MARKETPLACE
+# SHARED BUSINESS CARD
 # ============================================================
 
-T["public.html"] = r'''
-
-{% extends 'base.html' %}
-
-{% block content %}
-
-
-<section class="hero">
-
-
-<div>
-
-
-<span class="kicker">
-THE SEASONS WITHIN
-</span>
-
-
-<h1>
-Connect With Intention.
-Discover Your Seasons Within.
-</h1>
-
-
-<p>
-The marketplace for wellness businesses,
-hosted apps, retreats and conscious community.
-</p>
-
-
-<div class="actions">
-
-
-<a
-    class="btn"
-    href="{{url_for('business')}}"
->
-
-Explore Businesses & Apps
-
-</a>
-
-
-{% if me %}
-
-
-<a
-    class="outline"
-    href="{{url_for('community')}}"
->
-
-Enter Member Community
-
-</a>
-
-
-{% else %}
-
-
-<a
-    class="outline"
-    href="{{url_for('join')}}"
->
-
-Join Free
-
-</a>
-
-
-{% endif %}
-
-
-</div>
-
-
-</div>
-
-
-<img
-    class="hero-logo"
-    src="{{url_for('static',filename='seasons-within-logo.png')}}"
-    alt="The Seasons Within"
->
-
-
-</section>
-
-
-<section class="card moon-card">
-
-
-<div
-    class="moon-picture"
-    aria-label="{{sky.moon_phase}}"
->
-
-{{sky.moon_symbol}}
-
-</div>
-
-
-<div>
-
-
-<span class="kicker">
-MOON TODAY
-</span>
-
-
-<h2>
-
-Moon in
-{{sky.moon_sign or 'the current sky'}}
-
-</h2>
-
-
-<p>
-
-<b>
-
-{{sky.moon_phase or 'Current lunar phase'}}
-
-</b>
-
-
-{% if sky.moon_degree is not none %}
-
-•
-{{sky.moon_degree}}°
-
-{% endif %}
-
-</p>
-
-
-<div class="chips">
-
-
-{% for p in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}
-
-
-{% if sky.positions.get(p) %}
-
-
-<span>
-
-<b>
-{{p}}
-</b>
-
-{{sky.positions[p]['sign']}}
-
-</span>
-
-
-{% endif %}
-
-
-{% endfor %}
-
-
-</div>
-
-
-<small class="muted">
-
-Current sky information is reflective context,
-not prediction.
-
-</small>
-
-
-</div>
-
-
-</section>
-
-
-<section>
-
-
-<div class="sectionhead">
-
-
-<div>
-
-
-<span>
-BUSINESS NETWORK
-</span>
-
-
-<h2>
-Businesses & Apps Within The Seasons Within
-</h2>
-
-
-</div>
-
-
-<a href="{{url_for('business')}}">
-View All →
-</a>
-
-
-</div>
-
-
-<div class="grid">
-
-
-{% for b in businesses %}
-
+T["business_card.html"] = r'''
 
 <article class="card business-store-card">
 
@@ -3599,7 +3444,7 @@ View All →
 <div class="store-media">
 
 
-{% if b.featured_video %}
+{% if b.paid_business and b.featured_video %}
 
 
 <video
@@ -3611,7 +3456,7 @@ View All →
 </video>
 
 
-{% elif b.hero_image %}
+{% elif b.paid_business and b.hero_image %}
 
 
 <img
@@ -3664,7 +3509,9 @@ View All →
 <p>
 
 <b>
+
 {{b.creator_title or b.category}}
+
 </b>
 
 
@@ -3723,6 +3570,245 @@ Business Link
 
 
 </article>
+'''
+
+
+# ============================================================
+# HOME = MARKETPLACE
+# ============================================================
+
+T["public.html"] = r'''
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+<section class="hero">
+
+
+<div>
+
+
+<span class="kicker">
+THE SEASONS WITHIN
+</span>
+
+
+<h1>
+
+Connect With Intention.
+Discover Your Seasons Within.
+
+</h1>
+
+
+<p>
+
+The marketplace for wellness businesses,
+hosted apps,
+retreats
+and conscious community.
+
+</p>
+
+
+<div class="actions">
+
+
+<a
+    class="btn"
+    href="{{url_for('business')}}"
+>
+
+Explore Businesses & Apps
+
+</a>
+
+
+{% if me %}
+
+
+<a
+    class="outline"
+    href="{{url_for('community')}}"
+>
+
+Enter Member Community
+
+</a>
+
+
+{% else %}
+
+
+<a
+    class="outline"
+    href="{{url_for('join')}}"
+>
+
+Join Free
+
+</a>
+
+
+{% endif %}
+
+
+</div>
+
+
+</div>
+
+
+<img
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
+
+
+</section>
+
+
+<section class="card moon-card">
+
+
+<div class="moon-picture">
+
+{{sky.moon_symbol}}
+
+</div>
+
+
+<div>
+
+
+<span class="kicker">
+MOON TODAY
+</span>
+
+
+<h2>
+
+Moon in
+
+{{sky.moon_sign or 'the current sky'}}
+
+</h2>
+
+
+<p>
+
+
+<b>
+
+{{sky.moon_phase or 'Current lunar phase'}}
+
+</b>
+
+
+{% if sky.moon_degree is not none %}
+
+
+•
+{{sky.moon_degree}}°
+
+
+{% endif %}
+
+
+</p>
+
+
+<div class="chips">
+
+
+{% for p in ['Mercury','Venus','Mars','Jupiter','Saturn'] %}
+
+
+{% if sky.positions.get(p) %}
+
+
+<span>
+
+
+<b>
+{{p}}
+</b>
+
+
+{{sky.positions[p]['sign']}}
+
+
+</span>
+
+
+{% endif %}
+
+
+{% endfor %}
+
+
+</div>
+
+
+<small class="muted">
+
+Current sky information is reflective context,
+not prediction.
+
+</small>
+
+
+</div>
+
+
+</section>
+
+
+<section>
+
+
+<div class="sectionhead">
+
+
+<div>
+
+
+<span>
+BUSINESS NETWORK
+</span>
+
+
+<h2>
+
+Businesses & Apps Within
+The Seasons Within
+
+</h2>
+
+
+</div>
+
+
+<a href="{{url_for('business')}}">
+
+View All →
+
+</a>
+
+
+</div>
+
+
+<div class="grid">
+
+
+{% for b in businesses %}
+
+
+{% include 'business_card.html' %}
 
 
 {% else %}
@@ -3808,7 +3894,265 @@ Explore Retreats
 
 
 # ============================================================
-# MEMBER COMMUNITY
+# JOIN / ONBOARDING
+# ============================================================
+
+T["join.html"] = r'''
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+<h1>
+Join The Seasons Within
+</h1>
+
+
+<form
+    method="post"
+    class="card"
+>
+
+
+<label>
+
+Name
+
+<input
+    name="name"
+    required
+>
+
+</label>
+
+
+<label>
+
+Email
+
+<input
+    name="email"
+    type="email"
+    required
+>
+
+</label>
+
+
+<label>
+
+Password
+
+<input
+    name="password"
+    type="password"
+    minlength="6"
+    required
+>
+
+</label>
+
+
+<h2>
+
+How would you like to connect
+within The Seasons Within?
+
+</h2>
+
+
+<label>
+
+<input
+    type="checkbox"
+    name="community_enabled"
+    value="1"
+    checked
+>
+
+<b>
+Community
+</b>
+
+—
+wellness,
+reflection,
+conversations
+and shared experiences
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input
+    type="checkbox"
+    name="conscious_connections_enabled"
+    value="1"
+>
+
+<b>
+
+Conscious Connections —
+Love, Dating & Friendship
+
+</b>
+
+</label>
+
+
+<br><br>
+
+
+<label>
+
+<input
+    type="checkbox"
+    name="business_interest"
+    value="1"
+>
+
+<b>
+Business
+</b>
+
+—
+create a business profile
+or connect professionally
+
+</label>
+
+
+<br><br>
+
+
+<button class="btn">
+
+Create Free Account
+
+</button>
+
+
+</form>
+
+
+{% endblock %}
+'''
+
+
+T["onboarding.html"] = r'''
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+<h1>
+Set Up Your Profile
+</h1>
+
+
+<form
+    method="post"
+    class="card"
+>
+
+
+{% if u.conscious_connections_enabled %}
+
+
+<h2>
+Conscious Connections
+</h2>
+
+
+<p>
+
+What connections are you open to?
+
+</p>
+
+
+<select name="connection_type">
+
+
+<option value="Love & Dating">
+
+Love & Dating
+
+</option>
+
+
+<option value="Friendship">
+
+Friendship
+
+</option>
+
+
+<option value="Both">
+
+Both
+
+</option>
+
+
+</select>
+
+
+<p>
+
+Your normal Seasons Within profile
+remains your main profile.
+
+This choice activates your private
+Love / Dating / Friendship community profile.
+
+</p>
+
+
+{% endif %}
+
+
+{% if u.business_interest %}
+
+
+<h2>
+Business
+</h2>
+
+
+<p>
+
+You can create your free business listing
+after your member profile is saved.
+
+</p>
+
+
+{% endif %}
+
+
+<button class="btn">
+
+Continue to My Profile
+
+</button>
+
+
+</form>
+
+
+{% endblock %}
+'''
+
+
+# ============================================================
+# GENERAL COMMUNITY
 # ============================================================
 
 T["community.html"] = r'''
@@ -3818,7 +4162,7 @@ T["community.html"] = r'''
 {% block content %}
 
 
-<section class="hero community-banner">
+<section class="hero">
 
 
 <div>
@@ -3874,9 +4218,11 @@ THE SEASON WE'RE IN
 
 
 <p>
+
 <b>
 Journal • Reflect
 </b>
+
 </p>
 
 
@@ -3938,21 +4284,10 @@ Moon in
 </p>
 
 
-<small class="muted">
-
-Your private natal reflection
-remains inside My Profile.
-
-</small>
-
-
 </article>
 
 
 </section>
-
-
-<section>
 
 
 <h2>
@@ -3962,6 +4297,7 @@ Share With Community
 
 <form
     method="post"
+    enctype="multipart/form-data"
     class="card"
 >
 
@@ -3971,6 +4307,20 @@ Share With Community
     placeholder="Share a thought, reflection, question or part of your journey..."
 >
 </textarea>
+
+
+<label>
+
+Add Photo
+(optional)
+
+<input
+    type="file"
+    name="photo"
+    accept="image/*"
+>
+
+</label>
 
 
 <button class="btn">
@@ -4064,6 +4414,19 @@ Message Member
 </p>
 
 
+{% if p.media_path %}
+
+
+<img
+    class="post-image"
+    src="{{media_url(p.media_path)}}"
+    alt=""
+>
+
+
+{% endif %}
+
+
 </article>
 
 
@@ -4081,6 +4444,53 @@ as the community grows.
 {% endfor %}
 
 
+<section>
+
+
+<div class="sectionhead">
+
+
+<div>
+
+
+<span>
+WELLNESS WITHIN THE COMMUNITY
+</span>
+
+
+<h2>
+Businesses & Apps
+</h2>
+
+
+</div>
+
+
+<a href="{{url_for('business')}}">
+
+View All →
+
+</a>
+
+
+</div>
+
+
+<div class="grid">
+
+
+{% for b in businesses %}
+
+
+{% include 'business_card.html' %}
+
+
+{% endfor %}
+
+
+</div>
+
+
 </section>
 
 
@@ -4089,140 +4499,7 @@ as the community grows.
 
 
 # ============================================================
-# ACCOUNT PAGES
-# ============================================================
-
-T["join.html"] = r'''
-
-{% extends 'base.html' %}
-
-{% block content %}
-
-
-<h1>
-Join The Seasons Within
-</h1>
-
-
-<form
-    method="post"
-    class="card"
->
-
-
-<label>
-
-Name
-
-<input
-    name="name"
-    required
->
-
-</label>
-
-
-<label>
-
-Email
-
-<input
-    name="email"
-    type="email"
-    required
->
-
-</label>
-
-
-<label>
-
-Password
-
-<input
-    name="password"
-    type="password"
-    minlength="6"
-    required
->
-
-</label>
-
-
-<button class="btn">
-
-Create Free Account
-
-</button>
-
-
-</form>
-
-
-{% endblock %}
-'''
-
-
-T["login.html"] = r'''
-
-{% extends 'base.html' %}
-
-{% block content %}
-
-
-<h1>
-Log In
-</h1>
-
-
-<form
-    method="post"
-    class="card"
->
-
-
-<label>
-
-Email
-
-<input
-    name="email"
-    type="email"
-    required
->
-
-</label>
-
-
-<label>
-
-Password
-
-<input
-    name="password"
-    type="password"
-    required
->
-
-</label>
-
-
-<button class="btn">
-
-Log In
-
-</button>
-
-
-</form>
-
-
-{% endblock %}
-'''
-
-
-# ============================================================
-# MY PROFILE
+# PROFILE
 # ============================================================
 
 T["profile.html"] = r'''
@@ -4402,6 +4679,9 @@ Open My Journal
 <section class="profile-tools">
 
 
+{% if u.community_enabled %}
+
+
 <a
     class="tool"
     href="{{url_for('community')}}"
@@ -4414,10 +4694,15 @@ Community
 <br>
 
 <small>
+
 Post and see member reflections.
+
 </small>
 
 </a>
+
+
+{% endif %}
 
 
 <a
@@ -4432,7 +4717,12 @@ My Inbox
 <br>
 
 <small>
-Private people, dating, business and retreat messages.
+
+Private people,
+dating,
+business
+and retreat messages.
+
 </small>
 
 </a>
@@ -4450,28 +4740,71 @@ My Notifications
 <br>
 
 <small>
-Private astrology, connection and business updates.
+
+Private astrology,
+connection
+and business updates.
+
 </small>
 
 </a>
 
 
+{% if u.conscious_connections_enabled %}
+
+
 <a
     class="tool"
-    href="{{url_for('connections',mode='dating')}}"
+    href="{{url_for('connections')}}"
 >
 
 <b>
-Conscious Connections
+♡ Conscious Connections
 </b>
 
 <br>
 
 <small>
-Dating, friendship and business coordination.
+
+{{u.connection_type or 'Love, Dating & Friendship'}}
+
+•
+private community,
+compatibility
+and date/friendship ideas.
+
 </small>
 
 </a>
+
+
+{% else %}
+
+
+<a
+    class="tool"
+    href="{{url_for('enable_connections')}}"
+>
+
+<b>
+♡ Join Conscious Connections
+</b>
+
+<br>
+
+<small>
+
+Opt in to
+Love,
+Dating
+& Friendship later.
+
+</small>
+
+</a>
+
+
+{% endif %}
 
 
 <a
@@ -4486,7 +4819,10 @@ My Business Listing / App
 <br>
 
 <small>
-Create or manage your business presence.
+
+Create or manage
+your business presence.
+
 </small>
 
 </a>
@@ -4507,7 +4843,13 @@ Manage Hosted App
 <br>
 
 <small>
-Upload videos, content, services, meetups and more.
+
+Upload videos,
+content,
+services,
+meetups
+and more.
+
 </small>
 
 </a>
@@ -4642,16 +4984,44 @@ Exact birth time known
 </label>
 
 
+{% if u.conscious_connections_enabled %}
+
+
 <label>
 
-Connection Intentions
+Conscious Connections
 
-<input
-    name="connection_intentions"
-    value="{{u.connection_intentions}}"
->
+<select name="connection_type">
+
+
+<option value="Love & Dating">
+
+Love & Dating
+
+</option>
+
+
+<option value="Friendship">
+
+Friendship
+
+</option>
+
+
+<option value="Both">
+
+Both
+
+</option>
+
+
+</select>
+
 
 </label>
+
+
+{% endif %}
 
 
 <button class="btn">
@@ -4751,13 +5121,16 @@ Save Journal Entry
 
 <article class="card">
 
+
 <small>
 {{e.created_at}}
 </small>
 
+
 <p>
 {{e.body}}
 </p>
+
 
 </article>
 
@@ -4773,7 +5146,7 @@ Save Journal Entry
 # CONSCIOUS CONNECTIONS
 # ============================================================
 
-T["connections.html"] = r'''
+T["connections_join.html"] = r'''
 
 {% extends 'base.html' %}
 
@@ -4781,29 +5154,330 @@ T["connections.html"] = r'''
 
 
 <h1>
-Conscious Connections
+Join Conscious Connections
 </h1>
+
+
+<form
+    method="post"
+    class="card"
+>
+
+
+<p>
+
+Conscious Connections is the private
+Love,
+Dating
+& Friendship community
+inside The Seasons Within.
+
+</p>
+
+
+<select name="connection_type">
+
+
+<option>
+Love & Dating
+</option>
+
+
+<option>
+Friendship
+</option>
+
+
+<option>
+Both
+</option>
+
+
+</select>
+
+
+<button class="btn">
+
+Join Conscious Connections
+
+</button>
+
+
+</form>
+
+
+{% endblock %}
+'''
+
+
+T["connections.html"] = r'''
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+<section class="hero">
+
+
+<div>
+
+
+<span class="kicker">
+PRIVATE MEMBER COMMUNITY
+</span>
+
+
+<h1>
+♡ Conscious Connections
+</h1>
+
+
+<p>
+
+Love,
+Dating
+& Friendship
+
+•
+private posts
+
+•
+zodiac/natal compatibility
+
+•
+date
+and friendship experiences
+
+</p>
+
+
+</div>
+
+
+<img
+    class="hero-logo"
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
+
+
+</section>
 
 
 <div class="chips">
 
 
 <a href="?mode=dating">
+
 Love & Dating
+
 </a>
 
 
 <a href="?mode=friendship">
+
 Friendship
+
 </a>
 
 
-<a href="?mode=business">
-Business Partners
+<a href="?mode=all">
+
+Both
+
 </a>
 
 
 </div>
+
+
+<h2>
+Conscious Connections Community
+</h2>
+
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    class="card"
+>
+
+
+<textarea
+    name="body"
+    placeholder="Post to the Love, Dating & Friendship community..."
+>
+</textarea>
+
+
+{% if host_media %}
+
+
+<label>
+
+Host/Admin Photo or Video
+
+<input
+    type="file"
+    name="media"
+>
+
+</label>
+
+
+{% endif %}
+
+
+<button class="btn">
+
+Post
+
+</button>
+
+
+<small class="muted">
+
+Regular members post text only.
+
+Galaxy Eve and admins
+may post photos and videos.
+
+</small>
+
+
+</form>
+
+
+{% for p in posts %}
+
+
+<article class="card">
+
+
+<div class="posthead">
+
+
+<div class="postperson">
+
+
+{% if p.photo %}
+
+
+<img
+    src="{{media_url(p.photo)}}"
+    alt=""
+>
+
+
+{% else %}
+
+
+<span class="initial avatar">
+
+{{p.name[:1]}}
+
+</span>
+
+
+{% endif %}
+
+
+<div>
+
+
+<b>
+{{p.name}}
+</b>
+
+
+<small class="muted">
+
+{{p.created_at}}
+
+</small>
+
+
+</div>
+
+
+</div>
+
+
+{% if p.user_id != me.id %}
+
+
+<a
+    class="outline"
+    href="{{url_for('compose_message',recipient_id=p.user_id,kind='dating')}}"
+>
+
+Message Member
+
+</a>
+
+
+{% endif %}
+
+
+</div>
+
+
+<p>
+{{p.body}}
+</p>
+
+
+{% if p.media_path %}
+
+
+{% if p.media_type=='video' %}
+
+
+<video
+    class="content-video"
+    src="{{media_url(p.media_path)}}"
+    controls
+>
+</video>
+
+
+{% else %}
+
+
+<img
+    class="post-image"
+    src="{{media_url(p.media_path)}}"
+    alt=""
+>
+
+
+{% endif %}
+
+
+{% endif %}
+
+
+</article>
+
+
+{% else %}
+
+
+<div class="empty">
+
+Connection-community posts
+will appear here.
+
+</div>
+
+
+{% endfor %}
+
+
+<h2>
+Discover Members
+</h2>
 
 
 <div class="grid">
@@ -4826,7 +5500,7 @@ Business Partners
 
 
 <p>
-{{p.connection_intentions}}
+{{p.connection_type}}
 </p>
 
 
@@ -4838,81 +5512,20 @@ Conscious Coordination
 </b>
 
 
-{% if mode=='dating' and me.membership_access %}
-
-
-<div class="chips">
-
-
-<span>
-Sun
-{{p.sun}}
-</span>
-
-
-<span>
-Moon
-{{p.moon}}
-</span>
-
-
-<span>
-Mercury
-{{p.mercury}}
-</span>
-
-
-<span>
-Venus
-{{p.venus}}
-</span>
-
-
-<span>
-Mars
-{{p.mars}}
-</span>
-
-
-<span>
-Jupiter
-{{p.jupiter}}
-</span>
-
-
-<span>
-Saturn
-{{p.saturn}}
-</span>
-
-
-</div>
-
-
 <p>
-
-<b>
-Date idea:
-</b>
-
-Choose an experience that supports conversation,
-shared interests
-and the way both of you naturally connect.
-
-</p>
-
-
-{% endif %}
 
 
 <a
-    class="outline"
-    href="{{url_for('compose_message',recipient_id=p.id,kind='dating' if mode=='dating' else 'people')}}"
+    class="btn"
+    href="{{url_for('connection_profile',uid=p.id,mode=mode)}}"
 >
 
-Message
+View Compatibility
 
 </a>
+
+
+</p>
 
 
 </article>
@@ -4923,8 +5536,8 @@ Message
 
 <div class="empty">
 
-Real members will appear here
-as they join.
+Other opted-in members
+will appear here as they join.
 
 </div>
 
@@ -4933,6 +5546,209 @@ as they join.
 
 
 </div>
+
+
+<section>
+
+
+<div class="sectionhead">
+
+
+<div>
+
+
+<span>
+CONNECTION EXPERIENCES
+</span>
+
+
+<h2>
+
+Businesses & Apps for
+Dates,
+Friendships
+& Retreats
+
+</h2>
+
+
+</div>
+
+
+</div>
+
+
+<div class="grid">
+
+
+{% for b in businesses %}
+
+
+{% include 'business_card.html' %}
+
+
+{% endfor %}
+
+
+</div>
+
+
+</section>
+
+
+{% endblock %}
+'''
+
+
+T["connection_profile.html"] = r'''
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+<h1>
+{{person.name}}
+</h1>
+
+
+<article class="card">
+
+
+<h2>
+
+{{score}}%
+Conscious Coordination
+
+</h2>
+
+
+<p>
+{{person.connection_type}}
+</p>
+
+
+<div class="chips">
+
+
+<span>
+
+Sun
+{{person.sun or '—'}}
+
+</span>
+
+
+<span>
+
+Moon
+{{person.moon or '—'}}
+
+</span>
+
+
+{% if me.membership_access %}
+
+
+<span>
+Mercury
+{{person.mercury or '—'}}
+</span>
+
+
+<span>
+Venus
+{{person.venus or '—'}}
+</span>
+
+
+<span>
+Mars
+{{person.mars or '—'}}
+</span>
+
+
+<span>
+Jupiter
+{{person.jupiter or '—'}}
+</span>
+
+
+<span>
+Saturn
+{{person.saturn or '—'}}
+</span>
+
+
+<span>
+Uranus
+{{person.uranus or '—'}}
+</span>
+
+
+<span>
+Neptune
+{{person.neptune or '—'}}
+</span>
+
+
+<span>
+Pluto
+{{person.pluto or '—'}}
+</span>
+
+
+{% endif %}
+
+
+</div>
+
+
+<p>
+
+
+<b>
+
+{{'Date idea' if mode=='dating' else 'Friendship idea'}}:
+
+</b>
+
+
+{{idea}}
+
+
+</p>
+
+
+<div class="actions">
+
+
+<a
+    class="btn"
+    href="{{url_for('compose_message',recipient_id=person.id,kind='dating' if mode=='dating' else 'people')}}"
+>
+
+Message Privately
+
+</a>
+
+
+<a
+    class="outline"
+    href="{{url_for('retreat_build',connection=1)}}"
+>
+
+Build a
+{{'Date' if mode=='dating' else 'Friendship'}}
+Retreat
+
+</a>
+
+
+</div>
+
+
+</article>
 
 
 {% endblock %}
@@ -5032,134 +5848,7 @@ Create / Manage My Business Listing
 {% for b in businesses %}
 
 
-<article class="card business-store-card">
-
-
-<div class="store-media">
-
-
-{% if b.featured_video %}
-
-
-<video
-    src="{{media_url(b.featured_video)}}"
-    muted
-    playsinline
-    controls
->
-</video>
-
-
-{% elif b.hero_image %}
-
-
-<img
-    src="{{media_url(b.hero_image)}}"
-    alt="{{b.business_name}}"
->
-
-
-{% elif b.logo %}
-
-
-<img
-    class="store-logo-fallback"
-    src="{{media_url(b.logo)}}"
-    alt="{{b.business_name}}"
->
-
-
-{% else %}
-
-
-<img
-    class="store-logo-fallback"
-    src="{{url_for('static',filename='seasons-within-logo.png')}}"
-    alt=""
->
-
-
-{% endif %}
-
-
-</div>
-
-
-<div class="store-body">
-
-
-<span class="badge">
-
-{{'Hosted App' if b.paid_business else 'Free Listing'}}
-
-</span>
-
-
-<h2>
-{{b.business_name}}
-</h2>
-
-
-<p>
-
-{{b.creator_title or b.category}}
-
-
-{% if b.city %}
-
-•
-{{b.city}}
-
-{% endif %}
-
-</p>
-
-
-<small>
-
-{{b.tagline or b.description}}
-
-</small>
-
-
-<div class="store-links">
-
-
-<a
-    class="btn"
-    href="{{url_for('business_app',slug=b.slug)}}"
->
-
-{{'Open App' if b.paid_business else 'View Business'}}
-
-</a>
-
-
-{% if b.website %}
-
-
-<a
-    class="outline"
-    href="{{b.website}}"
-    target="_blank"
-    rel="noopener"
->
-
-Business Link
-
-</a>
-
-
-{% endif %}
-
-
-</div>
-
-
-</div>
-
-
-</article>
+{% include 'business_card.html' %}
 
 
 {% else %}
@@ -5218,10 +5907,6 @@ and Retreat Constellation tools.
 {% endblock %}
 '''
 
-
-# ============================================================
-# BUSINESS SETUP
-# ============================================================
 
 T["business_setup.html"] = r'''
 
@@ -5329,7 +6014,6 @@ Category
 <input
     name="category"
     value="{{b.category if b else ''}}"
-    placeholder="Creator, Yoga, Reiki, Massage, Retreat Host..."
 >
 
 </label>
@@ -5621,10 +6305,6 @@ Services & Events
 '''
 
 
-# ============================================================
-# HOSTED BUSINESS APP MANAGER
-# ============================================================
-
 T["business_manage.html"] = r'''
 
 {% extends 'base.html' %}
@@ -5633,7 +6313,11 @@ T["business_manage.html"] = r'''
 
 
 <h1>
-Manage {{b.business_name}} Hosted App
+
+Manage
+{{b.business_name}}
+Hosted App
+
 </h1>
 
 
@@ -5661,21 +6345,26 @@ Add Content
 
 <select name="content_type">
 
+
 <option value="post">
 Update
 </option>
+
 
 <option value="photo">
 Photo
 </option>
 
+
 <option value="video">
 Video
 </option>
 
+
 <option value="media">
 Featured Media
 </option>
+
 
 </select>
 
@@ -5723,29 +6412,36 @@ Add App Offering
 
 <select name="item_type">
 
+
 <option value="service">
 Service
 </option>
+
 
 <option value="class">
 Class
 </option>
 
+
 <option value="event">
 Event / Meetup
 </option>
+
 
 <option value="retreat">
 Retreat
 </option>
 
+
 <option value="membership">
 Membership
 </option>
 
+
 <option value="product">
 Product
 </option>
+
 
 </select>
 
@@ -5845,7 +6541,8 @@ Published Content
 
 <div class="empty">
 
-Your app content will appear here.
+Your app content
+will appear here.
 
 </div>
 
@@ -5857,8 +6554,11 @@ Your app content will appear here.
 
 
 <h2>
+
 Services,
-Events & Retreats
+Events
+& Retreats
+
 </h2>
 
 
@@ -5872,7 +6572,9 @@ Events & Retreats
 
 
 <span class="badge">
+
 {{x.item_type}}
+
 </span>
 
 
@@ -5899,7 +6601,8 @@ Events & Retreats
 
 <div class="empty">
 
-Your app offerings will appear here.
+Your app offerings
+will appear here.
 
 </div>
 
@@ -5913,10 +6616,6 @@ Your app offerings will appear here.
 {% endblock %}
 '''
 
-
-# ============================================================
-# BUSINESS APP
-# ============================================================
 
 T["business_app.html"] = r'''
 
@@ -5946,11 +6645,27 @@ T["business_app.html"] = r'''
 >
 
 
+{% else %}
+
+
+<img
+    style="
+        width:120px;
+        height:120px;
+        object-fit:contain
+    "
+    src="{{url_for('static',filename='seasons-within-logo.png')}}"
+    alt=""
+>
+
+
 {% endif %}
 
 
 <span class="badge">
+
 Free Business Listing
+
 </span>
 
 
@@ -5971,9 +6686,11 @@ Free Business Listing
 
 {% if b.city %}
 
+
 <p>
 {{b.city}}
 </p>
+
 
 {% endif %}
 
@@ -6031,7 +6748,7 @@ Contact Business
 
 
 <span class="kicker">
-HOSTED BUSINESS APP
+HOSTED APP
 </span>
 
 
@@ -6123,19 +6840,14 @@ Manage Content
 
 
 <video
-
     style="
         width:min(430px,45%);
         border-radius:18px;
         background:#000
     "
-
     src="{{media_url(b.featured_video)}}"
-
     controls
-
     playsinline
-
 >
 </video>
 
@@ -6144,16 +6856,13 @@ Manage Content
 
 
 <img
-
     style="
         width:min(430px,45%);
         max-height:300px;
         object-fit:cover;
         border-radius:18px
     "
-
     src="{{media_url(b.hero_image)}}"
-
     alt=""
 >
 
@@ -6184,7 +6893,7 @@ Manage Content
 </section>
 
 
-<section class="grid">
+<div class="grid">
 
 
 <article class="card">
@@ -6365,10 +7074,7 @@ Collaboration Interests:
 {% endif %}
 
 
-</section>
-
-
-<section>
+</div>
 
 
 <h2>
@@ -6428,7 +7134,8 @@ Content
 
 <div class="empty">
 
-New content will appear here.
+New content
+will appear here.
 
 </div>
 
@@ -6439,14 +7146,16 @@ New content will appear here.
 </div>
 
 
-</section>
-
-
-<section>
-
-
 <h2>
-Services • Events • Retreats • Meetups
+
+Services
+•
+Events
+•
+Retreats
+•
+Meetups
+
 </h2>
 
 
@@ -6460,7 +7169,9 @@ Services • Events • Retreats • Meetups
 
 
 <span class="badge">
+
 {{x.item_type}}
+
 </span>
 
 
@@ -6511,7 +7222,9 @@ Open Link
 
 <div class="empty">
 
-Offerings and experiences will appear here.
+Offerings
+and experiences
+will appear here.
 
 </div>
 
@@ -6522,14 +7235,14 @@ Offerings and experiences will appear here.
 </div>
 
 
-</section>
-
-
 <section class="card">
 
 
 <h2>
-Connect With {{b.business_name}}
+
+Connect With
+{{b.business_name}}
+
 </h2>
 
 
@@ -6549,6 +7262,16 @@ Message / Contact
 </a>
 
 
+<a
+    class="outline"
+    href="{{url_for('collaborate',slug=b.slug)}}"
+>
+
+Collaborate
+
+</a>
+
+
 {% endif %}
 
 
@@ -6561,22 +7284,6 @@ Message / Contact
 >
 
 Retreats & Meetups
-
-</a>
-
-
-{% endif %}
-
-
-{% if me and me.id!=owner.id %}
-
-
-<a
-    class="outline"
-    href="{{url_for('collaborate',slug=b.slug)}}"
->
-
-Collaborate
 
 </a>
 
@@ -6663,7 +7370,10 @@ T["collaborate.html"] = r'''
 
 
 <h1>
-Collaborate With {{b.business_name}}
+
+Collaborate With
+{{b.business_name}}
+
 </h1>
 
 
@@ -6808,7 +7518,9 @@ Retreats
 
 
 <small>
+
 {{m.created_at}}
+
 </small>
 
 
@@ -6835,7 +7547,8 @@ Reply
 
 <div class="empty">
 
-Your private messages will appear here.
+Your private messages
+will appear here.
 
 </div>
 
@@ -6855,7 +7568,10 @@ T["compose_message.html"] = r'''
 
 
 <h1>
-Message {{recipient.name}}
+
+Message
+{{recipient.name}}
+
 </h1>
 
 
@@ -7054,7 +7770,9 @@ Explore Wellness Partners
 
 
 <h2>
+
 Participating Wellness Partners
+
 </h2>
 
 
@@ -7064,30 +7782,7 @@ Participating Wellness Partners
 {% for b in partners %}
 
 
-<a
-    class="card"
-    href="{{url_for('business_app',slug=b.slug)}}"
->
-
-
-<h3>
-{{b.business_name}}
-</h3>
-
-
-<p>
-{{b.creator_title or b.category}}
-</p>
-
-
-<span class="badge">
-
-{{'Hosted App' if b.paid_business else 'Free Listing'}}
-
-</span>
-
-
-</a>
+{% include 'business_card.html' %}
 
 
 {% else %}
@@ -7095,7 +7790,8 @@ Participating Wellness Partners
 
 <div class="empty">
 
-Participating businesses will appear here.
+Participating businesses
+will appear here.
 
 </div>
 
@@ -7142,6 +7838,23 @@ Upcoming Retreats
 </small>
 
 
+{% if r.connection_retreat %}
+
+
+<p>
+
+<span class="badge">
+
+Conscious Connections Retreat
+
+</span>
+
+</p>
+
+
+{% endif %}
+
+
 </a>
 
 
@@ -7150,7 +7863,8 @@ Upcoming Retreats
 
 <div class="empty">
 
-Custom retreats will appear
+Custom retreats
+will appear
 after they are created.
 
 </div>
@@ -7174,13 +7888,22 @@ T["retreat_build.html"] = r'''
 
 
 <h1>
-Build My Retreat Constellation
+
+{{'Build a Date / Friendship Retreat' if connection else 'Build My Retreat Constellation'}}
+
 </h1>
 
 
 <form
     method="post"
     class="card"
+>
+
+
+<input
+    type="hidden"
+    name="connection_retreat"
+    value="{{1 if connection else 0}}"
 >
 
 
@@ -7219,7 +7942,8 @@ Winter
 
 <input
     name="retreat_type"
-    placeholder="Solo, Couples, Family, Creator, Women's, Men's..."
+    value="{{'Date / Friendship Retreat' if connection else ''}}"
+    placeholder="Solo, Couples, Family, Creator..."
 >
 
 
@@ -7239,7 +7963,7 @@ Winter
     name="guests"
     type="number"
     min="1"
-    value="1"
+    value="{{2 if connection else 1}}"
 >
 
 
@@ -7475,7 +8199,10 @@ Open Business App
 
 
 <h3>
-Add a Participating Wellness Partner
+
+Add a Participating
+Wellness Partner
+
 </h3>
 
 
@@ -7520,8 +8247,8 @@ Retreat Coordination
 
 <p>
 
-Use this private thread to coordinate
-retreat dates,
+Use this private thread
+to coordinate retreat dates,
 business availability,
 location
 and retreat details.
@@ -7646,10 +8373,18 @@ Free
 
 <p>
 
-Member Community •
-Basic profile •
-private journal •
-basic natal placements •
+Member Community
+
+•
+Basic profile
+
+•
+private journal
+
+•
+basic natal placements
+
+•
 free business listing
 
 </p>
@@ -7664,6 +8399,7 @@ free business listing
 <h2>
 
 The Seasons Within Membership
+
 —
 ${{MEMBER_PRICE}}/month
 
@@ -7672,10 +8408,18 @@ ${{MEMBER_PRICE}}/month
 
 <p>
 
-Expanded natal chart •
-Conscious Coordination •
-dating compatibility •
-date ideas •
+Expanded natal chart
+
+•
+Conscious Coordination
+
+•
+dating compatibility
+
+•
+date ideas
+
+•
 private astrology
 and connection notifications
 
@@ -7691,6 +8435,7 @@ and connection notifications
 <h2>
 
 Business Network
+
 —
 ${{BUSINESS_PRICE}}/month
 
@@ -7699,12 +8444,24 @@ ${{BUSINESS_PRICE}}/month
 
 <p>
 
-Hosted Business App •
-photos/videos/content •
-media kit •
-services/classes/events •
-collaboration tools •
-Business Alignment Reflection •
+Hosted Business App
+
+•
+photos/videos/content
+
+•
+media kit
+
+•
+services/classes/events
+
+•
+collaboration tools
+
+•
+Business Alignment Reflection
+
+•
 Retreat Constellation participation
 
 </p>
@@ -7722,7 +8479,6 @@ Retreat Constellation participation
 
 # ============================================================
 # PRIVATE ADMIN
-# NOT IN NAVIGATION
 # ============================================================
 
 T["admin.html"] = r'''
@@ -7834,7 +8590,7 @@ Retreats
 
 
 # ============================================================
-# JINJA SETUP
+# JINJA
 # ============================================================
 
 app.jinja_loader = DictLoader(
@@ -7907,7 +8663,7 @@ def public_home():
             featured_order ASC,
             id ASC
 
-        LIMIT 8
+        LIMIT 10
         """
     ).fetchall()
 
@@ -7992,21 +8748,63 @@ def join():
                 cursor = connection.execute(
                     """
                     INSERT INTO users(
+
                         name,
+
                         email,
-                        password
+
+                        password,
+
+                        community_enabled,
+
+                        conscious_connections_enabled,
+
+                        business_interest
                     )
 
-                    VALUES (
+                    VALUES(
+
+                        ?,
+                        ?,
+                        ?,
                         ?,
                         ?,
                         ?
                     )
                     """,
                     (
+
                         name,
+
                         email,
-                        hp(password)
+
+                        hp(
+                            password
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "community_enabled"
+                            )
+                            else 0
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "conscious_connections_enabled"
+                            )
+                            else 0
+                        ),
+
+                        (
+                            1
+                            if request.form.get(
+                                "business_interest"
+                            )
+                            else 0
+                        ),
                     )
                 )
 
@@ -8024,7 +8822,7 @@ def join():
 
                 return redirect(
                     url_for(
-                        "profile_edit"
+                        "onboarding"
                     )
                 )
 
@@ -8033,6 +8831,7 @@ def join():
 
                 connection.close()
 
+
                 flash(
                     "That email already has an account."
                 )
@@ -8040,6 +8839,72 @@ def join():
 
     return render_template(
         "join.html"
+    )
+
+
+# ============================================================
+# ONBOARDING
+# ============================================================
+
+@app.route(
+    "/onboarding",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def onboarding():
+
+    user = me()
+
+
+    if request.method == "POST":
+
+        connection = conn()
+
+
+        if user[
+            "conscious_connections_enabled"
+        ]:
+
+            connection.execute(
+                """
+                UPDATE users
+
+                SET connection_type=?
+
+                WHERE id=?
+                """,
+                (
+
+                    request.form.get(
+                        "connection_type",
+                        "Both"
+                    ),
+
+                    user[
+                        "id"
+                    ],
+                )
+            )
+
+
+        connection.commit()
+
+        connection.close()
+
+
+        return redirect(
+            url_for(
+                "profile_edit"
+            )
+        )
+
+
+    return render_template(
+        "onboarding.html",
+        u=user
     )
 
 
@@ -8076,7 +8941,9 @@ def login():
         user = connection.execute(
             """
             SELECT *
+
             FROM users
+
             WHERE lower(email)=?
             """,
             (
@@ -8090,7 +8957,8 @@ def login():
 
         if (
             user
-            and user[
+            and
+            user[
                 "password"
             ] == hp(
                 password
@@ -8133,6 +9001,7 @@ def logout():
 
     session.clear()
 
+
     return redirect(
         url_for(
             "public_home"
@@ -8156,6 +9025,18 @@ def community():
 
     user = me()
 
+
+    if not user[
+        "community_enabled"
+    ]:
+
+        return redirect(
+            url_for(
+                "profile"
+            )
+        )
+
+
     connection = conn()
 
 
@@ -8167,25 +9048,67 @@ def community():
         ).strip()
 
 
-        if body:
+        media = save_file(
+
+            request.files.get(
+                "photo"
+            ),
+
+            f"community{user['id']}"
+        )
+
+
+        if (
+            media
+            and is_video(
+                media
+            )
+        ):
+
+            media = ""
+
+
+        if (
+            body
+            or media
+        ):
 
             connection.execute(
                 """
                 INSERT INTO posts(
+
                     user_id,
-                    body
+
+                    body,
+
+                    media_path,
+
+                    media_type
                 )
 
-                VALUES (
+                VALUES(
+
+                    ?,
+                    ?,
                     ?,
                     ?
                 )
                 """,
                 (
+
                     user[
                         "id"
                     ],
-                    body
+
+                    body,
+
+                    media,
+
+                    (
+                        "image"
+                        if media
+                        else ""
+                    ),
                 )
             )
 
@@ -8216,6 +9139,23 @@ def community():
     ).fetchall()
 
 
+    businesses = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE status='active'
+
+        ORDER BY
+            featured_order,
+            id
+
+        LIMIT 6
+        """
+    ).fetchall()
+
+
     connection.close()
 
 
@@ -8225,6 +9165,9 @@ def community():
 
         posts=
             posts,
+
+        businesses=
+            businesses,
 
         reflection=
             journal_reflection(
@@ -8242,6 +9185,7 @@ def community():
 def profile():
 
     user = me()
+
 
     return render_template(
 
@@ -8275,9 +9219,11 @@ def profile_edit():
         photo = (
 
             save_file(
+
                 request.files.get(
                     "photo"
                 ),
+
                 f"user{user['id']}"
             )
 
@@ -8312,7 +9258,7 @@ def profile_edit():
 
                 time_known=?,
 
-                connection_intentions=?,
+                connection_type=?,
 
                 photo=?
 
@@ -8359,9 +9305,11 @@ def profile_edit():
                 ),
 
                 request.form.get(
-                    "connection_intentions",
-                    ""
-                ).strip(),
+                    "connection_type",
+                    user[
+                        "connection_type"
+                    ]
+                ),
 
                 photo,
 
@@ -8525,12 +9473,10 @@ def journal():
                     sky_json
                 )
 
-                VALUES (
+                VALUES(
 
                     ?,
-
                     ?,
-
                     ?
                 )
                 """,
@@ -8589,31 +9535,256 @@ def journal():
 
 
 # ============================================================
-# CONSCIOUS CONNECTIONS
+# ENABLE CONSCIOUS CONNECTIONS
 # ============================================================
 
-@app.route("/connections")
+@app.route(
+    "/connections/join",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
+@login_required
+def enable_connections():
+
+    user = me()
+
+
+    if request.method == "POST":
+
+        connection = conn()
+
+
+        connection.execute(
+            """
+            UPDATE users
+
+            SET
+
+                conscious_connections_enabled=1,
+
+                connection_type=?
+
+            WHERE id=?
+            """,
+            (
+
+                request.form.get(
+                    "connection_type",
+                    "Both"
+                ),
+
+                user[
+                    "id"
+                ],
+            )
+        )
+
+
+        connection.commit()
+
+        connection.close()
+
+
+        return redirect(
+            url_for(
+                "connections"
+            )
+        )
+
+
+    return render_template(
+        "connections_join.html"
+    )
+
+
+# ============================================================
+# CONSCIOUS CONNECTIONS COMMUNITY
+# ============================================================
+
+@app.route(
+    "/connections",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
 @login_required
 def connections():
 
     user = me()
 
 
+    if not user[
+        "conscious_connections_enabled"
+    ]:
+
+        return redirect(
+            url_for(
+                "enable_connections"
+            )
+        )
+
+
     mode = request.args.get(
         "mode",
-        "friendship"
+        "all"
     )
 
 
     connection = conn()
 
 
+    host_media = bool(
+
+        admin(
+            user
+        )
+
+        or
+
+        (
+            user[
+                "email"
+            ]
+            or ""
+        ).lower()
+
+        ==
+
+        GALAXY_EMAIL
+    )
+
+
+    if request.method == "POST":
+
+        body = request.form.get(
+            "body",
+            ""
+        ).strip()
+
+
+        media = ""
+
+        media_type = ""
+
+
+        if host_media:
+
+            media = save_file(
+
+                request.files.get(
+                    "media"
+                ),
+
+                f"connections{user['id']}"
+            )
+
+
+            media_type = (
+
+                "video"
+
+                if is_video(
+                    media
+                )
+
+                else (
+
+                    "image"
+
+                    if media
+
+                    else ""
+                )
+            )
+
+
+        if (
+            body
+            or media
+        ):
+
+            connection.execute(
+                """
+                INSERT INTO connection_posts(
+
+                    user_id,
+
+                    body,
+
+                    media_path,
+
+                    media_type
+                )
+
+                VALUES(
+
+                    ?,
+                    ?,
+                    ?,
+                    ?
+                )
+                """,
+                (
+
+                    user[
+                        "id"
+                    ],
+
+                    body,
+
+                    media,
+
+                    media_type,
+                )
+            )
+
+
+            connection.commit()
+
+
+    posts = connection.execute(
+        """
+        SELECT
+
+            p.*,
+
+            u.name,
+
+            u.photo
+
+        FROM connection_posts p
+
+        JOIN users u
+        ON u.id=p.user_id
+
+        WHERE
+            u.conscious_connections_enabled=1
+
+        ORDER BY
+            p.id DESC
+
+        LIMIT 50
+        """
+    ).fetchall()
+
+
     people = connection.execute(
         """
         SELECT *
+
         FROM users
-        WHERE id<>?
-        ORDER BY id DESC
+
+        WHERE
+
+            id<>?
+
+            AND conscious_connections_enabled=1
+
+        ORDER BY
+            id DESC
         """,
         (
             user[
@@ -8623,7 +9794,62 @@ def connections():
     ).fetchall()
 
 
-    connection.close()
+    filtered = []
+
+
+    for person in people:
+
+        connection_type = (
+
+            person[
+                "connection_type"
+            ]
+
+            or
+
+            "Both"
+        )
+
+
+        if mode == "dating":
+
+            if connection_type in (
+                "Love & Dating",
+                "Both",
+            ):
+
+                filtered.append(
+                    person
+                )
+
+
+        elif mode == "friendship":
+
+            if connection_type in (
+                "Friendship",
+                "Both",
+            ):
+
+                filtered.append(
+                    person
+                )
+
+
+        else:
+
+            filtered.append(
+                person
+            )
+
+
+    score_mode = (
+
+        "friendship"
+
+        if mode == "friendship"
+
+        else "dating"
+    )
 
 
     cards = [
@@ -8634,28 +9860,158 @@ def connections():
             coord(
                 user,
                 person,
-                mode
+                score_mode
             )
         )
 
-        for person in people
+        for person
+
+        in filtered
     ]
+
+
+    businesses = connection.execute(
+        """
+        SELECT *
+
+        FROM businesses
+
+        WHERE
+
+            status='active'
+
+            AND retreat_participation=1
+
+        ORDER BY
+            featured_order,
+            id
+
+        LIMIT 8
+        """
+    ).fetchall()
+
+
+    connection.close()
 
 
     return render_template(
 
         "connections.html",
 
+        posts=
+            posts,
+
         cards=
             cards,
 
+        businesses=
+            businesses,
+
         mode=
             mode,
+
+        host_media=
+            host_media,
     )
 
 
 # ============================================================
-# CREATORS REDIRECT INTO BUSINESS NETWORK
+# CONNECTION PROFILE / COMPATIBILITY
+# ============================================================
+
+@app.route(
+    "/connections/profile/<int:uid>"
+)
+@login_required
+def connection_profile(uid):
+
+    user = me()
+
+
+    if not user[
+        "conscious_connections_enabled"
+    ]:
+
+        return redirect(
+            url_for(
+                "enable_connections"
+            )
+        )
+
+
+    connection = conn()
+
+
+    person = connection.execute(
+        """
+        SELECT *
+
+        FROM users
+
+        WHERE
+
+            id=?
+
+            AND conscious_connections_enabled=1
+        """,
+        (
+            uid,
+        )
+    ).fetchone()
+
+
+    connection.close()
+
+
+    if not person:
+
+        abort(
+            404
+        )
+
+
+    mode = request.args.get(
+        "mode",
+        "dating"
+    )
+
+
+    if mode not in (
+        "dating",
+        "friendship",
+    ):
+
+        mode = "dating"
+
+
+    return render_template(
+
+        "connection_profile.html",
+
+        person=
+            person,
+
+        mode=
+            mode,
+
+        score=
+            coord(
+                user,
+                person,
+                mode
+            ),
+
+        idea=
+            date_idea(
+                user,
+                person,
+                mode
+            ),
+    )
+
+
+# ============================================================
+# CREATORS ARE PART OF BUSINESS NETWORK
 # ============================================================
 
 @app.route("/creators")
@@ -8684,7 +10040,7 @@ def business():
     connection = conn()
 
 
-    businesses = connection.execute(
+    rows = connection.execute(
         """
         SELECT *
 
@@ -8709,9 +10065,9 @@ def business():
 
         ORDER BY
 
-            featured_order ASC,
+            featured_order,
 
-            id ASC
+            id
         """,
         (
 
@@ -8736,7 +10092,7 @@ def business():
         "business.html",
 
         businesses=
-            businesses,
+            rows,
 
         q=
             query,
@@ -8765,7 +10121,9 @@ def business_setup():
     business_record = connection.execute(
         """
         SELECT *
+
         FROM businesses
+
         WHERE owner_id=?
         """,
         (
@@ -8790,7 +10148,9 @@ def business_setup():
                 "Business name required."
             )
 
+
             connection.close()
+
 
             return render_template(
                 "business_setup.html",
@@ -9217,12 +10577,29 @@ def business_setup():
                         "business_access"
                     ]
 
-                    and request.form.get(
+                    and
+
+                    request.form.get(
                         "retreat_participation"
                     )
                 )
 
-                else 0,
+                else (
+
+                    business_record[
+                        "retreat_participation"
+                    ]
+
+                    if (
+                        business_record
+                        and
+                        not user[
+                            "business_access"
+                        ]
+                    )
+
+                    else 0
+                ),
         }
 
 
@@ -9367,64 +10744,36 @@ def business_setup():
                     status
                 )
 
-                VALUES (
+                VALUES(
 
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
 
                     'active'
@@ -9560,6 +10909,7 @@ def business_setup():
 
 
         connection.commit()
+
         connection.close()
 
 
@@ -9585,7 +10935,7 @@ def business_setup():
 
 
 # ============================================================
-# HOSTED APP MANAGER
+# BUSINESS APP MANAGER
 # ============================================================
 
 @app.route(
@@ -9617,7 +10967,9 @@ def business_manage():
     business_record = connection.execute(
         """
         SELECT *
+
         FROM businesses
+
         WHERE owner_id=?
         """,
         (
@@ -9631,6 +10983,7 @@ def business_manage():
     if not business_record:
 
         connection.close()
+
 
         return redirect(
             url_for(
@@ -9703,16 +11056,12 @@ def business_manage():
                         media_type
                     )
 
-                    VALUES (
+                    VALUES(
 
                         ?,
-
                         ?,
-
                         ?,
-
                         ?,
-
                         ?
                     )
                     """,
@@ -9771,18 +11120,13 @@ def business_manage():
                         action_url
                     )
 
-                    VALUES (
+                    VALUES(
 
                         ?,
-
                         ?,
-
                         ?,
-
                         ?,
-
                         ?,
-
                         ?
                     )
                     """,
@@ -9837,7 +11181,8 @@ def business_manage():
 
             AND active=1
 
-        ORDER BY id DESC
+        ORDER BY
+            id DESC
         """,
         (
             business_record[
@@ -9859,7 +11204,8 @@ def business_manage():
 
             AND active=1
 
-        ORDER BY id DESC
+        ORDER BY
+            id DESC
         """,
         (
             business_record[
@@ -10080,14 +11426,11 @@ def collaborate(slug):
                 message
             )
 
-            VALUES (
+            VALUES(
 
                 ?,
-
                 ?,
-
                 ?,
-
                 ?
             )
             """,
@@ -10123,16 +11466,12 @@ def collaborate(slug):
                 body
             )
 
-            VALUES (
+            VALUES(
 
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?
             )
             """,
@@ -10148,9 +11487,7 @@ def collaborate(slug):
 
                 "business",
 
-                (
-                    "Collaboration Request"
-                ),
+                "Collaboration Request",
 
                 message,
             )
@@ -10158,6 +11495,7 @@ def collaborate(slug):
 
 
         connection.commit()
+
         connection.close()
 
 
@@ -10247,7 +11585,7 @@ def compose_message(
     user = me()
 
 
-    message_kind = request.args.get(
+    kind = request.args.get(
         "kind",
         "people"
     )
@@ -10259,7 +11597,9 @@ def compose_message(
     recipient = connection.execute(
         """
         SELECT *
+
         FROM users
+
         WHERE id=?
         """,
         (
@@ -10308,16 +11648,12 @@ def compose_message(
                     body
                 )
 
-                VALUES (
+                VALUES(
 
                     ?,
-
                     ?,
-
                     ?,
-
                     ?,
-
                     ?
                 )
                 """,
@@ -10329,7 +11665,7 @@ def compose_message(
 
                     recipient_id,
 
-                    message_kind,
+                    kind,
 
                     subject,
 
@@ -10339,6 +11675,7 @@ def compose_message(
 
 
             connection.commit()
+
             connection.close()
 
 
@@ -10365,7 +11702,7 @@ def compose_message(
             recipient,
 
         kind=
-            message_kind,
+            kind,
 
         subject=
             "",
@@ -10483,6 +11820,14 @@ def retreats():
 @login_required
 def retreat_build():
 
+    connection_mode = (
+        request.args.get(
+            "connection"
+        )
+        == "1"
+    )
+
+
     if request.method == "POST":
 
         user = me()
@@ -10512,29 +11857,23 @@ def retreat_build():
 
                 lodging_preferences,
 
-                wellness_interests
+                wellness_interests,
+
+                connection_retreat
             )
 
-            VALUES (
+            VALUES(
 
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
                 ?,
-
+                ?,
                 ?
             )
             """,
@@ -10590,6 +11929,15 @@ def retreat_build():
                     "wellness_interests",
                     ""
                 ),
+
+                (
+                    1
+                    if request.form.get(
+                        "connection_retreat"
+                    )
+                    == "1"
+                    else 0
+                ),
             )
         )
 
@@ -10614,7 +11962,11 @@ def retreat_build():
 
 
     return render_template(
-        "retreat_build.html"
+
+        "retreat_build.html",
+
+        connection=
+            connection_mode,
     )
 
 
@@ -10675,10 +12027,9 @@ def retreat_detail(rid):
                     business_id
                 )
 
-                VALUES (
+                VALUES(
 
                     ?,
-
                     ?
                 )
                 """,
@@ -10739,12 +12090,10 @@ def retreat_detail(rid):
                         body
                     )
 
-                    VALUES (
+                    VALUES(
 
                         ?,
-
                         ?,
-
                         ?
                     )
                     """,
@@ -10879,8 +12228,11 @@ def admin_page():
     users = connection.execute(
         """
         SELECT *
+
         FROM users
-        ORDER BY id DESC
+
+        ORDER BY
+            id DESC
         """
     ).fetchall()
 
@@ -10888,7 +12240,9 @@ def admin_page():
     businesses = connection.execute(
         """
         SELECT *
+
         FROM businesses
+
         ORDER BY
             featured_order,
             id
@@ -10899,8 +12253,11 @@ def admin_page():
     retreats_rows = connection.execute(
         """
         SELECT *
+
         FROM retreats
-        ORDER BY id DESC
+
+        ORDER BY
+            id DESC
         """
     ).fetchall()
 
@@ -10931,7 +12288,7 @@ init_db()
 
 
 # ============================================================
-# RUN APP
+# RUN
 # ============================================================
 
 if __name__ == "__main__":
