@@ -57,8 +57,8 @@
       </a>
 
       <a
-        href="{{ url_for('membership') }}"
-        class="{% if request.endpoint == 'membership' %}active{% endif %}"
+        href="{{ url_for('members') }}"
+        class="{% if request.endpoint == 'members' %}active{% endif %}"
       >
         Membership
       </a>
@@ -115,13 +115,11 @@
 {% with msgs=get_flashed_messages() %}
   {% if msgs %}
     <div class="flash-wrap">
-
       {% for m in msgs %}
-        <div class="flash-message">
-          {{ m }}
-        </div>
+      <div class="flash-message">
+        {{ m }}
+      </div>
       {% endfor %}
-
     </div>
   {% endif %}
 {% endwith %}
@@ -170,8 +168,8 @@
   </a>
 
   <a
-    href="{{ url_for('membership') }}"
-    class="{% if request.endpoint == 'membership' %}active{% endif %}"
+    href="{{ url_for('members') }}"
+    class="{% if request.endpoint == 'members' %}active{% endif %}"
   >
     <span>♡</span>
     <small>Membership</small>
