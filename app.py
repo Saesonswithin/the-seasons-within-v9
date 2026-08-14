@@ -1,361 +1,531 @@
-
-import os, sqlite3, hashlib, secrets, json, html, re
-from pathlib import Path
+import os
+import json
+import sqlite3
+from datetime import datetime
 from functools import wraps
-from datetime import datetime, date
-from flask import Flask, request, redirect, url_for, session, flash, send_from_directory, Response, send_file
+from pathlib import Path
+from flask import Flask, request, redirect, url_for, session, flash, abort, render_template_string
+from werkzeug.security import generate_password_hash, check_password_hash
 
-BASE=Path(__file__).resolve().parent
-DATA=Path(os.environ.get("PERSISTENT_DATA_DIR", BASE/"data")); DATA.mkdir(parents=True,exist_ok=True)
-DB=Path(os.environ.get("DATABASE_PATH", DATA/"the_seasons_within_master_v2.db"))
-UPLOADS=Path(os.environ.get("UPLOAD_DIR", DATA/"uploads")); UPLOADS.mkdir(parents=True,exist_ok=True)
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
+DB_PATH = os.environ.get('DATABASE_PATH', str(Path(__file__).with_name('seasons_within.db')))
 
-app=Flask(__name__); app.secret_key=os.environ.get("SECRET_KEY","change-this-on-render")
-GALAXY_EMAIL=os.environ.get("GALAXY_EVE_EMAIL","galaxyeve@theseasonswithin.local").lower()
-ADMINS={x.lower() for x in [GALAXY_EMAIL,os.environ.get("ADMIN_EMAIL_1",""),os.environ.get("ADMIN_EMAIL_2","")] if x}
+# -----------------------------------------------------------------------------
+# Data layer
+# -----------------------------------------------------------------------------
 
-CSS = '\n:root{--plum:#34204f;--purple:#8f63ba;--purple2:#a978c7;--lav:#f2e9f8;--blush:#fff1ef;--line:#eadff1;--muted:#766a80;--gold:#d7bd62;--shadow:0 14px 38px rgba(70,45,95,.09)}\n*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--plum);background:linear-gradient(180deg,#fcf9fd,#fffaf8 58%,#faf6fc);min-height:100vh}\na{text-decoration:none;color:inherit}button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3{font-family:Georgia,"Times New Roman",serif}h1{font-size:clamp(30px,5vw,48px);line-height:1.05;margin:8px 0 12px}h2{font-size:clamp(22px,3vw,30px);margin:6px 0 12px}\n.top{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}\n.topin{width:min(1240px,94vw);min-height:78px;margin:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px}\n.brand{display:flex;align-items:center;gap:11px}.logo{width:50px;height:50px;border-radius:50%;padding:4px;background:#fff}.brand strong{display:block;font:700 19px Georgia}.brand small{display:block;font-size:9px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase}\n.nav{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.nav a,.acct a{padding:10px 12px;border-radius:999px;font-weight:800;color:#5e5068;font-size:13px}.nav a.active,.nav a:hover{background:var(--lav);color:#68418c}.acct{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}\n.page{width:min(1140px,92vw);margin:28px auto 118px}.hero,.card{border:1px solid var(--line);border-radius:24px;background:#fff;box-shadow:var(--shadow)}.hero{padding:28px;background:linear-gradient(135deg,#f0e2fa,#fff1ed)}.card{padding:20px;margin:15px 0}.premium{border:2px solid var(--gold)}\n.badge,.chip{display:inline-flex;align-items:center;padding:7px 10px;border-radius:999px;background:var(--lav);font-size:10px;font-weight:900}.gold{background:#fff8df;border:1px solid var(--gold);color:#765615}.heart{background:#fff0f4;color:#905068}\n.actions,.chips,.steps{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.btn,.out,button{display:inline-flex;align-items:center;justify-content:center;border-radius:11px;min-height:40px;padding:9px 14px;font-weight:800;border:1px solid var(--purple)}.btn,button{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff}.out{background:#fff;color:#68418c;border-color:#cdb7dc}\n.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:15px}.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.muted{color:var(--muted);line-height:1.55}.small{font-size:12px}\n.input,input,textarea,select{width:100%;padding:12px;border:1px solid #dfd1e8;border-radius:12px;background:#fff;margin:5px 0 12px;color:var(--plum)}textarea{min-height:110px}\n.media{height:225px;border-radius:16px;background:linear-gradient(135deg,#e4d2f0,#f8ded8);display:grid;place-items:center;overflow:hidden}.media img,.media video{width:100%;height:100%;object-fit:cover}.media.logo-box img{object-fit:contain;padding:34px}.avatar{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#c89de1,#efbcc6);color:#fff;font-weight:900;overflow:hidden}.avatar img{width:100%;height:100%;object-fit:cover}.post{display:grid;grid-template-columns:54px 1fr;gap:12px}\n.fact{padding:13px;border:1px solid var(--line);border-radius:14px;background:#fcf9fd;margin:7px 0}.fact small{display:block;color:var(--muted)}.meter{height:10px;background:#eee6f1;border-radius:999px;overflow:hidden}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),#c992c4)}\n.steps span{padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:10px;font-weight:900}.sectiontitle{display:flex;align-items:end;justify-content:space-between;gap:10px;margin-top:26px}.appnav{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}.appnav span{padding:8px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:10px;font-weight:900}\n.flash{width:min(1140px,92vw);margin:12px auto;padding:12px;border:1px solid #d9c6e7;border-radius:12px;background:#f7eefb}.bottom{display:none}\n@media(max-width:820px){body{padding-bottom:84px}.topin{min-height:68px;display:flex;justify-content:center}.nav,.acct{display:none}.page{width:94vw;margin-top:18px}.two{grid-template-columns:1fr}.bottom{position:fixed;left:50%;bottom:9px;transform:translateX(-50%);z-index:50;width:95vw;display:grid;grid-template-columns:repeat(5,1fr);padding:7px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.97);backdrop-filter:blur(18px);box-shadow:0 15px 45px rgba(70,45,95,.18)}.bottom a{text-align:center;padding:7px 4px;border-radius:13px;color:#75677f;font-size:9px;font-weight:900}.bottom a b{display:block;font-size:18px}.bottom a.active{background:var(--lav);color:#68418c}}\n'
-LOGO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">\n<circle cx="50" cy="50" r="47" fill="#f4ebf9"/>\n<path d="M50 6A44 44 0 0 1 94 50H50Z" fill="#d6b8e5"/>\n<path d="M94 50A44 44 0 0 1 50 94V50Z" fill="#efc4cb"/>\n<path d="M50 94A44 44 0 0 1 6 50H50Z" fill="#ead7ad"/>\n<path d="M6 50A44 44 0 0 1 50 6V50Z" fill="#c9b7df"/>\n<circle cx="50" cy="50" r="18" fill="#fff"/>\n</svg>'
+def db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA foreign_keys=ON')
+    return conn
 
-def cdb():
-    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
-def esc(x): return html.escape(str(x or ""))
-def hp(p): return hashlib.sha256(("tsw::"+p).encode()).hexdigest()
-def slug(x): return re.sub(r"[^a-z0-9]+","-",x.lower()).strip("-") or secrets.token_hex(4)
-def me():
-    if not session.get("uid"): return None
-    c=cdb(); u=c.execute("select * from users where id=?",(session["uid"],)).fetchone(); c.close(); return u
-def login_required(f):
-    @wraps(f)
-    def w(*a,**k):
-        if not me(): return redirect(url_for("login",next=request.path))
-        return f(*a,**k)
-    return w
-def save_file(fs,prefix):
-    if not fs or not fs.filename:return ""
-    ext=Path(fs.filename).suffix.lower()
-    if ext not in {".jpg",".jpeg",".png",".webp",".gif",".mp4",".mov",".webm",".m4v"}: return ""
-    n=f"{prefix}-{secrets.token_hex(5)}{ext}"; fs.save(UPLOADS/n); return n
-def notify(uid,title,body,kind="General"):
-    c=cdb(); c.execute("insert into notifications(user_id,title,body,kind) values(?,?,?,?)",(uid,title,body,kind)); c.commit(); c.close()
-def notify_all(title,body,kind="Community",exclude=None):
-    c=cdb()
-    for r in c.execute("select id from users").fetchall():
-        if r["id"]!=exclude:c.execute("insert into notifications(user_id,title,body,kind) values(?,?,?,?)",(r["id"],title,body,kind))
-    c.commit(); c.close()
 
 def init_db():
-    c=cdb(); c.executescript("""
-    create table if not exists users(id integer primary key autoincrement,name text,email text unique,password_hash text,photo text default '',city text default '',headline text default '',bio text default '',birth_date text default '',birth_time text default '',birth_city text default '',birth_state text default '',birth_country text default '',time_known integer default 0,full_member integer default 0,business_access integer default 0,is_admin integer default 0);
-    create table if not exists posts(id integer primary key autoincrement,user_id integer,body text,photo text default '',post_as text default 'member',created_at text default current_timestamp);
-    create table if not exists journal(id integer primary key autoincrement,user_id integer,title text,body text,category text,visibility text default 'private',created_at text default current_timestamp);
-    create table if not exists messages(id integer primary key autoincrement,sender_id integer,recipient_id integer,source text,subject text,body text,created_at text default current_timestamp);
-    create table if not exists notifications(id integer primary key autoincrement,user_id integer,title text,body text,kind text,created_at text default current_timestamp);
-    create table if not exists connections(user_id integer primary key,types text,emotional_regulation text,emotional_support text,communication text,conflict text,repair text,accountability text,boundaries text,trust text,love_languages text,lifestyle_values text,business_style text,retreat_style text,about text);
-    create table if not exists businesses(id integer primary key autoincrement,owner_id integer,slug text unique,name text,title text,category text,city text,tagline text,description text,logo text default '',cover text default '',website text,instagram text,tiktok text,youtube text,modules text,status text default 'active',featured integer default 0);
-    create table if not exists business_dev(user_id integer primary key,stage text,business_name text,strengths text,target_customer text,problem text,solution text,vision text,values_text text,usp text,offers text,pricing text,revenue text,competitors text,operations text,startup text,marketing text,goals90 text,goals1yr text);
-    create table if not exists business_plans(id integer primary key autoincrement,user_id integer,business_name text,version integer,sections text,created_at text default current_timestamp);
-    create table if not exists retreats(id integer primary key autoincrement,user_id integer,title text,type text,season text,dates text,guests text,budget text,wellness text,lodging text,businesses text,created_at text default current_timestamp);
-    """)
-    for e in ADMINS:
-        c.execute("update users set full_member=1,business_access=1,is_admin=1 where lower(email)=?",(e,))
-    c.commit(); c.close()
+    conn = db()
+    conn.executescript('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        dob TEXT,
+        adult_confirmed INTEGER NOT NULL DEFAULT 0,
+        city TEXT DEFAULT '', headline TEXT DEFAULT '', about TEXT DEFAULT '',
+        birth_time TEXT DEFAULT '', birth_city TEXT DEFAULT '', birth_region TEXT DEFAULT '', birth_country TEXT DEFAULT '', exact_time INTEGER DEFAULT 0,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        conscious_paid INTEGER NOT NULL DEFAULT 0,
+        business_dev_paid INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS journal_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'Reflections',
+        shared_copy INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS community_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        body TEXT NOT NULL,
+        post_type TEXT NOT NULL DEFAULT 'member',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        origin TEXT NOT NULL DEFAULT 'Community',
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(sender_id) REFERENCES users(id),
+        FOREIGN KEY(recipient_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        read_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS businesses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        owner_title TEXT DEFAULT '',
+        category TEXT DEFAULT '',
+        location TEXT DEFAULT '',
+        tagline TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        story TEXT DEFAULT '',
+        offers TEXT DEFAULT '',
+        features TEXT DEFAULT '',
+        website TEXT DEFAULT '',
+        instagram TEXT DEFAULT '', tiktok TEXT DEFAULT '', youtube TEXT DEFAULT '', facebook TEXT DEFAULT '',
+        booking_url TEXT DEFAULT '', store_url TEXT DEFAULT '', podcast_url TEXT DEFAULT '', affiliate_links TEXT DEFAULT '',
+        active INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS connection_profiles (
+        user_id INTEGER PRIMARY KEY,
+        coordination_types TEXT DEFAULT '',
+        meet_preferences TEXT DEFAULT '', age_range TEXT DEFAULT '', location_preference TEXT DEFAULT '', occupation TEXT DEFAULT '', family TEXT DEFAULT '', lifestyle TEXT DEFAULT '', seeking TEXT DEFAULT '',
+        overwhelmed TEXT DEFAULT '', regulate TEXT DEFAULT '', other_emotions TEXT DEFAULT '', conflict_style TEXT DEFAULT '', repair TEXT DEFAULT '', boundaries TEXT DEFAULT '', trust TEXT DEFAULT '', affection TEXT DEFAULT '', communication TEXT DEFAULT '', values_text TEXT DEFAULT '',
+        business_style TEXT DEFAULT '', retreat_style TEXT DEFAULT '', about_me TEXT DEFAULT '', opted_in INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS retreats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        retreat_type TEXT NOT NULL,
+        season TEXT DEFAULT '', preferred_dates TEXT DEFAULT '', guests TEXT DEFAULT '', budget TEXT DEFAULT '', wellness TEXT DEFAULT '', lodging TEXT DEFAULT '', businesses TEXT DEFAULT '', meaning TEXT DEFAULT '', status TEXT DEFAULT 'Draft / Request Submitted',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+    conn.commit()
+    conn.close()
 
-def logo_img(cls="logo"):
-    return f"<img class='{cls}' src='{url_for('brand_logo')}' alt='The Seasons Within logo'>"
 
-def shell(title,body,active=""):
-    u=me()
-    nav=[("Home","home"),("Community","community"),("My Profile","profile"),("Business Network","business"),("Retreats","retreats"),("Membership","membership")]
-    nav_html="".join(f"<a class='{'active' if active==ep else ''}' href='{url_for(ep)}'>{label}</a>" for label,ep in nav if u or ep in {"home","business","retreats","membership"})
-    acct=(f"<a href='{url_for('journal')}'>Journal</a><a href='{url_for('notifications')}'>Notifications</a><a href='{url_for('logout')}'>Log Out</a>" if u else f"<a href='{url_for('login')}'>Log In</a><a class='btn' href='{url_for('join')}'>Join Free</a>")
-    flashes="".join(f"<div class='flash'>{esc(x)}</div>" for x in __import__("flask").get_flashed_messages())
-    bottom=""
-    if u:
-        bottom=f"""<nav class='bottom'><a href='{url_for("home")}'><b>⌂</b>Home</a><a href='{url_for("community")}'><b>☼</b>Community</a><a href='{url_for("profile")}'><b>◉</b>Profile</a><a href='{url_for("business")}'><b>◇</b>Business</a><a href='{url_for("more")}'><b>•••</b>More</a></nav>"""
-    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{esc(title)} — The Seasons Within</title><style>{CSS}</style></head><body><header class='top'><div class='topin'><a class='brand' href='{url_for("home")}'>{logo_img()}<div><strong>The Seasons Within</strong><small>Conscious Coordination</small></div></a><nav class='nav'>{nav_html}</nav><div class='acct'>{acct}</div></div></header>{flashes}<main class='page'>{body}</main>{bottom}</body></html>"""
+@app.before_request
+def ensure_db():
+    if not getattr(app, '_db_ready', False):
+        init_db()
+        app._db_ready = True
 
-@app.route("/brand-logo.svg")
-def brand_logo(): return Response(LOGO,mimetype="image/svg+xml")
-@app.route("/uploads/<path:filename>")
-def uploads(filename): return send_from_directory(UPLOADS,filename)
 
-@app.route("/")
+def now():
+    return datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+
+
+def current_user():
+    uid = session.get('user_id')
+    if not uid:
+        return None
+    conn = db(); row = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone(); conn.close()
+    return row
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get('user_id'):
+            flash('Please log in to open that member area.', 'info')
+            return redirect(url_for('login', next=request.path))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def notify(user_id, title, body=''):
+    conn = db()
+    conn.execute('INSERT INTO notifications(user_id,title,body,created_at) VALUES(?,?,?,?)', (user_id,title,body,now()))
+    conn.commit(); conn.close()
+
+
+def esc_json_list(value):
+    if not value:
+        return []
+    try:
+        x=json.loads(value)
+        return x if isinstance(x,list) else []
+    except Exception:
+        return [v.strip() for v in value.split(',') if v.strip()]
+
+# -----------------------------------------------------------------------------
+# Visual contract — adapted directly from the corrected master preview
+# -----------------------------------------------------------------------------
+BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{{ title }} — The Seasons Within</title>
+<style>
+:root{--plum:#34204f;--purple:#8f63ba;--purple2:#a978c7;--lav:#f2e9f8;--blush:#fff1ef;--line:#eadff1;--muted:#75677f;--gold:#ddc26f;--white:#fff;--shadow:0 14px 38px rgba(70,45,95,.09)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--plum);background:linear-gradient(180deg,#fcf9fd,#fffaf8 56%,#faf6fc);min-height:100vh}a{text-decoration:none;color:inherit}button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3{font-family:Georgia,"Times New Roman",serif}h1{font-size:clamp(30px,5vw,48px);line-height:1.05;margin:8px 0 12px}h2{font-size:clamp(22px,3vw,30px);margin:6px 0 12px}.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.96);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}.topin{width:min(1220px,94vw);min-height:76px;margin:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:20px}.brand{display:flex;align-items:center;gap:11px}.logo{width:49px;height:49px;border-radius:50%;padding:4px;background:#fff}.brand strong{display:block;font:700 19px Georgia}.brand small{display:block;font-size:9px;letter-spacing:1.25px;color:var(--muted);text-transform:uppercase;margin-top:3px}.desktopnav{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.desktopnav a,.acct a{border:0;background:transparent;color:#5e5068;padding:10px 12px;border-radius:999px;font-weight:800}.desktopnav a.on{background:var(--lav);color:#68418c}.acct{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}.page{width:min(1120px,92vw);margin:26px auto 110px}.hero,.card{border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:var(--shadow)}.hero{padding:27px;background:linear-gradient(135deg,#f0e2fa,#fff1ed)}.card{padding:20px;margin:15px 0}.paid{border:2px solid var(--gold)}.badge,.chip{display:inline-flex;align-items:center;padding:7px 10px;border-radius:999px;background:var(--lav);font-size:10px;font-weight:900}.badge.gold{background:#fff8df;border:1px solid var(--gold);color:#765615}.badge.heart{background:#fff0f3;color:#96526b}.actions,.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.btn,.out{display:inline-flex;align-items:center;justify-content:center;border-radius:11px;min-height:41px;padding:9px 14px;font-weight:800;border:1px solid var(--purple)}.btn{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff}.out{background:#fff;color:#68418c;border-color:#cdb7dc}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:15px}.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.media{height:220px;border-radius:16px;background:linear-gradient(135deg,#e4d2f0,#f8ded8);display:grid;place-items:center;overflow:hidden}.muted{color:var(--muted);line-height:1.55}.small{font-size:12px}.fact{padding:13px;border:1px solid var(--line);border-radius:14px;background:#fcf9fd;margin:7px 0}.fact small{display:block;color:var(--muted);margin-bottom:4px}.meter{height:10px;background:#eee6f1;border-radius:999px;overflow:hidden;margin:7px 0}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),#c992c4)}.moonrow{display:grid;grid-template-columns:115px 1fr;gap:20px;align-items:center}.moonorb{width:98px;height:98px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff,#d9c4e7 48%,#b795cb);font-size:48px}.post{display:grid;grid-template-columns:52px 1fr;gap:12px}.avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#c89de1,#efbcc6);color:#fff;font-weight:900;overflow:hidden}.profilehero{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.portrait{width:118px;height:118px;border-radius:50%;background:linear-gradient(135deg,#d4b9e7,#f0c2cb);display:grid;place-items:center;color:#fff;font-weight:900;font-size:28px}.input{width:100%;padding:12px;border:1px solid #dfd1e8;border-radius:12px;background:#fff;margin:5px 0 12px}textarea.input{min-height:110px}.appcard{padding:0;overflow:hidden}.appcard .body{padding:18px}.locked{background:linear-gradient(135deg,#fffaf0,#fff);border:1px dashed var(--gold)}.topspace{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:24px 0 10px}.moregrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.moreitem{display:block;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--shadow);font-weight:800}.bottom{display:none}.flash{padding:12px 16px;border-radius:13px;background:#fff8df;border:1px solid var(--gold);margin:12px 0}.empty{padding:22px;text-align:center;border:1px dashed #cdb7dc;border-radius:18px;background:#fff}.steps{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.step{padding:7px 9px;border-radius:999px;background:#eee6f1;font-size:10px;font-weight:900}.step.on{background:var(--purple);color:#fff}.splitlabel{display:flex;justify-content:space-between;gap:10px;align-items:center}.danger{border-color:#b95767;color:#9b3c4c}.checkboxes label{display:block;padding:7px 0}.previewbar{position:fixed;right:16px;bottom:88px;z-index:40;background:#34204f;color:#fff;padding:8px 11px;border-radius:999px;font-size:10px;box-shadow:var(--shadow)}
+@media(max-width:820px){body{padding-bottom:82px}.topin{min-height:68px;display:flex;justify-content:center}.desktopnav,.acct{display:none}.page{width:94vw;margin-top:18px;margin-bottom:22px}.two,.three{grid-template-columns:1fr}.profilehero{grid-template-columns:1fr}.portrait{width:96px;height:96px}.moonrow{grid-template-columns:82px 1fr}.moonorb{width:76px;height:76px;font-size:38px}.bottom{position:fixed;left:50%;bottom:9px;transform:translateX(-50%);z-index:50;width:95vw;display:grid;grid-template-columns:repeat(5,1fr);padding:7px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.97);backdrop-filter:blur(18px);box-shadow:0 15px 45px rgba(70,45,95,.18)}.bottom a{border:0;background:transparent;padding:7px 4px;border-radius:13px;color:#75677f;font-size:9px;font-weight:900;text-align:center}.bottom a b{display:block;font-size:18px;line-height:1.1}.bottom a.on{background:var(--lav);color:#68418c}.previewbar{bottom:84px}}
+</style></head><body>
+<header class="top"><div class="topin"><a class="brand" href="{{ url_for('home') }}"><svg class="logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="#f4ebf9"/><path d="M50 6A44 44 0 0 1 94 50H50Z" fill="#d6b8e5"/><path d="M94 50A44 44 0 0 1 50 94V50Z" fill="#efc4cb"/><path d="M50 94A44 44 0 0 1 6 50H50Z" fill="#ead7ad"/><path d="M6 50A44 44 0 0 1 50 6V50Z" fill="#c9b7df"/><circle cx="50" cy="50" r="18" fill="#fff"/></svg><div><strong>The Seasons Within</strong><small>Conscious Coordination</small></div></a><nav class="desktopnav"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}">Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}">Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}">My Profile</a><a class="{{'on' if active=='business'}}" href="{{url_for('business_network')}}">Business Network</a><a class="{{'on' if active=='retreats'}}" href="{{url_for('retreats')}}">Retreats</a><a class="{{'on' if active=='membership'}}" href="{{url_for('membership')}}">Membership</a></nav><div class="acct">{% if user %}<a href="{{url_for('inbox')}}">Inbox</a><a href="{{url_for('notifications')}}">Notifications</a><span>{{user['name'].split()[0]}}</span>{% else %}<a href="{{url_for('login')}}">Login</a><a href="{{url_for('join')}}">Join Free</a>{% endif %}</div></div></header>
+<main class="page">{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="flash">{{msg}}</div>{% endfor %}{% endwith %}{{ content|safe }}</main>
+<nav class="bottom"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}"><b>⌂</b>Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}"><b>☼</b>Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}"><b>◉</b>Profile</a><a class="{{'on' if active=='business'}}" href="{{url_for('business_network')}}"><b>◇</b>Business</a><a class="{{'on' if active=='more'}}" href="{{url_for('more')}}"><b>•••</b>More</a></nav><div class="previewbar">Functional build • persisted data</div></body></html>'''
+
+
+def page(title, content, active=''):
+    return render_template_string(BASE, title=title, content=content, active=active, user=current_user())
+
+
+def initials(name):
+    return ''.join(p[0] for p in (name or '?').split()[:2]).upper()
+
+# -----------------------------------------------------------------------------
+# Public + account routes
+# -----------------------------------------------------------------------------
+@app.route('/')
 def home():
-    c=cdb(); biz=c.execute("select * from businesses where status='active' order by featured desc,id").fetchall(); c.close()
-    cards=""
-    for b in biz:
-        image=f"<img src='{url_for('uploads',filename=b['cover'])}'>" if b["cover"] else (f"<img src='{url_for('uploads',filename=b['logo'])}' style='object-fit:contain;padding:30px'>" if b["logo"] else logo_img(""))
-        cards+=f"<article class='card {'premium' if b['featured'] else ''}'><span class='badge {'gold' if b['featured'] else ''}'>{'FEATURED HOSTED APP' if b['featured'] else 'FREE HOSTED APP'}</span><div class='media logo-box'>{image}</div><h2>{esc(b['name'])}</h2><p><b>{esc(b['title'] or b['category'])}</b></p><p>{esc(b['tagline'])}</p><a class='btn' href='{url_for('business_app',slug=b['slug'])}'>Open App</a></article>"
-    if not cards: cards="<div class='card'><p>Businesses will appear here as they join.</p></div>"
-    body=f"""<section class='hero'><span class='badge'>THE SEASONS WITHIN</span><h1>Better Relationships With Self, Others, Purpose & Experience</h1><p class='muted'>A wellness community where members can reflect, connect privately, coordinate relationships and collaborations, discover real businesses, build a free Hosted Business App, and design meaningful Retreat experiences.</p><div class='actions'><a class='btn' href='{url_for("business")}'>Explore Businesses & Apps</a><a class='out' href='{url_for("retreats")}'>Explore Retreats</a></div></section><div class='card'><input placeholder='Search businesses, services, classes, creators, retreats or wellness experiences...'><div class='chips'><span class='chip'>Yoga</span><span class='chip'>Reiki</span><span class='chip'>Massage</span><span class='chip'>Creators</span><span class='chip'>Coaching</span><span class='chip'>Retreats</span></div></div><h2>All Active Hosted Business Apps</h2><div class='grid'>{cards}</div><div class='grid'><div class='card'><h2>Moon Today</h2><p class='muted'>Current-sky reflection and a short wellness reset belong here.</p></div><div class='card'><h2>Design Your Own Retreat</h2><a class='btn' href='{url_for("retreat_builder")}'>Build My Retreat</a></div><div class='card premium'><span class='badge gold'>$79.99 BUSINESS DEVELOPMENT</span><h2>Professional Business Plan Package</h2><a class='btn' href='{url_for("business_dev")}'>Start Business Development</a></div></div>"""
-    return shell("Home",body,"home")
+    conn=db(); businesses=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 ORDER BY CASE WHEN lower(b.name)=lower(?) THEN 0 ELSE 1 END,b.name', ('Galaxy Eve',)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card appcard {'paid' if b['name'].lower()=='galaxy eve' else ''}"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge {'gold' if b['name'].lower()=='galaxy eve' else ''}">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in businesses)
+    if not cards: cards='<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Published Hosted Business Apps are shown automatically. No fake businesses are inserted.</p></div>'
+    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, retreats, conscious connection, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
+    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{cards}</div>
+    <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">MOON TODAY</span><h2>Current-sky reflection</h2><p class="muted"><b>Reflection, not prediction.</b> Connect an astronomy/ephemeris provider when you are ready to publish live planetary positions.</p><div class="chips"><span class="chip">Mercury</span><span class="chip">Venus</span><span class="chip">Mars</span><span class="chip">Jupiter</span><span class="chip">Saturn</span></div></div></article>
+    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Own Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Professional questionnaire + editable plan content + Marketing Strategy + 90-Day Launch Plan.</p><a class="btn" href="{url_for('startup')}">Start My Business Plan</a></article></div>'''
+    return page('Home',content,'home')
 
-@app.route("/join",methods=["GET","POST"])
+@app.route('/join', methods=['GET','POST'])
 def join():
-    if request.method=="POST":
-        try:
-            email=request.form["email"].strip().lower(); admin=1 if email in ADMINS else 0
-            c=cdb(); cur=c.execute("insert into users(name,email,password_hash,birth_date,full_member,business_access,is_admin) values(?,?,?,?,?,?,?)",(request.form["name"],email,hp(request.form["password"]),request.form.get("birth_date",""),admin,admin,admin)); c.commit(); session["uid"]=cur.lastrowid; c.close(); return redirect(url_for("profile"))
-        except sqlite3.IntegrityError: flash("That email already has an account. Please log in.")
-    return shell("Join Free","""<section class='hero'><h1>Create Your Free Account</h1><p>One permanent account for Community, Journal, Business, Retreats and Conscious Coordination.</p></section><form class='card' method='post'><input name='name' placeholder='Name' required><input name='email' type='email' placeholder='Email' required><input name='password' type='password' placeholder='Password' required><input name='birth_date' type='date'><button>Create Free Account</button></form>""")
+    if request.method=='POST':
+        name=request.form.get('name','').strip(); email=request.form.get('email','').strip().lower(); password=request.form.get('password',''); dob=request.form.get('dob',''); adult=1 if request.form.get('adult') else 0
+        if not name or not email or len(password)<8 or not dob or not adult:
+            flash('Name, email, birth date, 18+ confirmation, and a password of at least 8 characters are required.','error')
+        else:
+            conn=db()
+            try:
+                cur=conn.execute('INSERT INTO users(name,email,password_hash,dob,adult_confirmed,created_at) VALUES(?,?,?,?,?,?)',(name,email,generate_password_hash(password),dob,adult,now())); conn.commit(); session['user_id']=cur.lastrowid; flash('Welcome to The Seasons Within. Your free account is ready.','success'); return redirect(url_for('community'))
+            except sqlite3.IntegrityError: flash('An account with that email already exists. Use Login or Forgot Password.','error')
+            finally: conn.close()
+    return page('Join Free',f'''<div class="hero"><span class="badge">JOIN FREE</span><h1>Create Your Permanent Account</h1><p class="muted">One login keeps your profile, Journal, Inbox, business work, Retreats and access in one place.</p></div><form class="card" method="post"><label><b>Name</b></label><input class="input" name="name" required><label><b>Email</b></label><input class="input" type="email" name="email" required><label><b>Password</b></label><input class="input" type="password" name="password" minlength="8" required><label><b>Date of Birth</b></label><input class="input" type="date" name="dob" required><label><input type="checkbox" name="adult" required> I confirm I am 18 or older.</label><div class="actions"><button class="btn">Create Free Account</button><a class="out" href="{url_for('login')}">I Already Have an Account</a></div></form>''')
 
-@app.route("/login",methods=["GET","POST"])
+@app.route('/login', methods=['GET','POST'])
 def login():
-    if request.method=="POST":
-        c=cdb(); u=c.execute("select * from users where lower(email)=?",(request.form["email"].lower().strip(),)).fetchone(); c.close()
-        if u and u["password_hash"]==hp(request.form["password"]): session["uid"]=u["id"]; return redirect(url_for("profile"))
-        flash("Email or password did not match.")
-    return shell("Log In","""<section class='hero'><h1>Log In</h1></section><form class='card' method='post'><input name='email' type='email' placeholder='Email' required><input name='password' type='password' placeholder='Password' required><button>Log In</button></form>""")
-@app.route("/logout")
-def logout(): session.clear(); return redirect(url_for("home"))
+    if request.method=='POST':
+        email=request.form.get('email','').strip().lower(); password=request.form.get('password',''); conn=db(); u=conn.execute('SELECT * FROM users WHERE email=?',(email,)).fetchone(); conn.close()
+        if u and check_password_hash(u['password_hash'],password): session['user_id']=u['id']; flash('Welcome back.','success'); return redirect(request.args.get('next') or url_for('home'))
+        flash('Email or password did not match.','error')
+    return page('Login',f'''<div class="hero"><span class="badge">MEMBER LOGIN</span><h1>Welcome Back</h1></div><form class="card" method="post"><label><b>Email</b></label><input class="input" type="email" name="email" required><label><b>Password</b></label><input class="input" type="password" name="password" required><label><input type="checkbox" name="remember"> Remember Me</label><div class="actions"><button class="btn">Login</button><a class="out" href="{url_for('forgot_password')}">Forgot Password</a><a class="out" href="{url_for('join')}">Create Free Account</a></div></form>''')
 
-@app.route("/community",methods=["GET","POST"])
+@app.route('/forgot-password', methods=['GET','POST'])
+def forgot_password():
+    if request.method=='POST':
+        flash('Password reset email delivery requires an email provider/API. No duplicate account was created.','info')
+    return page('Forgot Password','''<div class="hero"><span class="badge">ACCOUNT RECOVERY</span><h1>Recover Your Existing Account</h1><p class="muted">Enter your email. Production reset delivery can be connected to your email provider without creating a second account.</p></div><form method="post" class="card"><label><b>Email</b></label><input class="input" type="email" name="email" required><button class="btn">Request Password Reset</button></form>''')
+
+@app.route('/logout')
+def logout():
+    session.clear(); flash('You are logged out. Your saved data remains in your account.','success'); return redirect(url_for('home'))
+
+# -----------------------------------------------------------------------------
+# Community, profile, journal, inbox, notifications
+# -----------------------------------------------------------------------------
+@app.route('/community', methods=['GET','POST'])
 @login_required
 def community():
-    u=me()
-    if request.method=="POST":
-        pa=request.form.get("post_as","member")
-        if pa=="official" and not u["is_admin"]: return "Forbidden",403
-        photo=save_file(request.files.get("photo"),f"post{u['id']}")
-        c=cdb(); c.execute("insert into posts(user_id,body,photo,post_as) values(?,?,?,?)",(u["id"],request.form["body"],photo,pa)); c.commit(); c.close()
-        if pa=="official": notify_all("The Seasons Within Posted",request.form["body"][:120],"Community",u["id"])
-        elif u["email"].lower()==GALAXY_EMAIL: notify_all("Galaxy Eve Posted",request.form["body"][:120],"Community",u["id"])
-        return redirect(url_for("community"))
-    c=cdb(); rows=c.execute("select p.*,u.name,u.photo profile_photo from posts p join users u on u.id=p.user_id order by p.id desc").fetchall(); c.close()
-    posts=""
-    for p in rows:
-        av=logo_img("") if p["post_as"]=="official" else (f"<img src='{url_for('uploads',filename=p['profile_photo'])}'>" if p["profile_photo"] else esc(p["name"][:1]))
-        msg="" if p["post_as"]=="official" or p["user_id"]==u["id"] else f"<a class='out' href='{url_for('compose_message',uid=p['user_id'],source='Community')}'>Message {esc(p['name'])}</a>"
-        pic=f"<div class='media'><img src='{url_for('uploads',filename=p['photo'])}'></div>" if p["photo"] else ""
-        posts+=f"<article class='card'><div class='post'><div class='avatar'>{av}</div><div><span class='badge'>{'THE SEASONS WITHIN' if p['post_as']=='official' else esc(p['name'])}</span><p>{esc(p['body'])}</p>{pic}{msg}</div></div></article>"
-    admin_form=f"<form class='card premium' method='post'><input type='hidden' name='post_as' value='official'><h2>Post as The Seasons Within</h2><textarea name='body' required></textarea><button>Publish Official Post</button></form>" if u["is_admin"] else ""
-    body=f"""<section class='hero'><span class='badge'>MEMBERS ONLY</span><h1>Community</h1><p>Daily reflection, wellness, official posts and real member posts. No public comments.</p></section><div class='grid'><div class='card'><h2>Moon Today</h2></div><div class='card'><h2>60-Second Reset</h2></div><div class='card'><h2>Journal Prompt</h2><a class='out' href='{url_for("journal")}'>Open My Journal</a></div></div>{admin_form}<form class='card' method='post' enctype='multipart/form-data'><input type='hidden' name='post_as' value='member'><textarea name='body' placeholder='Share with the community...' required></textarea><input type='file' name='photo'><button>Post to Community</button></form>{posts}"""
-    return shell("Community",body,"community")
+    u=current_user()
+    if request.method=='POST':
+        body=request.form.get('body','').strip()
+        if body:
+            conn=db(); conn.execute('INSERT INTO community_posts(user_id,body,created_at) VALUES(?,?,?)',(u['id'],body,now())); conn.commit(); conn.close(); flash('Posted to Community. Replies stay private.','success'); return redirect(url_for('community'))
+    conn=db(); posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 50').fetchall(); conn.close()
+    post_html=''.join(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div><h3 style="margin:4px 0">{p['name']}</h3><p class="muted small">{p['created_at']}</p><p>{p['body']}</p>{'' if p['user_id']==u['id'] else f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community")}">Message {p["name"]}</a>'}</div></div></article>''' for p in posts)
+    if not post_html: post_html='<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
+    content=f'''<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The daily heart of The Seasons Within: reflection, wellness and real member posts. Replies are private.</p></div><article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">DAILY SEASONS WITHIN</span><h2>Current Sky</h2><p class="muted">Live ephemeris data is intentionally not fabricated. Connect a provider before displaying live Moon/planet positions.</p></div></article><div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">JOURNAL PROMPT</span><h3>What deserves your conscious attention today?</h3><a class="out" href="{url_for('journal')}">Open My Journal</a></article></div><form class="card" method="post"><textarea class="input" name="body" placeholder="Share with the community..." required></textarea><button class="btn">Post to Community</button></form>{post_html}'''
+    return page('Community',content,'community')
 
-@app.route("/profile",methods=["GET","POST"])
+@app.route('/profile', methods=['GET','POST'])
 @login_required
 def profile():
-    u=me()
-    if request.method=="POST":
-        photo=save_file(request.files.get("photo"),f"user{u['id']}") or u["photo"]
-        c=cdb(); c.execute("update users set name=?,photo=?,city=?,headline=?,bio=?,birth_date=?,birth_time=?,birth_city=?,birth_state=?,birth_country=?,time_known=? where id=?",(request.form["name"],photo,request.form.get("city",""),request.form.get("headline",""),request.form.get("bio",""),request.form.get("birth_date",""),request.form.get("birth_time",""),request.form.get("birth_city",""),request.form.get("birth_state",""),request.form.get("birth_country",""),1 if request.form.get("time_known") else 0,u["id"])); c.commit(); c.close(); flash("Profile saved."); return redirect(url_for("profile"))
-    pic=f"<div class='media'><img src='{url_for('uploads',filename=u['photo'])}'></div>" if u["photo"] else f"<div class='media logo-box'>{logo_img('')}</div>"
-    body=f"""<section class='hero {'premium' if u['full_member'] else ''}'><span class='badge {'gold' if u['full_member'] else ''}'>{'★ FULL MEMBER • CONSCIOUS COORDINATION' if u['full_member'] else 'FREE MEMBER'}</span><h1>{esc(u['name'])}</h1><p>{esc(u['headline'])} • {esc(u['city'])}</p><p>{esc(u['bio'])}</p></section><div class='two'><div class='card'>{pic}</div><form class='card' method='post' enctype='multipart/form-data'><h2>Edit Profile</h2><input name='name' value='{esc(u['name'])}'><input name='city' value='{esc(u['city'])}' placeholder='City'><input name='headline' value='{esc(u['headline'])}' placeholder='Headline'><textarea name='bio'>{esc(u['bio'])}</textarea><input name='photo' type='file'><h3>Birth Information</h3><input name='birth_date' type='date' value='{esc(u['birth_date'])}'><input name='birth_time' type='time' value='{esc(u['birth_time'])}'><input name='birth_city' value='{esc(u['birth_city'])}' placeholder='Birth City'><input name='birth_state' value='{esc(u['birth_state'])}' placeholder='Birth State / Province'><input name='birth_country' value='{esc(u['birth_country'])}' placeholder='Birth Country'><label><input style='width:auto' type='checkbox' name='time_known' {'checked' if u['time_known'] else ''}> Exact birth time known</label><button>Save Profile</button></form></div>"""
-    return shell("My Profile",body,"profile")
+    u=current_user()
+    if request.method=='POST':
+        fields=['name','city','headline','about','birth_time','birth_city','birth_region','birth_country']; values=[request.form.get(x,'').strip() for x in fields]; exact=1 if request.form.get('exact_time') else 0
+        conn=db(); conn.execute('UPDATE users SET name=?,city=?,headline=?,about=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,exact_time=? WHERE id=?',(*values,exact,u['id'])); conn.commit(); conn.close(); flash('Profile saved.','success'); return redirect(url_for('profile'))
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'}</span><h1>{u['name']}</h1><p class="muted">{u['city'] or 'Add your city'} • {u['headline'] or 'Add a headline'}</p><div class="actions"><a class="btn" href="#edit">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article><div class="grid"><a class="moreitem" href="{url_for('community')}">Community<br><small>Posts + daily reflection</small></a><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('notifications')}">Notifications</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div><form class="card" id="edit" method="post"><h2>Edit Profile</h2><label><b>Name</b></label><input class="input" name="name" value="{u['name']}" required><label><b>City</b></label><input class="input" name="city" value="{u['city'] or ''}"><label><b>Headline</b></label><input class="input" name="headline" value="{u['headline'] or ''}"><label><b>About</b></label><textarea class="input" name="about">{u['about'] or ''}</textarea><h2>Birth Information</h2><p class="muted">Rising signs and houses are never guessed.</p><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time" value="{u['birth_time'] or ''}"><label><input type="checkbox" name="exact_time" {'checked' if u['exact_time'] else ''}> Exact time is known</label><label><b>Birth City</b></label><input class="input" name="birth_city" value="{u['birth_city'] or ''}"><label><b>State/Province</b></label><input class="input" name="birth_region" value="{u['birth_region'] or ''}"><label><b>Country</b></label><input class="input" name="birth_country" value="{u['birth_country'] or ''}"><button class="btn">Save Profile</button></form>'''
+    return page('My Profile',content,'profile')
 
-@app.route("/journal",methods=["GET","POST"])
+@app.route('/journal', methods=['GET','POST'])
 @login_required
 def journal():
-    u=me()
-    if request.method=="POST":
-        c=cdb(); c.execute("insert into journal(user_id,title,body,category,visibility) values(?,?,?,?,?)",(u["id"],request.form.get("title",""),request.form["body"],request.form.get("category","Reflection"),request.form.get("visibility","private")))
-        if request.form.get("visibility")=="community": c.execute("insert into posts(user_id,body) values(?,?)",(u["id"],request.form["body"]))
-        c.commit(); c.close(); return redirect(url_for("journal"))
-    c=cdb(); rows=c.execute("select * from journal where user_id=? order by id desc",(u["id"],)).fetchall(); c.close()
-    items="".join(f"<div class='card'><span class='badge'>{esc(x['category'])}</span><h3>{esc(x['title'])}</h3><p>{esc(x['body'])}</p></div>" for x in rows)
-    body=f"""<section class='hero'><span class='badge'>PRIVATE HUB</span><h1>My Journal</h1></section><div class='grid'><a class='btn' href='{url_for("messages")}'>Journal Inbox</a><a class='out' href='{url_for("business_dashboard")}'>Business</a><a class='out' href='{url_for("retreat_builder")}'>Retreats</a><a class='out' href='{url_for("connections")}'>Conscious Coordination</a></div><form class='card' method='post'><input name='title' placeholder='Title'><textarea name='body' required></textarea><select name='category'><option>Reflection</option><option>Business</option><option>Retreats</option><option>Conscious Coordination</option></select><select name='visibility'><option value='private'>Private Journal only</option><option value='community'>Share a Copy to Community</option></select><button>Save to Journal</button></form>{items}"""
-    return shell("My Journal",body)
+    u=current_user()
+    if request.method=='POST':
+        title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); category=request.form.get('category','Reflections'); shared=request.form.get('visibility')=='community'
+        if title and body:
+            conn=db(); cur=conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,body,category,1 if shared else 0,now(),now()))
+            if shared: conn.execute('INSERT INTO community_posts(user_id,body,created_at) VALUES(?,?,?)',(u['id'],body,now()))
+            conn.commit(); conn.close(); flash('Journal entry saved.' + (' A separate copy was shared to Community.' if shared else ''),'success'); return redirect(url_for('journal'))
+    conn=db(); entries=conn.execute('SELECT * FROM journal_entries WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall(); conn.close()
+    entries_html=''.join(f'''<article class="card"><span class="badge">{e['category'].upper()}</span><h3>{e['title']}</h3><p>{e['body']}</p><p class="muted small">{'Private original • community copy shared' if e['shared_copy'] else 'Private Journal only'} • {e['created_at']}</p></article>''' for e in entries) or '<div class="empty"><h3>Your Journal is private and ready</h3><p class="muted">Reflections, business notes, Retreat planning and saved coordination ideas can live here.</p></div>'
+    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>Private Command Center</h1><p class="muted">Private by default. Sharing creates a separate Community copy while the original remains private.</p></div><div class="grid"><a class="moreitem" href="#new">Reflections</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('business_plan')}">Business</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="#entries">Saved Items</a></div><form class="card" id="new" method="post"><input class="input" name="title" placeholder="Entry title" required><select class="input" name="category"><option>Reflections</option><option>Business</option><option>Retreats</option><option>Conscious Coordination</option><option>Saved Items</option></select><textarea class="input" name="body" placeholder="Write your reflection..." required></textarea><label><b>Visibility</b></label><select class="input" name="visibility"><option value="private">Keep Private</option><option value="community">Share a Copy to Community</option></select><button class="btn">Save Entry</button></form><div id="entries">{entries_html}</div>'''
+    return page('My Journal',content,'more')
 
-@app.route("/messages")
+@app.route('/inbox')
 @login_required
-def messages():
-    u=me(); c=cdb(); rows=c.execute("""select m.*,case when m.sender_id=? then r.name else s.name end other_name,case when m.sender_id=? then r.id else s.id end other_id from messages m join users s on s.id=m.sender_id join users r on r.id=m.recipient_id where m.sender_id=? or m.recipient_id=? order by m.id desc""",(u["id"],u["id"],u["id"],u["id"])).fetchall(); c.close()
-    items="".join(f"<div class='card'><span class='badge'>{esc(x['source'])}</span><h3>{esc(x['subject'])}</h3><p>{esc(x['body'])}</p><a class='out' href='{url_for('compose_message',uid=x['other_id'],source=x['source'])}'>Reply</a></div>" for x in rows) or "<div class='card'>Private messages will appear here.</div>"
-    return shell("Journal Inbox",f"<section class='hero'><h1>Journal Inbox</h1></section>{items}")
+def inbox():
+    u=current_user(); conn=db(); msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
+    html=''.join(f'''<article class="card"><span class="badge">{m['origin'].upper()}</span><h3>{m['subject']}</h3><p class="muted small">From {m['sender_name']} to {m['recipient_name']} • {m['created_at']}</p><p>{m['body']}</p>{f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin=m["origin"])}">Reply</a>' if m['recipient_id']==u['id'] else ''}</article>''' for m in msgs) or '<div class="empty"><h3>No private conversations yet</h3><p class="muted">Community, Conscious Coordination, Business and Retreat conversations will appear here.</p></div>'
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Notifications are alerts. Inbox is conversation.</p></div>{html}''','more')
 
-@app.route("/message/<int:uid>",methods=["GET","POST"])
+@app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
-def compose_message(uid):
-    u=me(); c=cdb(); p=c.execute("select * from users where id=?",(uid,)).fetchone(); c.close()
-    if not p:return "Not found",404
-    source=request.args.get("source","Private"); subject=f"{source} Message from {u['name']}"
-    if request.method=="POST":
-        c=cdb(); c.execute("insert into messages(sender_id,recipient_id,source,subject,body) values(?,?,?,?,?)",(u["id"],uid,source,request.form.get("subject") or subject,request.form["body"])); c.commit(); c.close(); notify(uid,"New Private Message",subject,"Message"); return redirect(url_for("messages"))
-    return shell("Private Message",f"<section class='hero'><h1>Message {esc(p['name'])}</h1></section><form class='card' method='post'><input name='subject' value='{esc(subject)}'><textarea name='body' required></textarea><button>Send Private Message</button></form>")
+def message_member(recipient_id):
+    u=current_user(); conn=db(); recipient=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
+    if not recipient: abort(404)
+    origin=request.args.get('origin','Community')
+    if request.method=='POST':
+        body=request.form.get('body','').strip(); origin=request.form.get('origin','Community'); subject=request.form.get('subject','').strip() or f'{origin} Message from {u["name"]}'
+        if body:
+            conn=db(); conn.execute('INSERT INTO messages(sender_id,recipient_id,origin,subject,body,created_at) VALUES(?,?,?,?,?,?)',(u['id'],recipient_id,origin,subject,body,now())); conn.commit(); conn.close(); notify(recipient_id,'New Private Message',subject); flash('Private message sent to Journal Inbox.','success'); return redirect(url_for('inbox'))
+    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Message {recipient['name']}</h1><p class="muted">This conversation is private and saved in Journal Inbox.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><label><b>Subject</b></label><input class="input" name="subject" value="{origin} Message from {u['name']}"><textarea class="input" name="body" placeholder="Write your message..." required></textarea><button class="btn">Send Private Message</button></form>''','more')
 
-@app.route("/notifications")
+@app.route('/notifications')
 @login_required
 def notifications():
-    c=cdb(); rows=c.execute("select * from notifications where user_id=? order by id desc",(me()["id"],)).fetchall(); c.close()
-    items="".join(f"<div class='card'><span class='badge'>{esc(x['kind'])}</span><h3>{esc(x['title'])}</h3><p>{esc(x['body'])}</p></div>" for x in rows) or "<div class='card'>Notifications will appear here.</div>"
-    return shell("Notifications",f"<section class='hero'><h1>Notifications</h1></section>{items}")
+    u=current_user(); conn=db(); rows=conn.execute('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall(); conn.execute('UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL',(now(),u['id'])); conn.commit(); conn.close()
+    html=''.join(f'<article class="card"><h3>{n["title"]}</h3><p class="muted">{n["body"]}</p><p class="small muted">{n["created_at"]}</p></article>' for n in rows) or '<div class="empty"><h3>No notifications yet</h3><p class="muted">Alerts for private messages, compatibility, business inquiries and Retreat updates appear here.</p></div>'
+    return page('Notifications',f'<div class="hero"><span class="badge">PRIVATE ALERTS</span><h1>Notifications</h1></div>{html}','more')
 
-CONN_FIELDS=["types","emotional_regulation","emotional_support","communication","conflict","repair","accountability","boundaries","trust","love_languages","lifestyle_values","business_style","retreat_style","about"]
-@app.route("/connections")
+# -----------------------------------------------------------------------------
+# Conscious Coordination
+# -----------------------------------------------------------------------------
+@app.route('/conscious-coordination')
 @login_required
 def connections():
-    u=me(); c=cdb(); cp=c.execute("select * from connections where user_id=?",(u["id"],)).fetchone()
-    if not cp: c.close(); return redirect(url_for("connections_setup"))
-    others=c.execute("select u.*,x.types from users u join connections x on x.user_id=u.id where u.id<>?",(u["id"],)).fetchall(); c.close()
-    cards="".join(f"<div class='card {'premium' if x['full_member'] else ''}'><h3>{esc(x['name'])}</h3><p>{esc(x['types'])}</p><a class='btn' href='{url_for('connection_profile',uid=x['id'])}'>View Profile</a></div>" for x in others) or "<div class='card'>Participating members will appear here.</div>"
-    body=f"<section class='hero premium'><span class='badge gold'>$10.99 / MONTH</span><h1>Conscious Coordination</h1><p>Relationships • Friendship • Business Partnerships • Retreat Coordination.</p><a class='btn' href='{url_for('connections_setup')}'>Edit My Coordination Profile</a></section><div class='grid'>{cards}</div>"
-    return shell("Conscious Coordination",body)
+    u=current_user(); conn=db(); own=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); members=conn.execute('''SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? ORDER BY u.name''',(u['id'],)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'BASIC PROFILE'}</span><h3>{m['name']}</h3><p class="muted">{m['city'] or 'Location not shared'} • {m['coordination_types'] or 'Coordination type not set'}</p><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Profile</a></article>''' for m in members) or '<div class="empty"><h3>Participating members will appear here</h3><p class="muted">The directory does not invent profiles.</p></div>'
+    content=f'''<div class="hero"><span class="badge heart">♡ PARTICIPATING MEMBERS ONLY</span><h1>Conscious Coordination</h1><p class="muted">Relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p><a class="btn" href="{url_for('connection_edit')}">{'Edit' if own else 'Create'} My Coordination Profile</a></div><article class="card"><span class="badge">HOST AREA</span><h2>Galaxy Eve / Authorized Hosts</h2><p class="muted">Host content appears here only from authorized real accounts.</p></article><div class="topspace"><h2>Discover Participating Members</h2></div><div class="grid">{cards}</div>'''
+    return page('Conscious Coordination',content,'more')
 
-@app.route("/connections/setup",methods=["GET","POST"])
+@app.route('/conscious-coordination/edit', methods=['GET','POST'])
 @login_required
-def connections_setup():
-    u=me(); c=cdb(); cp=c.execute("select * from connections where user_id=?",(u["id"],)).fetchone(); c.close()
-    if request.method=="POST":
-        data=[request.form.get(x,"") for x in CONN_FIELDS]
-        c=cdb()
-        if cp:
-            c.execute("update connections set "+",".join(f"{x}=?" for x in CONN_FIELDS)+" where user_id=?",tuple(data)+(u["id"],))
-        else:
-            c.execute("insert into connections(user_id,"+",".join(CONN_FIELDS)+") values(?,"+",".join("?" for _ in CONN_FIELDS)+")",(u["id"],)+tuple(data))
-        c.commit(); c.close(); return redirect(url_for("connections"))
-    def val(k): return esc(cp[k]) if cp else ""
-    fields="".join(f"<textarea name='{k}' placeholder='{label}'>{val(k)}</textarea>" for k,label in [("emotional_regulation","What helps you regulate when overwhelmed?"),("emotional_support","How do you support someone who is emotional?"),("communication","Communication style"),("conflict","Conflict style"),("repair","Repair style"),("accountability","Accountability"),("boundaries","Boundaries"),("trust","What builds trust?"),("love_languages","Love languages / affection"),("lifestyle_values","Lifestyle & values"),("business_style","Business partnership style"),("retreat_style","Retreat preferences"),("about","About me")])
-    body=f"<section class='hero'><h1>Emotional Intelligence & Connection Style</h1></section><form class='card' method='post'><input name='types' value='{val('types')}' placeholder='Love / Dating • Friendship • Business / Collaboration • Retreat Connections'>{fields}<button>Save Profile</button></form>"
-    return shell("Coordination Setup",body)
+def connection_edit():
+    u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
+    if request.method=='POST':
+        keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']; vals=[request.form.get(k,'').strip() for k in keys]
+        conn=db(); conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at''',(u['id'],*vals,now())); conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connections'))
+    def val(k): return cp[k] if cp and cp[k] else ''
+    content=f'''<div class="hero"><span class="badge heart">♡ COORDINATION PROFILE</span><h1>Create / Edit Conscious Coordination Profile</h1><p class="muted">Self-reported behavior supports reflection and compatibility. It is not a mental-health diagnosis or a prediction of relationship success.</p></div><form class="card" method="post"><label><b>Coordination Types</b></label><input class="input" name="coordination_types" value="{val('coordination_types')}" placeholder="Love/Dating, Friendship, Business/Collaboration, Retreat/Activity"><label><b>Who would you like to meet?</b></label><input class="input" name="meet_preferences" value="{val('meet_preferences')}"><label><b>Age range</b></label><input class="input" name="age_range" value="{val('age_range')}"><label><b>Location preference</b></label><input class="input" name="location_preference" value="{val('location_preference')}"><label><b>Occupation</b></label><input class="input" name="occupation" value="{val('occupation')}"><label><b>Children / family</b></label><input class="input" name="family" value="{val('family')}"><label><b>Lifestyle</b></label><textarea class="input" name="lifestyle">{val('lifestyle')}</textarea><label><b>What are you seeking?</b></label><textarea class="input" name="seeking">{val('seeking')}</textarea><h2>Emotional & Communication Intelligence</h2><label><b>When overwhelmed...</b></label><textarea class="input" name="overwhelmed">{val('overwhelmed')}</textarea><label><b>What helps you regulate?</b></label><textarea class="input" name="regulate">{val('regulate')}</textarea><label><b>How do you handle another person's emotions?</b></label><textarea class="input" name="other_emotions">{val('other_emotions')}</textarea><label><b>Conflict style</b></label><textarea class="input" name="conflict_style">{val('conflict_style')}</textarea><label><b>Repair & accountability</b></label><textarea class="input" name="repair">{val('repair')}</textarea><label><b>Boundaries</b></label><textarea class="input" name="boundaries">{val('boundaries')}</textarea><label><b>Trust</b></label><textarea class="input" name="trust">{val('trust')}</textarea><label><b>Love languages / affection</b></label><textarea class="input" name="affection">{val('affection')}</textarea><label><b>Communication style</b></label><textarea class="input" name="communication">{val('communication')}</textarea><label><b>Lifestyle & values</b></label><textarea class="input" name="values_text">{val('values_text')}</textarea><label><b>Business partner style</b></label><textarea class="input" name="business_style">{val('business_style')}</textarea><label><b>Retreat coordination style</b></label><textarea class="input" name="retreat_style">{val('retreat_style')}</textarea><label><b>About Me</b></label><textarea class="input" name="about_me">{val('about_me')}</textarea><button class="btn">Save Profile</button></form>'''
+    return page('Edit Coordination Profile',content,'more')
 
-def compat(a,b):
-    keys=["communication","emotional_regulation","conflict","repair","boundaries","trust","lifestyle_values"]
-    scores={k:(90 if a[k] and b[k] and a[k].strip().lower()==b[k].strip().lower() else 72) for k in keys}
-    overall=round(sum(scores.values())/len(scores))
-    return overall,scores
-
-@app.route("/connections/profile/<int:uid>")
+@app.route('/conscious-coordination/profile/<int:user_id>')
 @login_required
-def connection_profile(uid):
-    u=me(); c=cdb(); a=c.execute("select * from connections where user_id=?",(u["id"],)).fetchone(); b=c.execute("select * from connections where user_id=?",(uid,)).fetchone(); p=c.execute("select * from users where id=?",(uid,)).fetchone(); c.close()
-    if not a or not b or not p:return "Not found",404
-    overall,s=compat(a,b)
-    body=f"<section class='hero {'premium' if p['full_member'] else ''}'><h1>{esc(p['name'])}</h1><p>{esc(b['types'])}</p><a class='btn' href='{url_for('compose_message',uid=uid,source='Conscious Coordination')}'>Message</a></section><div class='card'><h2>{overall}% Coordination</h2><a class='out' href='{url_for('compatibility_basic',uid=uid)}'>Basic Compatibility</a> <a class='btn' href='{url_for('compatibility_full',uid=uid)}'>Full Compatibility</a></div>"
-    return shell("Coordination Profile",body)
+def connection_profile(user_id):
+    me=current_user(); conn=db(); row=conn.execute('SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=? AND cp.opted_in=1',(user_id,)).fetchone(); conn.close()
+    if not row: abort(404)
+    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div><div class="portrait">{initials(row['name'])}</div></div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Not answered'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
+    return page('Coordination Profile',content,'more')
 
-@app.route("/connections/compatibility/basic/<int:uid>")
+@app.route('/compatibility/<int:user_id>')
 @login_required
-def compatibility_basic(uid):
-    u=me(); c=cdb(); a=c.execute("select * from connections where user_id=?",(u["id"],)).fetchone(); b=c.execute("select * from connections where user_id=?",(uid,)).fetchone(); c.close()
-    if not a or not b:return "Not found",404
-    o,s=compat(a,b)
-    return shell("Basic Compatibility",f"<section class='hero'><h1>Basic Compatibility Preview</h1></section><div class='grid'><div class='card'><h3>Overall — {o}%</h3></div><div class='card'><h3>Communication — {s['communication']}%</h3></div><div class='card'><h3>Emotional Style — {s['emotional_regulation']}%</h3></div><div class='card'><h3>Lifestyle & Values — {s['lifestyle_values']}%</h3></div><div class='card'><h3>Astrology Preview — 76%</h3></div></div>")
+def compatibility(user_id):
+    me=current_user(); conn=db(); a=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); b=conn.execute('SELECT cp.*,u.name FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=?',(user_id,)).fetchone(); conn.close()
+    if not a or not b: flash('Both members need a Conscious Coordination profile before a comparison can be generated.','info'); return redirect(url_for('connections'))
+    # Transparent, simple answer-overlap score. No psychology diagnosis and no fake precision.
+    pairs=[('Communication','communication'),('Conflict','conflict_style'),('Repair & Accountability','repair'),('Emotional Rhythm','regulate'),('Affection / Love Language','affection'),('Lifestyle & Values','values_text'),('Boundaries','boundaries')]
+    rows=[]
+    for label,key in pairs:
+        av=(a[key] or '').strip().lower(); bv=(b[key] or '').strip().lower();
+        aw=set(av.replace('/',' ').replace(',',' ').split()); bw=set(bv.replace('/',' ').replace(',',' ').split());
+        score=round(100*len(aw&bw)/max(1,len(aw|bw))) if aw and bw else None
+        rows.append((label,score))
+    metrics=''.join(f'''<article class="card"><h3>{label} — {str(score)+'%' if score is not None else 'Needs answers'}</h3>{f'<div class="meter"><i style="width:{score}%"></i></div>' if score is not None else '<p class="muted">Complete both profiles to compare this area.</p>'}</article>''' for label,score in rows)
+    return page('Conscious Coordination Report',f'''<div class="hero paid"><span class="badge gold">★ COMPATIBILITY</span><h1>Conscious Coordination Report</h1><p class="muted">Compares self-reported profile language. It is not a diagnosis and does not predict whether a relationship will succeed.</p></div><div class="grid">{metrics}</div><article class="card"><h2>Astrology Layer</h2><p class="muted">Birth-chart compatibility requires a real astrology calculation provider. Rising, houses and overlays are never guessed.</p><a class="btn" href="{url_for('birth_chart',user_id=user_id)}">Open Birth Chart Compatibility</a></article><article class="card"><h2>Connection Ideas</h2><a class="out" href="{url_for('connection_ideas',user_id=user_id)}">View Ideas</a></article>''','more')
 
-@app.route("/connections/compatibility/full/<int:uid>")
+@app.route('/birth-chart/<int:user_id>')
 @login_required
-def compatibility_full(uid):
-    if not me()["full_member"] and not me()["is_admin"]: return redirect(url_for("membership"))
-    u=me(); c=cdb(); a=c.execute("select * from connections where user_id=?",(u["id"],)).fetchone(); b=c.execute("select * from connections where user_id=?",(uid,)).fetchone(); c.close()
-    if not a or not b:return "Not found",404
-    o,s=compat(a,b)
-    cards="".join(f"<div class='card'><h3>{label} — {score}%</h3></div>" for label,score in [("Social & Emotional Intelligence",round((s['emotional_regulation']+s['trust'])/2)),("Communication",s["communication"]),("Conflict",s["conflict"]),("Repair & Accountability",s["repair"]),("Emotional Rhythm",s["emotional_regulation"]),("Love Languages / Affection",78),("Lifestyle & Values",s["lifestyle_values"]),("Boundaries",s["boundaries"]),("Psychology-Oriented Compatibility",82),("Astrology",79)])
-    return shell("Full Compatibility",f"<section class='hero premium'><span class='badge gold'>FULL PAID REPORT</span><h1>How You Coordinate — {o}%</h1><p>Self-reported behavior, not diagnosis or prediction.</p></section><div class='grid'>{cards}</div><div class='actions'><a class='btn' href='{url_for('birth_chart',uid=uid)}'>Full Birth Chart</a><a class='out' href='{url_for('connection_ideas',uid=uid)}'>Connection Ideas</a><a class='out' href='{url_for('video',uid=uid)}'>Video Area</a></div>")
+def birth_chart(user_id):
+    me=current_user(); conn=db(); other=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
+    if not other: abort(404)
+    me_ok=bool(me['dob'] and me['birth_city'] and me['birth_country']); other_ok=bool(other['dob'] and other['birth_city'] and other['birth_country'])
+    return page('Birth Chart Compatibility',f'''<div class="hero paid"><span class="badge gold">★ BIRTH CHART COMPATIBILITY</span><h1>Chart-to-Chart Conscious Coordination</h1></div><div class="two"><article class="card"><h2>Your Birth Data</h2><p class="muted">{'Ready for calculation provider' if me_ok else 'Add birth city/country in Profile.'}</p></article><article class="card"><h2>{other['name']}'s Shared Birth Data</h2><p class="muted">{'Ready for calculation provider' if other_ok else 'Required birth data is incomplete.'}</p></article></div><article class="card"><div class="media" style="height:320px"><b>Two-Chart Wheel appears after real ephemeris/chart integration</b></div><p class="muted">Sun, Moon, Mercury, Venus, Mars, Jupiter and Saturn can be calculated from birth data. Rising, houses and house overlays must only appear when reliable birth time/location support them.</p></article>''','more')
 
-@app.route("/connections/birth-chart/<int:uid>")
+@app.route('/connection-ideas/<int:user_id>')
 @login_required
-def birth_chart(uid):
-    return shell("Birth Chart Compatibility","<section class='hero premium'><h1>Full Birth Chart Compatibility</h1><p>Sun • Moon • Rising • Mercury • Venus • Mars • Jupiter • Saturn. Rising/houses are never guessed. Live calculation can be connected after the navigation architecture is approved.</p></section>")
-@app.route("/connections/ideas/<int:uid>")
+def connection_ideas(user_id):
+    conn=db(); other=conn.execute('SELECT cp.*,u.name FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=?',(user_id,)).fetchone(); conn.close()
+    if not other: abort(404)
+    text=(other['values_text'] or other['lifestyle'] or '').strip()
+    why='Based on the interests and values actually entered in the profile.' if text else 'Complete more profile answers to personalize this suggestion.'
+    return page('Connection Ideas',f'''<div class="hero"><span class="badge">CONNECTION IDEAS</span><h1>Ideas for You & {other['name']}</h1><p class="muted">Built from real profile answers, not zodiac alone.</p></div><div class="grid"><article class="card"><h3>Conversation</h3><p>Compare what helps each of you feel understood during a stressful week.</p><p class="muted"><b>Why this fits:</b> {why}</p></article><article class="card"><h3>Shared Experience</h3><p>Choose a low-pressure local wellness, nature, museum or dining experience that matches both members' pace.</p><p class="muted"><b>Why this fits:</b> {why}</p></article><article class="card"><h3>Retreat Idea</h3><p>Create a private Retreat request and choose the pace, wellness interests and space preferences together.</p><a class="out" href="{url_for('retreat_builder')}">Build Retreat</a></article></div>''','more')
+
+@app.route('/video/<int:user_id>')
 @login_required
-def connection_ideas(uid):
-    return shell("Connection Ideas","<section class='hero'><h1>Connection / Date / Friendship / Collaboration Ideas</h1></section><div class='grid'><div class='card'><h3>Nature Walk + Tea</h3></div><div class='card'><h3>Museum / Local Experience</h3></div><div class='card'><h3>Wellness Class</h3></div><div class='card'><h3>Business Collaboration</h3></div><div class='card'><h3>Retreat Experience</h3></div></div>")
-@app.route("/connections/video/<int:uid>")
+def video(user_id):
+    u=current_user();
+    return page('Private Video Connection',f'''<div class="hero paid"><span class="badge gold">★ PAID VIDEO FEATURE</span><h1>Private Video Connection</h1><p class="muted">Both members must consent. The first eligible connection is 5 minutes; additional 5-minute blocks are $5. Live video requires a video-provider integration and a payment processor; this build does not fabricate a call or charge.</p></div><div class="two"><article class="card"><div class="media">Your Camera — provider not connected</div></article><article class="card"><div class="media">Member Camera — provider not connected</div></article></div><article class="card" style="text-align:center"><h1>05:00</h1><a class="btn" href="{url_for('payment_info',product='video')}">Add 5 Minutes — $5</a></article>''','more')
+
+# -----------------------------------------------------------------------------
+# Business Network + free Hosted App Builder
+# -----------------------------------------------------------------------------
+@app.route('/business')
+def business_network():
+    conn=db(); rows=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 ORDER BY CASE WHEN lower(b.name)=lower(?) THEN 0 ELSE 1 END,b.name',('Galaxy Eve',)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card appcard {'paid' if b['name'].lower()=='galaxy eve' else ''}"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge {'gold' if b['name'].lower()=='galaxy eve' else ''}">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title']}</b></p><p class="muted">{b['category']} • {b['location']}<br>{b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in rows) or '<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Free Hosted Business Apps become visible after the owner publishes them.</p></div>'
+    create=url_for('business_builder',step=1) if session.get('user_id') else url_for('join')
+    return page('Business Network',f'''<div class="hero"><span class="badge">BUSINESS NETWORK</span><h1>Discover Wellness Within the Community</h1><p class="muted">Businesses join free and receive one Hosted Business App structure after completing the builder.</p><div class="actions"><a class="btn" href="{create}">Create My FREE Hosted App</a><a class="out" href="{url_for('startup')}">Professional Business Development • $79.99</a>{f'<a class="out" href="{url_for("business_dashboard")}">My Business Dashboard</a>' if session.get('user_id') else ''}</div></div><div class="grid">{cards}</div>''','business')
+
+@app.route('/business/builder/<int:step>', methods=['GET','POST'])
 @login_required
-def video(uid):
-    if not me()["full_member"] and not me()["is_admin"]: return redirect(url_for("membership"))
-    return shell("Private Video","<section class='hero premium'><span class='badge gold'>PRIVATE VIDEO</span><h1>05:00</h1><p>First eligible connection included. Add 5 Minutes — $5. Paid Video Request / Message — $5. Real camera transport requires WebRTC/TURN infrastructure.</p></section>")
+def business_builder(step):
+    if step<1 or step>9: abort(404)
+    draft=session.get('business_draft',{})
+    fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features'],5:[],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']}
+    if request.method=='POST':
+        for k in fields.get(step,[]): draft[k]=request.form.get(k,'').strip()
+        session['business_draft']=draft; session.modified=True
+        if step==9:
+            name=draft.get('name','').strip()
+            if not name: flash('Business Name is required. Return to Step 1.','error'); return redirect(url_for('business_builder',step=1))
+            u=current_user(); conn=db(); existing=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); vals=[draft.get(k,'') for k in ['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']]
+            if existing:
+                conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,active=1,updated_at=? WHERE id=?''',(*vals,now(),existing['id'])); bid=existing['id']
+            else:
+                cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,now(),now())); bid=cur.lastrowid
+            conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your FREE Hosted Business App is published to Home and the Business Network.','success'); return redirect(url_for('business_app',business_id=bid))
+        return redirect(url_for('business_builder',step=min(9,step+1)))
+    steps=''.join(f'<span class="step {"on" if i==step else ""}">{i}</span>' for i in range(1,10))
+    if step==1: body=f'''<label><b>Business Name</b></label><input class="input" name="name" value="{draft.get('name','')}" required><label><b>Owner/Creator Title</b></label><input class="input" name="owner_title" value="{draft.get('owner_title','')}"><label><b>Business Type</b></label><input class="input" name="category" value="{draft.get('category','')}"><label><b>Location / Service Area</b></label><input class="input" name="location" value="{draft.get('location','')}">'''
+    elif step==2: body=f'''<label><b>Description</b></label><textarea class="input" name="description">{draft.get('description','')}</textarea><label><b>Founder / Business Story</b></label><textarea class="input" name="story">{draft.get('story','')}</textarea><label><b>Tagline</b></label><input class="input" name="tagline" value="{draft.get('tagline','')}">'''
+    elif step==3: body=f'''<label><b>What Do You Offer?</b></label><textarea class="input" name="offers" placeholder="Services, products, classes, courses, events, Retreats, content, memberships, consultations">{draft.get('offers','')}</textarea>'''
+    elif step==4: body=f'''<label><b>App Features</b></label><textarea class="input" name="features" placeholder="Booking, Classes, Courses, Shop, Videos, Events, Retreats, Media Kit, Affiliate Links">{draft.get('features','')}</textarea>'''
+    elif step==5: body='''<h2>Branding</h2><p class="muted">Logo and cover photo/video upload storage requires an object-storage provider in production. Until connected, the Seasons Within brand mark is used as the safe fallback.</p>'''
+    elif step==6: body=''.join(f'<label><b>{label}</b></label><input class="input" name="{k}" value="{draft.get(k,"")}">' for k,label in [('website','Website'),('instagram','Instagram'),('tiktok','TikTok'),('youtube','YouTube'),('facebook','Facebook'),('booking_url','Booking'),('store_url','Store'),('podcast_url','Podcast'),('affiliate_links','Affiliate / Resource Links')])
+    elif step==7: body=f'''<h2>Preview</h2><article class="card appcard"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(draft.get('name','Business'))}</div></div><div class="body"><span class="badge">Hosted App</span><h2>{draft.get('name','Your Business')}</h2><p><b>{draft.get('owner_title','')}</b></p><p class="muted">{draft.get('category','')} • {draft.get('location','')}<br>{draft.get('tagline','')}</p></div></article>'''
+    elif step==8: body='<h2>Edit</h2><p class="muted">Use the Back buttons to change any builder answer before publishing.</p>'
+    else: body='<h2>Publish My App</h2><p class="muted">Publishing activates this Hosted App and places it on Home and the Business Network. Hosting is FREE.</p>'
+    back=f'<a class="out" href="{url_for("business_builder",step=step-1)}">Back</a>' if step>1 else ''
+    submit='Publish My App' if step==9 else 'Continue'
+    return page('Hosted App Builder',f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER</span><h1>Step {step} of 9</h1><div class="steps">{steps}</div></div><form class="card" method="post">{body}<div class="actions">{back}<button class="btn">{submit}</button></div></form>''','business')
 
-@app.route("/business")
-def business():
-    c=cdb(); rows=c.execute("select * from businesses where status='active' order by featured desc,id").fetchall(); c.close()
-    cards="".join(f"<div class='card {'premium' if x['featured'] else ''}'><h2>{esc(x['name'])}</h2><p>{esc(x['title'] or x['category'])}</p><a class='btn' href='{url_for('business_app',slug=x['slug'])}'>Open App</a></div>" for x in rows) or "<div class='card'>Businesses will appear here as they join.</div>"
-    cta = f"<a class='btn' href='{url_for('business_builder')}'>Create My Free Hosted App</a>" if me() else ""
-    return shell("Business Network",f"<section class='hero'><span class='badge'>FREE HOSTING</span><h1>Business Network</h1><p>Every business gets the same Hosted App shell for free.</p>{cta}</section><div class='grid'>{cards}</div>","business")
+@app.route('/business/app/<int:business_id>')
+def business_app(business_id):
+    conn=db(); b=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.id=? AND b.active=1',(business_id,)).fetchone(); conn.close()
+    if not b: abort(404)
+    links=''.join(f'<a class="chip" href="{url}" target="_blank" rel="noopener">{label}</a>' for label,url in [('Website',b['website']),('Instagram',b['instagram']),('TikTok',b['tiktok']),('YouTube',b['youtube']),('Facebook',b['facebook'])] if url)
+    featurechips=''.join(f'<span class="chip">{x.strip()}</span>' for x in (b['features'] or '').split(',') if x.strip())
+    affiliate=f'<article class="card"><h2>Affiliate / Resource Links</h2><p>{b["affiliate_links"]}</p><p class="muted small"><b>Disclosure:</b> Some resource links may be affiliate links. The business owner is responsible for accurate disclosures.</p></article>' if b['affiliate_links'] else ''
+    return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>{b['name']}</h1><h3>{b['owner_title'] or b['category']}</h3><p class="muted">{b['location']} • {b['tagline']}</p><div class="chips">{links}</div></div><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Contact</span>{featurechips}</div><div class="grid"><article class="card"><h2>About</h2><p>{b['description'] or 'Business description coming soon.'}</p><p class="muted">{b['story']}</p></article><article class="card"><h2>What We Offer</h2><p>{b['offers'] or 'Offers will appear here after the owner adds them.'}</p></article></div>{affiliate}''','business')
 
-@app.route("/business/builder",methods=["GET","POST"])
-@login_required
-def business_builder():
-    u=me(); c=cdb(); b=c.execute("select * from businesses where owner_id=?",(u["id"],)).fetchone(); c.close()
-    if request.method=="POST":
-        logo=save_file(request.files.get("logo"),f"biz{u['id']}logo") or (b["logo"] if b else "")
-        cover=save_file(request.files.get("cover"),f"biz{u['id']}cover") or (b["cover"] if b else "")
-        category=request.form.get("category","Other"); goals=" • ".join(request.form.getlist("modules")); featured=1 if u["email"].lower()==GALAXY_EMAIL else 0
-        c=cdb()
-        if b:c.execute("update businesses set name=?,title=?,category=?,city=?,tagline=?,description=?,logo=?,cover=?,website=?,instagram=?,tiktok=?,youtube=?,modules=?,featured=? where owner_id=?",(request.form["name"],request.form.get("title",""),category,request.form.get("city",""),request.form.get("tagline",""),request.form.get("description",""),logo,cover,request.form.get("website",""),request.form.get("instagram",""),request.form.get("tiktok",""),request.form.get("youtube",""),goals,featured,u["id"]))
-        else:c.execute("insert into businesses(owner_id,slug,name,title,category,city,tagline,description,logo,cover,website,instagram,tiktok,youtube,modules,featured) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],slug(request.form["name"]),request.form["name"],request.form.get("title",""),category,request.form.get("city",""),request.form.get("tagline",""),request.form.get("description",""),logo,cover,request.form.get("website",""),request.form.get("instagram",""),request.form.get("tiktok",""),request.form.get("youtube",""),goals,featured))
-        c.commit(); c.close(); return redirect(url_for("business_dashboard"))
-    v=lambda k:esc(b[k]) if b else ""
-    chips="".join(f"<label class='chip'><input style='width:auto' type='checkbox' name='modules' value='{x}'> {x}</label>" for x in ["Services","Booking","Classes","Courses","Events","Shop","Videos","Retreats","Media Kit","Affiliate Links"])
-    form=f"<section class='hero'><h1>Free Hosted App Builder</h1></section><div class='steps'><span>1 Identity</span><span>2 About</span><span>3 Offers</span><span>4 Features</span><span>5 Branding</span><span>6 Links</span><span>7 Preview</span><span>8 Edit</span><span>9 Publish</span></div><form class='card' method='post' enctype='multipart/form-data'><input name='name' value='{v('name')}' placeholder='Business Name' required><input name='title' value='{v('title')}' placeholder='Owner / Creator Title'><select name='category'><option>Content Creator</option><option>Yoga / Fitness</option><option>Reiki / Wellness</option><option>Massage / Bodywork</option><option>Coach / Consultant</option><option>Beauty / Hair</option><option>Food / Cooking</option><option>Speaker / Educator</option><option>Retail / Products</option><option>Other</option></select><input name='city' value='{v('city')}' placeholder='City'><input name='tagline' value='{v('tagline')}' placeholder='Tagline'><textarea name='description'>{v('description')}</textarea><div class='chips'>{chips}</div><input type='file' name='logo'><input type='file' name='cover'><input name='website' value='{v('website')}' placeholder='Website'><input name='instagram' value='{v('instagram')}' placeholder='Instagram'><input name='tiktok' value='{v('tiktok')}' placeholder='TikTok'><input name='youtube' value='{v('youtube')}' placeholder='YouTube'><button>Save / Publish Hosted App</button></form>"
-    return shell("Free Hosted App Builder",form)
-
-@app.route("/app/<slug>")
-def business_app(slug):
-    c=cdb(); b=c.execute("select * from businesses where slug=?",(slug,)).fetchone(); c.close()
-    if not b:return "Not found",404
-    image=f"<img src='{url_for('uploads',filename=b['cover'])}'>" if b["cover"] else (f"<img src='{url_for('uploads',filename=b['logo'])}' style='object-fit:contain;padding:30px'>" if b["logo"] else logo_img(""))
-    mods="".join(f"<span>{esc(x.strip())}</span>" for x in (b["modules"] or "").split("•") if x.strip())
-    return shell(b["name"],f"<section class='hero {'premium' if b['featured'] else ''}'><span class='badge {'gold' if b['featured'] else ''}'>HOSTED BUSINESS APP</span><div class='two'><div><h1>{esc(b['name'])}</h1><h3>{esc(b['title'] or b['category'])}</h3><p>{esc(b['tagline'])}</p></div><div class='media logo-box'>{image}</div></div></section><div class='appnav'><span>Home</span><span>About</span>{mods}<span>Contact</span></div><div class='card'><h2>About</h2><p>{esc(b['description'])}</p></div>")
-
-@app.route("/business/dashboard")
+@app.route('/business/dashboard')
 @login_required
 def business_dashboard():
-    c=cdb(); b=c.execute("select * from businesses where owner_id=?",(me()["id"],)).fetchone(); plan=c.execute("select * from business_plans where user_id=? order by version desc limit 1",(me()["id"],)).fetchone(); c.close()
-    preview=f"<a class='out' href='{url_for('business_app',slug=b['slug'])}'>Preview Hosted App</a>" if b else ""
-    planbtn=f"<a class='out' href='{url_for('business_plan',pid=plan['id'])}'>Business Plan</a>" if plan else f"<a class='out' href='{url_for('business_dev')}'>Start Business Development</a>"
-    return shell("Business Dashboard",f"<section class='hero'><h1>Business Dashboard</h1></section><div class='grid'><a class='btn' href='{url_for('business_builder')}'>Edit Hosted App</a>{preview}<button>Services</button><button>Booking</button><button>Classes</button><button>Events</button><button>Media</button><button>Links</button><button>Retreat Participation</button><button>Business Inquiries</button>{planbtn}</div>")
+    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    app_link=f'<a class="moreitem" href="{url_for("business_app",business_id=b["id"])}">Preview Hosted App</a>' if b and b['active'] else f'<a class="moreitem" href="{url_for("business_builder",step=1)}">Build My FREE Hosted App</a>'
+    return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Manage the free Hosted App and the separate Professional Business Development package.</p></div><div class="grid">{app_link}<a class="moreitem" href="{url_for('business_builder',step=1)}">Edit Hosted App</a><a class="moreitem" href="{url_for('startup')}">Professional Business Development • $79.99</a><a class="moreitem" href="{url_for('business_plan')}">My Business Plan</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('inbox')}">Business Inquiries</a><a class="moreitem" href="{url_for('journal')}">Business Journal</a></div>''','business')
 
-DEV_FIELDS=["stage","business_name","strengths","target_customer","problem","solution","vision","values_text","usp","offers","pricing","revenue","competitors","operations","startup","marketing","goals90","goals1yr"]
-@app.route("/business/development",methods=["GET","POST"])
+# -----------------------------------------------------------------------------
+# $79.99 Professional Business Development
+# -----------------------------------------------------------------------------
+@app.route('/business-development', methods=['GET','POST'])
 @login_required
-def business_dev():
-    u=me(); c=cdb(); r=c.execute("select * from business_dev where user_id=?",(u["id"],)).fetchone(); c.close()
-    if request.method=="POST":
-        data=[request.form.get(x,"") for x in DEV_FIELDS]; c=cdb()
-        if r:c.execute("update business_dev set "+",".join(f"{x}=?" for x in DEV_FIELDS)+" where user_id=?",tuple(data)+(u["id"],))
-        else:c.execute("insert into business_dev(user_id,"+",".join(DEV_FIELDS)+") values(?,"+",".join("?" for _ in DEV_FIELDS)+")",(u["id"],)+tuple(data))
-        c.commit(); c.close(); flash("Business interview saved."); return redirect(url_for("business_dev"))
-    def v(k):return esc(r[k]) if r else ""
-    fields="".join(f"<textarea name='{k}' placeholder='{label}'>{v(k)}</textarea>" for k,label in [("strengths","What are you good at / qualified to do?"),("target_customer","Who do you want to help?"),("problem","What problem do they have?"),("solution","How will your business help them?"),("vision","What should it become in 3–5 years?"),("values_text","Core values"),("usp","What makes it different?"),("offers","Products / services / classes / events"),("pricing","Pricing"),("revenue","Revenue streams"),("competitors","Competitors / alternatives"),("operations","Operations"),("startup","Startup requirements / budget / funding"),("marketing","Marketing channels"),("goals90","90-day goals"),("goals1yr","One-year goals")])
-    gen=f"<a class='btn' href='{url_for('generate_plan')}'>Generate Professional Package</a>" if (u["business_access"] or u["is_admin"]) and r else "<p class='muted'>The $79.99 payment gate will unlock plan generation when payment processing is connected.</p>"
-    body=f"<section class='hero premium'><span class='badge gold'>$79.99 ONE TIME</span><h1>Professional Business Development</h1></section><form class='card' method='post'><input name='stage' value='{v('stage')}' placeholder='Business stage'><input name='business_name' value='{v('business_name')}' placeholder='Business name'>{fields}<button>Save Business Interview</button></form><div class='card premium'>{gen}</div>"
-    return shell("Business Development",body)
+def startup():
+    u=current_user()
+    if request.method=='POST':
+        payload={k:request.form.get(k,'').strip() for k in ['journey','strengths','help_requests','interests','income_style','business_name','concept','serves','problem','solution','mission_inputs','vision_inputs','values','usp','products','pricing','revenue','competitors','operations','compliance','startup_requirements','startup_budget','funding','marketing','goals90','goals1y']}
+        conn=db(); v=conn.execute('SELECT COALESCE(MAX(version),0)+1 v FROM business_plans WHERE user_id=?',(u['id'],)).fetchone()['v']; conn.execute('INSERT INTO business_plans(user_id,version,payload,created_at) VALUES(?,?,?,?)',(u['id'],v,json.dumps(payload),now())); conn.commit(); conn.close(); flash(f'Business Plan version {v} generated and saved to Journal → Business.','success'); return redirect(url_for('business_plan'))
+    return page('Professional Business Development',f'''<div class="hero paid"><span class="badge gold">PROFESSIONAL BUSINESS DEVELOPMENT • $79.99</span><h1>Turn What You Know Into a Business</h1><p class="muted">This questionnaire creates a saved plan structure. Production payment checkout must be connected before treating access as purchased.</p><a class="out" href="{url_for('payment_info',product='business-development')}">Payment / Access Setup</a></div><form class="card" method="post"><label><b>Where are you starting?</b></label><select class="input" name="journey"><option>Established Business</option><option>Recently Started</option><option>Business Idea</option><option>Hobby to Business</option><option>Skill/Talent to Monetize</option><option>Certification/License</option><option>Content Creator</option><option>Help Me Develop an Idea</option></select><textarea class="input" name="strengths" placeholder="What are you good at?"></textarea><textarea class="input" name="help_requests" placeholder="What do people ask for your help with?"></textarea><textarea class="input" name="interests" placeholder="What interests do you enjoy?"></textarea><textarea class="input" name="income_style" placeholder="How would you like to make money?"></textarea><input class="input" name="business_name" placeholder="Business name / working name"><textarea class="input" name="concept" placeholder="Business concept — what does it do?"></textarea><textarea class="input" name="serves" placeholder="Who does it serve?"></textarea><textarea class="input" name="problem" placeholder="What problem do they have?"></textarea><textarea class="input" name="solution" placeholder="How will your business help them?"></textarea><textarea class="input" name="mission_inputs" placeholder="Mission inputs: who, problem, how you help"></textarea><textarea class="input" name="vision_inputs" placeholder="Vision: where should the business be in 3–5 years and what impact should it have?"></textarea><textarea class="input" name="values" placeholder="Core values"></textarea><textarea class="input" name="usp" placeholder="What makes the business different?"></textarea><textarea class="input" name="products" placeholder="Products, services, classes, experiences"></textarea><textarea class="input" name="pricing" placeholder="Pricing, cost to deliver, desired income, package opportunities"></textarea><textarea class="input" name="revenue" placeholder="Revenue streams"></textarea><textarea class="input" name="competitors" placeholder="Competitors / alternatives / local and online market"></textarea><textarea class="input" name="operations" placeholder="Hours, appointments, staffing, suppliers, support and systems"></textarea><textarea class="input" name="compliance" placeholder="Certifications, licenses, insurance and compliance requirements"></textarea><textarea class="input" name="startup_requirements" placeholder="Equipment, software, supplies, branding, space, inventory, contractors"></textarea><textarea class="input" name="startup_budget" placeholder="Known startup costs"></textarea><textarea class="input" name="funding" placeholder="Self-funding, grants, loans, investors, donations or other"></textarea><textarea class="input" name="marketing" placeholder="Marketing channels: social, search, local, events, referrals, partnerships, ads"></textarea><textarea class="input" name="goals90" placeholder="90-day goals"></textarea><textarea class="input" name="goals1y" placeholder="One-year goals"></textarea><button class="btn">Generate & Save Professional Business Plan</button></form>''','business')
 
-def sections_from(r):
-    n=r["business_name"] or "Your Business"; cust=r["target_customer"] or "the target customer"; prob=r["problem"] or "the customer's key problem"; sol=r["solution"] or r["offers"] or "the proposed solution"
-    return {"Executive Summary":f"{n} is designed to serve {cust} by addressing {prob} through {sol}.","Business Description":f"{n} is being developed from the '{r['stage'] or 'business development'}' stage.","Founder Story":r["strengths"] or "Founder experience and motivation.","Mission":f"{n} exists to help {cust} address {prob} through {sol}.","Vision":r["vision"] or "Build a trusted, sustainable business over the next 3–5 years.","Core Values":r["values_text"] or "Integrity • Quality • Care • Reliability","USP":r["usp"] or "Clarify the strongest differentiator.","Products & Services":r["offers"] or "Define the initial focused offers.","Target Customer":cust,"Customer Problem":prob,"Business Solution":sol,"Market Overview":"Validate demand through customer conversations, competitor research and local/online market observation.","Competitor Analysis":r["competitors"] or "Identify direct competitors, indirect alternatives and gaps.","Pricing Strategy":r["pricing"] or "Set pricing from cost, value, margin and market range.","Revenue Streams":r["revenue"] or "Services, products, classes, events, memberships, retreats, digital products or partnerships.","Marketing Strategy":r["marketing"] or "Use social media, local/community partnerships, referrals and search according to where the target customer is active.","Social Media Strategy":"Use repeatable pillars: education, founder story, proof/customer experience, offers, collaborations.","Sales Strategy":"Discovery → trust → inquiry → purchase → follow-up.","Operations":r["operations"] or "Define delivery, booking, payment, customer support and scheduling.","Startup Requirements":r["startup"] or "List equipment, software, supplies, branding and professional support.","Startup Budget":r["startup"] or "Separate one-time startup costs from monthly operating costs.","Revenue Projections":"Build conservative, target and high scenarios using customers × average sale × purchase frequency.","90-Day Launch Strategy":r["goals90"] or "Days 1–30 foundation; Days 31–60 visibility; Days 61–90 launch and refine.","One-Year Goals":r["goals1yr"] or "Set measurable customer, revenue, partnership and operating goals."}
-
-@app.route("/business/plan/generate")
+@app.route('/business-plan')
 @login_required
-def generate_plan():
-    u=me()
-    if not (u["business_access"] or u["is_admin"]):return redirect(url_for("business_dev"))
-    c=cdb(); r=c.execute("select * from business_dev where user_id=?",(u["id"],)).fetchone()
-    if not r:c.close();return redirect(url_for("business_dev"))
-    ver=(c.execute("select max(version) v from business_plans where user_id=?",(u["id"],)).fetchone()["v"] or 0)+1
-    cur=c.execute("insert into business_plans(user_id,business_name,version,sections) values(?,?,?,?)",(u["id"],r["business_name"] or "My Business",ver,json.dumps(sections_from(r)))); pid=cur.lastrowid; c.execute("insert into journal(user_id,title,body,category,visibility) values(?,?,?,'Business','private')",(u["id"],f"{r['business_name']} Business Plan",f"Business Plan Version {ver} generated.")); c.commit(); c.close(); notify(u["id"],"Business Plan Ready",f"Version {ver} is ready.","Business"); return redirect(url_for("business_plan",pid=pid))
+def business_plan():
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_plans WHERE user_id=? ORDER BY version DESC LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    if not row: content=f'''<div class="hero paid"><span class="badge gold">MY BUSINESS PLAN</span><h1>No Business Plan Yet</h1><p class="muted">Complete Professional Business Development to create your first version.</p><a class="btn" href="{url_for('startup')}">Start $79.99 Business Development</a></div>'''
+    else:
+        p=json.loads(row['payload']); sections=[('Executive Summary',p.get('concept')),('Business Description',p.get('concept')),('Founder Story',p.get('strengths')),('Mission',p.get('mission_inputs')),('Vision',p.get('vision_inputs')),('Core Values',p.get('values')),('USP / Competitive Advantage',p.get('usp')),('Products & Services',p.get('products')),('Target Customer',p.get('serves')),('Customer Problem',p.get('problem')),('Business Solution',p.get('solution')),('Competitor Analysis',p.get('competitors')),('Pricing Strategy',p.get('pricing')),('Revenue Streams',p.get('revenue')),('Marketing Strategy',p.get('marketing')),('Operations',p.get('operations')),('Startup Requirements',p.get('startup_requirements')),('Startup Budget / Funding',(p.get('startup_budget') or '')+' '+(p.get('funding') or '')),('90-Day Launch Strategy',p.get('goals90')),('One-Year Goals',p.get('goals1y'))]
+        cards=''.join(f'<article class="card"><h3>{name}</h3><p>{value or "Complete this section in a future revision."}</p></article>' for name,value in sections)
+        content=f'''<div class="hero paid"><span class="badge gold">MY BUSINESS PLAN • VERSION {row['version']}</span><h1>Editable Business Plan</h1><p class="muted">Saved in your account. PDF/email/share require a PDF/email integration layer; the data itself is persisted now.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Create Updated Version</a><a class="out" href="{url_for('plan_versions')}">Version History</a></div></div><div class="grid">{cards}</div>'''
+    return page('My Business Plan',content,'business')
 
-@app.route("/business/plan/<int:pid>")
+@app.route('/business-plan/versions')
 @login_required
-def business_plan(pid):
-    c=cdb(); p=c.execute("select * from business_plans where id=? and user_id=?",(pid,me()["id"])).fetchone(); c.close()
-    if not p:return "Not found",404
-    sec=json.loads(p["sections"]); cards="".join(f"<div class='card'><h3>{esc(k)}</h3><p>{esc(v)}</p></div>" for k,v in sec.items())
-    return shell("Business Plan",f"<section class='hero premium'><h1>{esc(p['business_name'])} Business Plan</h1><p>Version {p['version']} • Stored in Journal → Business</p></section><div class='grid'>{cards}</div>")
+def plan_versions():
+    u=current_user(); conn=db(); rows=conn.execute('SELECT id,version,created_at FROM business_plans WHERE user_id=? ORDER BY version DESC',(u['id'],)).fetchall(); conn.close()
+    html=''.join(f'<article class="card"><h3>Version {r["version"]}</h3><p class="muted">Saved {r["created_at"]}</p></article>' for r in rows) or '<div class="empty">No saved versions yet.</div>'
+    return page('Business Plan Library',f'<div class="hero"><span class="badge">BUSINESS PLAN LIBRARY</span><h1>Saved Business Plan Copies</h1></div><div class="grid">{html}</div>','business')
 
-@app.route("/retreats")
+@app.route('/marketing')
+@login_required
+def marketing():
+    u=current_user(); conn=db(); row=conn.execute('SELECT payload FROM business_plans WHERE user_id=? ORDER BY version DESC LIMIT 1',(u['id'],)).fetchone(); conn.close(); p=json.loads(row['payload']) if row else {}
+    return page('Marketing Strategy',f'''<div class="hero paid"><span class="badge gold">BUSINESS PACKAGE</span><h1>Marketing Strategy</h1></div><div class="grid"><article class="card"><h3>Ideal Audience</h3><p>{p.get('serves') or 'Complete your plan to populate this section.'}</p></article><article class="card"><h3>Brand Positioning</h3><p>{p.get('usp') or 'Complete your plan to populate this section.'}</p></article><article class="card"><h3>Channels</h3><p>{p.get('marketing') or 'Complete your plan to populate this section.'}</p></article><article class="card"><h3>Content Pillars</h3><p>Derive content pillars from the customer's problem, solution, values and offers in your saved plan.</p></article></div>''','business')
+
+@app.route('/launch-plan')
+@login_required
+def launch_plan():
+    return page('90-Day Launch Plan','''<div class="hero paid"><span class="badge gold">BUSINESS PACKAGE</span><h1>90-Day Launch Plan</h1></div><div class="three"><article class="card"><span class="badge">DAYS 1–30</span><h3>Foundation</h3><p class="muted">Offer, audience, pricing, branding and app/profile setup.</p></article><article class="card"><span class="badge">DAYS 31–60</span><h3>Visibility / Outreach</h3><p class="muted">Content, partnerships, outreach and early customer feedback.</p></article><article class="card"><span class="badge">DAYS 61–90</span><h3>Launch / Learn / Refine</h3><p class="muted">Launch campaign, track response and improve the offer.</p></article></div>''','business')
+
+# -----------------------------------------------------------------------------
+# Retreats
+# -----------------------------------------------------------------------------
+@app.route('/retreats')
 def retreats():
-    c=cdb(); rows=c.execute("select * from retreats order by id desc").fetchall(); c.close()
-    cards="".join(f"<div class='card'><h3>{esc(x['title'])}</h3><p>{esc(x['type'])} • {esc(x['season'])} • {esc(x['dates'])}</p></div>" for x in rows) or "<div class='card'>Upcoming Retreats will appear here.</div>"
-    cta = f"<a class='btn' href='{url_for('retreat_builder')}'>Design Your Own Retreat</a>" if me() else ""
-    return shell("Retreats",f"<section class='hero'><h1>Retreats</h1>{cta}</section><div class='grid'>{cards}</div>","retreats")
-@app.route("/retreats/builder",methods=["GET","POST"])
+    if session.get('user_id'):
+        conn=db(); own=conn.execute('SELECT * FROM retreats WHERE user_id=? ORDER BY id DESC',(session['user_id'],)).fetchall(); conn.close(); own_html=''.join(f'<article class="card"><span class="badge">{r["status"]}</span><h3>{r["retreat_type"]}</h3><p class="muted">{r["season"]} • {r["preferred_dates"]} • {r["guests"]}</p></article>' for r in own)
+    else: own_html=''
+    return page('Retreats',f'''<div class="hero"><span class="badge">RETREATS</span><h1>Upcoming Retreats & Design Your Own</h1><p class="muted">Intentional shared experiences connecting members, wellness and participating businesses.</p><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></div><div class="grid"><article class="card"><span class="badge">DESIGN YOUR OWN</span><h2>Build a Private Retreat</h2><p class="muted">Season • dates • group size • budget • lodging preferences • wellness interests.</p><a class="btn" href="{url_for('retreat_builder')}">Start Retreat Builder</a></article><article class="card"><span class="badge gold">PARTICIPATING BUSINESSES</span><h3>Free Hosted Business Apps can participate</h3><p class="muted">Business participation does not require a hosting subscription.</p></article></div>{own_html}''','retreats')
+
+@app.route('/retreat-builder', methods=['GET','POST'])
 @login_required
 def retreat_builder():
-    u=me()
-    if request.method=="POST":
-        c=cdb(); c.execute("insert into retreats(user_id,title,type,season,dates,guests,budget,wellness,lodging,businesses) values(?,?,?,?,?,?,?,?,?,?)",(u["id"],request.form["title"],request.form["type"],request.form["season"],request.form.get("dates",""),request.form.get("guests",""),request.form.get("budget",""),request.form.get("wellness",""),request.form.get("lodging",""),request.form.get("businesses",""))); c.execute("insert into journal(user_id,title,body,category,visibility) values(?,?,?,'Retreats','private')",(u["id"],request.form["title"],"Retreat request saved.")); c.commit(); c.close(); return redirect(url_for("journal"))
-    return shell("Retreat Builder","""<section class='hero'><h1>Design Your Own Retreat</h1></section><form class='card' method='post'><input name='title' placeholder='Retreat Title' required><select name='type'><option>Solo Renewal</option><option>Couples / Dating</option><option>Friendship / Group</option><option>Women’s Self-Love</option><option>Men’s Renewal</option><option>Family Harmony</option><option>Life Transition</option></select><select name='season'><option>Spring Renewal</option><option>Summer Water</option><option>Autumn Reflection</option><option>Winter Stillness</option></select><input name='dates' placeholder='Preferred dates'><input name='guests' placeholder='Guests'><input name='budget' placeholder='Budget'><textarea name='wellness' placeholder='Wellness interests'></textarea><textarea name='lodging' placeholder='Lodging preferences'></textarea><textarea name='businesses' placeholder='Desired participating businesses'></textarea><button>Save Retreat Request</button></form>""")
+    u=current_user()
+    if request.method=='POST':
+        keys=['retreat_type','season','preferred_dates','guests','budget','wellness','lodging','businesses','meaning']; vals=[request.form.get(k,'').strip() for k in keys]
+        conn=db(); conn.execute('''INSERT INTO retreats(user_id,retreat_type,season,preferred_dates,guests,budget,wellness,lodging,businesses,meaning,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(u['id'],*vals,now())); conn.commit(); conn.close(); notify(u['id'],'Retreat Update','Your Retreat request was saved.'); flash('Retreat request saved to Journal → Retreats.','success'); return redirect(url_for('retreats'))
+    return page('Retreat Builder','''<div class="hero"><span class="badge">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">A guided private Retreat request rather than a fake instant booking.</p></div><form class="card" method="post"><label><b>Retreat Type</b></label><select class="input" name="retreat_type"><option>Solo Renewal</option><option>Couples / Dating</option><option>Women's Self-Love</option><option>Men's Renewal</option><option>Family Harmony</option><option>Life Transition</option><option>Custom</option></select><label><b>Season</b></label><select class="input" name="season"><option>Spring Renewal</option><option>Summer Water</option><option>Autumn Reflection</option><option>Winter Stillness</option></select><label><b>Preferred Dates</b></label><input class="input" name="preferred_dates"><label><b>Guests</b></label><input class="input" name="guests"><label><b>Budget</b></label><input class="input" name="budget"><label><b>Wellness Interests</b></label><textarea class="input" name="wellness"></textarea><label><b>Lodging Preferences</b></label><textarea class="input" name="lodging"></textarea><label><b>Desired Businesses / Providers</b></label><textarea class="input" name="businesses"></textarea><label><b>What would make this Retreat meaningful?</b></label><textarea class="input" name="meaning"></textarea><button class="btn">Send Retreat Request</button></form>''','retreats')
 
-@app.route("/membership")
+# -----------------------------------------------------------------------------
+# Membership, settings, more, integrations
+# -----------------------------------------------------------------------------
+@app.route('/membership')
 def membership():
-    return shell("Membership","""<section class='hero'><h1>Membership & Packages</h1></section><div class='grid'><div class='card'><span class='badge'>FREE</span><h2>Community + Hosted Business App</h2><h1>$0</h1></div><div class='card premium'><span class='badge gold'>CONSCIOUS COORDINATION</span><h2>Full Membership</h2><h1>$10.99/month</h1></div><div class='card premium'><span class='badge gold'>BUSINESS DEVELOPMENT</span><h2>Professional Business Plan Package</h2><h1>$79.99</h1></div></div><div class='card'><h2>Video Add-Ons</h2><p>Add 5 Minutes — $5 • Paid Video Request / Message — $5</p></div>""","membership")
+    return page('Membership',f'''<div class="hero"><h1>Membership & Business Packages</h1><p class="muted">Clear separation between belonging, deeper connection tools, free business hosting and one-time professional business development.</p></div><div class="grid"><article class="card"><span class="badge">FREE</span><h2>Community + Hosted Business App</h2><h1>$0</h1><p class="muted">Member profile • Community • Journal • Inbox • Marketplace • Retreats • basic Conscious Coordination identity • one FREE Hosted Business App structure.</p></article><article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>Conscious Coordination</h2><h1>$10.99/mo</h1><p class="muted">Deeper compatibility • shared birth-chart tools when technically supported • expanded profile media • eligible video features.</p><a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>Professional Business Development</h2><h1>$79.99</h1><p class="muted">One-time deeper planning package: Business Plan • Marketing Strategy • 90-Day Launch Plan • saved versions.</p><a class="btn" href="{url_for('startup')}">Start</a></article><article class="card paid"><span class="badge gold">VIDEO ADD-ON</span><h2>Add 5 Minutes</h2><h1>$5</h1><p class="muted">Available inside eligible private video connections after provider/payment integration.</p></article></div>''','membership')
 
-@app.route("/more")
+@app.route('/more')
 @login_required
 def more():
-    return shell("More",f"<section class='hero'><h1>More</h1></section><div class='grid'><a class='btn' href='{url_for('journal')}'>My Journal</a><a class='out' href='{url_for('messages')}'>Journal Inbox</a><a class='out' href='{url_for('notifications')}'>Notifications</a><a class='out' href='{url_for('connections')}'>Conscious Coordination</a><a class='out' href='{url_for('business_dashboard')}'>Business Dashboard</a><a class='out' href='{url_for('retreats')}'>Retreats</a><a class='out' href='{url_for('membership')}'>Membership</a></div>")
+    return page('More',f'''<div class="hero"><span class="badge">MEMBER MENU</span><h1>Everything in One Place</h1></div><div class="moregrid"><a class="moreitem" href="{url_for('journal')}">My Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('notifications')}">Notifications</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">Business Dashboard</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('membership')}">Membership</a><a class="moreitem" href="{url_for('settings')}">Settings</a><a class="moreitem" href="{url_for('logout')}">Log Out</a></div>''','more')
 
-init_db()
-if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","5000")))
+@app.route('/settings')
+@login_required
+def settings():
+    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted">Password-reset delivery requires the production email integration.</p></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article><article class="card"><h3>Log Out</h3><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+
+@app.route('/payment/<product>')
+def payment_info(product):
+    products={'conscious-coordination':('$10.99/month','Conscious Coordination'),'business-development':('$79.99 one time','Professional Business Development'),'video':('$5','Video Add-on')}
+    price,name=products.get(product,('','Payment'))
+    return page('Payment Setup',f'''<div class="hero paid"><span class="badge gold">PAYMENT INTEGRATION</span><h1>{name}</h1><h2>{price}</h2><p class="muted">No charge is simulated in this build. Connect Stripe or another approved payment processor and verify successful webhooks before granting paid access.</p></div>''','membership')
+
+@app.route('/health')
+def health():
+    return {'ok': True, 'app': 'The Seasons Within'}
+
+@app.errorhandler(404)
+def not_found(e):
+    return page('Not Found','<div class="hero"><h1>Page Not Found</h1><p class="muted">Use the navigation to return to The Seasons Within.</p></div>'),404
+
+if __name__ == '__main__':
+    init_db()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT','5000')), debug=os.environ.get('FLASK_DEBUG')=='1')
