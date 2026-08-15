@@ -147,6 +147,9 @@ def init_db():
         ("community_posts","media_type","ALTER TABLE community_posts ADD COLUMN media_type TEXT DEFAULT ''"),
         ("messages","category","ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT 'Reflection'"),
         ("messages","source_post_id","ALTER TABLE messages ADD COLUMN source_post_id INTEGER"),
+        ("messages","preferred_dates","ALTER TABLE messages ADD COLUMN preferred_dates TEXT DEFAULT ''"),
+        ("messages","season","ALTER TABLE messages ADD COLUMN season TEXT DEFAULT ''"),
+        ("notifications","link","ALTER TABLE notifications ADD COLUMN link TEXT DEFAULT ''"),
         ("journal_entries","source_post_id","ALTER TABLE journal_entries ADD COLUMN source_post_id INTEGER"),
         ("businesses","retreat_participating","ALTER TABLE businesses ADD COLUMN retreat_participating INTEGER NOT NULL DEFAULT 0"),
     ]:
@@ -213,9 +216,9 @@ def login_required(fn):
     return wrapper
 
 
-def notify(user_id, title, body=''):
+def notify(user_id, title, body='', link=''):
     conn = db()
-    conn.execute('INSERT INTO notifications(user_id,title,body,created_at) VALUES(?,?,?,?)', (user_id,title,body,now()))
+    conn.execute('INSERT INTO notifications(user_id,title,body,link,created_at) VALUES(?,?,?,?,?)', (user_id,title,body,link,now()))
     conn.commit(); conn.close()
 
 
@@ -282,7 +285,7 @@ def public_journal_cards(member_id, viewer_id=None):
         return '<div class="empty"><h3>No Public Journal entries yet</h3><p class="muted">Community posts shared by this member will appear here.</p></div>'
     cards=[]
     for p in posts:
-        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Message {p["name"]}</a>' if viewer_id else ''
+        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>' if viewer_id else ''
         if viewer_id == p['user_id']:
             controls=message+f'<a class="out" href="{url_for("community_post_edit",post_id=p["id"])}">Edit Post</a><form method="post" action="{url_for("community_post_delete",post_id=p["id"])}" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form>'
         else:
@@ -386,7 +389,7 @@ def community():
     conn=db(); posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 50').fetchall(); conn.close()
     cards=[]
     for p in posts:
-        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Message {p["name"]}</a>'
+        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>'
         if p['user_id']==u['id']:
             controls=message+f'<a class="out" href="{url_for("community_post_edit",post_id=p["id"])}">Edit Post</a><form method="post" action="{url_for("community_post_delete",post_id=p["id"])}" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form>'
         else:
@@ -497,40 +500,70 @@ def journal_entry_delete(entry_id):
 @app.route('/inbox')
 @login_required
 def inbox():
-    u=current_user(); category=request.args.get('category','All'); conn=db(); msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
+    u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int)
+    conn=db(); msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
     if category!='All' and category in JOURNAL_CATEGORIES: msgs=[m for m in msgs if m['category']==category]
     cards=[]
     for m in msgs:
-        reply='' if m['recipient_id']!=u['id'] else f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin="Reply",category=m["category"],subject=m["subject"])}">Reply</a>'
-        cards.append(f'<article class="card"><span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p><p>{m["body"]}</p>{reply}</article>')
-    html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3></div>'
+        reply=f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin="Reply",category=m["category"],subject=m["subject"])}">Reply</a>' if m['recipient_id']==u['id'] else ''
+        dates=f'<p><b>Preferred Dates:</b> {m["preferred_dates"]}</p>' if 'preferred_dates' in m.keys() and m['preferred_dates'] else ''
+        season=f'<p><b>Season:</b> {m["season"]}</p>' if 'season' in m.keys() and m['season'] else ''
+        anchor=f' id="message-{m["id"]}"'
+        highlight=' style="outline:3px solid #ead7ad"' if focus==m['id'] else ''
+        cards.append(f'<article class="card"{anchor}{highlight}><span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p>{reply}</article>')
+    html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Community, Conscious Coordination, Business and Retreat conversations will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
-    return page('Journal Inbox',f'<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Notifications are alerts. Inbox is conversation. Messages stay organized by Journal filing section.</p></div>{filters}{html}','more')
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Notifications are alerts. Inbox is conversation. Messages stay organized by Journal filing section.</p></div>{filters}{html}''','more')
 
 @app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
 def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not r: abort(404)
-    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); category=request.args.get('category','Journal Entry'); subject=request.args.get('subject','Journal Private Entry')
-    if origin=='Community' and post_id:
-        conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=? AND user_id=?',(post_id,recipient_id)).fetchone(); conn.close()
-        if not post: abort(404)
-        category=post['category']; subject=post['title']
+    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); category=request.args.get('category','Journal Entry'); subject=request.args.get('subject','')
+    post=None
+    if post_id:
+        conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
+        if post:
+            category=post['category']; subject=post['title']
+    locked_category=bool(post)
+    show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
-        body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); category=journal_category_for_public(request.form.get('category','Journal Entry')); subject=request.form.get('subject','Journal Private Entry').strip() or 'Journal Private Entry'; source_post_id=request.form.get('source_post_id',type=int)
-        if body:
-            conn=db(); conn.execute('INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],recipient_id,origin,subject,body,category,source_post_id,now())); conn.commit(); conn.close(); notify(recipient_id,'New Private Message',f'{subject} — {category}'); flash('Private message sent to the member\'s Journal Inbox.','success'); return redirect(url_for('inbox'))
-    locked=origin=='Community' and post_id
-    category_field=f'<input type="hidden" name="category" value="{category}"><p><b>Filed under:</b> {category}</p>' if locked else '<label><b>File this Journal Private Entry under</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select>'
-    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Message {r['name']}</h1><p class="muted">This message goes only to {r['name']}'s Journal Inbox.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><label><b>Title</b></label><input class="input" name="subject" value="{subject}" readonly>{category_field}<textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Private Message</button></form>''','more')
+        body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int)
+        category=journal_category_for_public(request.form.get('category',category or 'Journal Entry'))
+        subject=request.form.get('subject','').strip()
+        preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
+        preferred_dates=''
+        if preferred_start and preferred_end: preferred_dates=f'{preferred_start} to {preferred_end}'
+        elif preferred_start: preferred_dates=preferred_start
+        elif preferred_end: preferred_dates=preferred_end
+        if body and subject:
+            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
+            link=url_for('inbox',message_id=message_id)+f'#message-{message_id}'
+            notify(recipient_id,'New Private Message',f'{u["name"]} sent you “{subject}”. Open your Journal Inbox to read it.',link)
+            flash(f'Message sent privately to {r["name"]}\'s Journal Inbox. A notification was sent too.','success')
+            return redirect(url_for('inbox',message_id=message_id)+f'#message-{message_id}')
+        flash('Please give your message a title and write your message.','info')
+    if locked_category:
+        category_field=f'<input type="hidden" name="category" value="{category}"><p><b>Filed under:</b> {category}</p>'
+    else:
+        opts=''.join(f'<option {"selected" if category==c else ""}>{c}</option>' for c in JOURNAL_CATEGORIES)
+        category_field=f'<label><b>File this message under</b></label><select class="input" name="category">{opts}</select>'
+    schedule=''
+    if show_schedule:
+        schedule='''<div class="grid"><div><label><b>Choose Your Preferred Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>Choose Your Preferred End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option value="">Choose a season</option><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select>'''
+    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Message</h1><p class="muted">This message will be delivered privately to {r['name']}'s Journal Inbox. They will also receive a Notification telling them where to read it.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{subject or ''}" placeholder="Enter your message title" required>{category_field}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Message</button></form>''','more')
 
 @app.route('/notifications')
 @login_required
 def notifications():
     u=current_user(); conn=db(); rows=conn.execute('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall(); conn.execute('UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL',(now(),u['id'])); conn.commit(); conn.close()
-    html=''.join(f'<article class="card"><h3>{n["title"]}</h3><p class="muted">{n["body"]}</p><p class="small muted">{n["created_at"]}</p></article>' for n in rows) or '<div class="empty"><h3>No notifications yet</h3><p class="muted">Alerts for private messages, compatibility, business inquiries and Retreat updates appear here.</p></div>'
-    return page('Notifications',f'<div class="hero"><span class="badge">PRIVATE ALERTS</span><h1>Notifications</h1></div>{html}','more')
+    cards=[]
+    for n in rows:
+        action=f'<a class="out" href="{n["link"]}">Open Journal Inbox</a>' if 'link' in n.keys() and n['link'] else ''
+        cards.append(f'<article class="card"><h3>{n["title"]}</h3><p class="muted">{n["body"]}</p><p class="small muted">{n["created_at"]}</p>{action}</article>')
+    html=''.join(cards) or '<div class="empty"><h3>No notifications yet</h3><p class="muted">Alerts for private messages, compatibility, business inquiries and Retreat updates appear here.</p></div>'
+    return page('Notifications',f'<div class="hero"><span class="badge">PRIVATE ALERTS</span><h1>Notifications</h1><p class="muted">Notifications tell you when something is waiting. Your private conversations stay in Journal Inbox.</p></div>{html}','more')
 
 # -----------------------------------------------------------------------------
 # Conscious Coordination
@@ -753,7 +786,8 @@ def retreat_builder():
     u=current_user()
     conn=db(); providers=conn.execute('''SELECT b.*,u.email owner_email FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 AND b.retreat_participating=1 ORDER BY b.name''').fetchall(); conn.close()
     if request.method=='POST':
-        retreat_type=request.form.get('retreat_type','').strip(); season=request.form.get('season','').strip(); preferred_dates=request.form.get('preferred_dates','').strip(); guests=request.form.get('guests','').strip(); budget=request.form.get('budget','').strip(); wellness=request.form.get('wellness','').strip(); lodging=request.form.get('lodging','').strip(); meaning=request.form.get('meaning','').strip()
+        retreat_type=request.form.get('retreat_type','').strip(); preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip(); guests=request.form.get('guests','').strip(); budget=request.form.get('budget','').strip(); wellness=request.form.get('wellness','').strip(); lodging=request.form.get('lodging','').strip(); meaning=request.form.get('meaning','').strip()
+        preferred_dates=(f'{preferred_start} to {preferred_end}' if preferred_start and preferred_end else (preferred_start or preferred_end))
         selected_ids=[int(x) for x in request.form.getlist('business_ids') if x.isdigit()]
         selected=[b for b in providers if b['id'] in selected_ids]
         business_names=', '.join(b['name'] for b in selected)
@@ -762,7 +796,11 @@ def retreat_builder():
         admin_sent=send_retreat_email([RETREAT_ADMIN_EMAIL],'New Seasons Within Retreat Request',email_body)
         provider_emails=list(dict.fromkeys(b['owner_email'] for b in selected if b['owner_email']))
         providers_sent=True if not provider_emails else send_retreat_email(provider_emails,'Retreat Request — Selected Provider Copy',email_body)
-        notify(u['id'],'Retreat Update','Your Retreat request was saved.')
+        # Each selected provider also receives the request inside their Journal Inbox.
+        for b in selected:
+            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,preferred_dates,season,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',(u['id'],b['owner_id'],'Retreat',f'Retreat Request — {retreat_type}',email_body,'Retreat',preferred_dates,season,now())); mid=cur.lastrowid; conn.commit(); conn.close()
+            notify(b['owner_id'],'Retreat Message',f'{u["name"]} selected {b["name"]} for a Retreat request. Open Journal Inbox to review it.',url_for('inbox',message_id=mid)+f'#message-{mid}')
+        notify(u['id'],'Retreat Update','Your Retreat request was saved to Journal → Retreats.',url_for('journal',section='Retreat'))
         if SMTP_HOST and admin_sent and providers_sent:
             flash('Retreat request saved to Journal → Retreats and emailed to the Retreat coordinator and selected providers.','success')
         elif SMTP_HOST:
@@ -771,7 +809,7 @@ def retreat_builder():
             flash('Retreat request saved to Journal → Retreats. Email delivery will activate when the private SMTP settings are configured.','info')
         return redirect(url_for('retreats'))
     provider_options=''.join(f'''<label class="card" style="display:block;margin:8px 0"><input type="checkbox" name="business_ids" value="{b['id']}"> <b>{b['name']}</b><br><span class="muted small">{b['owner_title'] or b['category']} • {b['location']}</span></label>''' for b in providers) or '<div class="empty"><p class="muted">No participating Hosted Business Apps are available yet. You can still submit your Retreat request without selecting a provider.</p></div>'
-    return page('Retreat Builder',f'''<div class="hero"><span class="badge">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">A guided private Retreat request rather than a fake instant booking.</p></div><form class="card" method="post"><label><b>Retreat Type</b></label><select class="input" name="retreat_type"><option>Solo Renewal</option><option>Couples / Dating</option><option>Women's Self-Love</option><option>Men's Renewal</option><option>Family Harmony</option><option>Life Transition</option><option>Custom</option></select><label><b>Season</b></label><select class="input" name="season"><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select><label><b>Preferred Dates</b></label><input class="input" name="preferred_dates"><label><b>Number of Guests</b></label><input class="input" type="number" min="1" step="1" name="guests" placeholder="How many guests?"><label><b>Budget</b></label><input class="input" name="budget"><label><b>Wellness Interests</b></label><textarea class="input" name="wellness"></textarea><label><b>Lodging Preferences</b></label><textarea class="input" name="lodging"></textarea><label><b>Desired Businesses / Providers</b></label><p class="muted">Choose from the Hosted Business Apps that have posted themselves as participating Retreat providers.</p>{provider_options}<label><b>What would make this Retreat meaningful?</b></label><textarea class="input" name="meaning"></textarea><button class="btn">Send Retreat Request</button></form>''','retreats')
+    return page('Retreat Builder',f'''<div class="hero"><span class="badge">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">A guided private Retreat request rather than a fake instant booking.</p></div><form class="card" method="post"><label><b>Retreat Type</b></label><select class="input" name="retreat_type"><option>Solo Renewal</option><option>Couples / Dating</option><option>Women's Self-Love</option><option>Men's Renewal</option><option>Family Harmony</option><option>Life Transition</option><option>Custom</option></select><label><b>Choose Your Preferred Dates</b></label><div class="grid"><div><label><b>Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select><label><b>Number of Guests</b></label><input class="input" type="number" min="1" step="1" name="guests" placeholder="How many guests?"><label><b>Budget</b></label><input class="input" name="budget"><label><b>Wellness Interests</b></label><textarea class="input" name="wellness"></textarea><label><b>Lodging Preferences</b></label><textarea class="input" name="lodging"></textarea><label><b>Desired Businesses / Providers</b></label><p class="muted">Choose from the Hosted Business Apps that have posted themselves as participating Retreat providers.</p>{provider_options}<label><b>What would make this Retreat meaningful?</b></label><textarea class="input" name="meaning"></textarea><button class="btn">Send Retreat Request</button></form>''','retreats')
 
 # -----------------------------------------------------------------------------
 # Membership, settings, more, integrations
