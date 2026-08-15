@@ -53,21 +53,27 @@ def init_db():
     CREATE TABLE IF NOT EXISTS community_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
+        title TEXT NOT NULL DEFAULT 'Community Post',
+        category TEXT NOT NULL DEFAULT 'Reflection',
         body TEXT NOT NULL,
         post_type TEXT NOT NULL DEFAULT 'member',
         created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT '',
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sender_id INTEGER NOT NULL,
         recipient_id INTEGER NOT NULL,
-        origin TEXT NOT NULL DEFAULT 'Community',
+        origin TEXT NOT NULL DEFAULT 'Profile',
         subject TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'Reflection',
+        community_post_id INTEGER,
         body TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(sender_id) REFERENCES users(id),
-        FOREIGN KEY(recipient_id) REFERENCES users(id)
+        FOREIGN KEY(recipient_id) REFERENCES users(id),
+        FOREIGN KEY(community_post_id) REFERENCES community_posts(id) ON DELETE SET NULL
     );
     CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +130,21 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     ''')
+    # Safe migrations for existing Render databases.
+    def add_column_if_missing(table, column, ddl):
+        cols = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+        if column not in cols:
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN {ddl}')
+    add_column_if_missing('community_posts','title',"title TEXT NOT NULL DEFAULT 'Community Post'")
+    add_column_if_missing('community_posts','category',"category TEXT NOT NULL DEFAULT 'Reflection'")
+    add_column_if_missing('community_posts','updated_at',"updated_at TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing('messages','category',"category TEXT NOT NULL DEFAULT 'Reflection'")
+    add_column_if_missing('messages','community_post_id',"community_post_id INTEGER")
+    conn.execute("UPDATE journal_entries SET category='Reflection' WHERE category='Reflections'")
+    conn.execute("UPDATE journal_entries SET category='Retreat' WHERE category='Retreats'")
+    conn.execute("UPDATE community_posts SET category='Reflection' WHERE category IS NULL OR trim(category)='' OR category='Reflections'")
+    conn.execute("UPDATE community_posts SET category='Retreat' WHERE category='Retreats'")
+    conn.execute("UPDATE community_posts SET updated_at=created_at WHERE updated_at IS NULL OR trim(updated_at)=''")
     conn.commit()
     conn.close()
 
@@ -265,15 +286,48 @@ def logout():
 @login_required
 def community():
     u=current_user()
+    categories=['Reflection','Business','Retreat','Conscious Coordination','Saved Items']
     if request.method=='POST':
+        title=request.form.get('title','').strip()
+        category=request.form.get('category','Reflection').strip()
         body=request.form.get('body','').strip()
-        if body:
-            conn=db(); conn.execute('INSERT INTO community_posts(user_id,body,created_at) VALUES(?,?,?)',(u['id'],body,now())); conn.commit(); conn.close(); flash('Posted to Community. Replies stay private.','success'); return redirect(url_for('community'))
+        if category not in categories: category='Reflection'
+        if title and body:
+            conn=db(); conn.execute('INSERT INTO community_posts(user_id,title,category,body,created_at,updated_at) VALUES(?,?,?,?,?,?)',(u['id'],title,category,body,now(),now())); conn.commit(); conn.close(); flash('Posted to Community.','success'); return redirect(url_for('community'))
     conn=db(); posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 50').fetchall(); conn.close()
-    post_html=''.join(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div><h3 style="margin:4px 0">{p['name']}</h3><p class="muted small">{p['created_at']}</p><p>{p['body']}</p>{'' if p['user_id']==u['id'] else f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community")}">Message {p["name"]}</a>'}</div></div></article>''' for p in posts)
-    if not post_html: post_html='<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
-    content=f'''<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The daily heart of The Seasons Within: reflection, wellness and real member posts. Replies are private.</p></div><article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">DAILY SEASONS WITHIN</span><h2>Current Sky</h2><p class="muted">Live ephemeris data is intentionally not fabricated. Connect a provider before displaying live Moon/planet positions.</p></div></article><div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">JOURNAL PROMPT</span><h3>What deserves your conscious attention today?</h3><a class="out" href="{url_for('journal')}">Open My Journal</a></article></div><form class="card" method="post"><textarea class="input" name="body" placeholder="Share with the community..." required></textarea><button class="btn">Post to Community</button></form>{post_html}'''
+    cards=[]
+    for p in posts:
+        owner=p['user_id']==u['id']
+        owner_actions=f'''<div class="actions"><a class="out" href="{url_for('edit_community_post',post_id=p['id'])}">Edit Post</a><form method="post" action="{url_for('delete_community_post',post_id=p['id'])}" onsubmit="return confirm('Delete this Community post?');" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form></div>''' if owner else ''
+        private_message='' if owner else f'''<a class="out" href="{url_for('message_member',recipient_id=p['user_id'],origin='Community',post_id=p['id'])}">Message {p['name']} Privately</a>'''
+        cards.append(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div><div class="chips"><span class="badge">{p['category']}</span></div><h2 style="margin:6px 0">{p['title']}</h2><p class="muted small"><a href="{url_for('member_profile',user_id=p['user_id'])}"><b>{p['name']}</b></a> - {p['created_at']}</p><p>{p['body']}</p><div class="actions"><a class="out" href="{url_for('member_profile',user_id=p['user_id'])}">View Profile</a>{private_message}</div>{owner_actions}</div></div></article>''')
+    post_html=''.join(cards) or '<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
+    opts=''.join(f'<option>{c}</option>' for c in categories)
+    content=f'''<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The daily heart of The Seasons Within: reflection, wellness and real member posts. Private messages go directly to the member who created the post and are filed in that member's Journal Inbox.</p></div><article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">DAILY SEASONS WITHIN</span><h2>Current Sky</h2><p class="muted">Live ephemeris data is intentionally not fabricated. Connect a provider before displaying live Moon/planet positions.</p></div></article><div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">JOURNAL PROMPT</span><h3>What deserves your conscious attention today?</h3><a class="out" href="{url_for('journal')}">Open My Journal</a></article></div><form class="card" method="post"><h2>Create Community Post</h2><label><b>Title</b></label><input class="input" name="title" placeholder="Post title" required><label><b>Category</b></label><select class="input" name="category">{opts}</select><label><b>Post</b></label><textarea class="input" name="body" placeholder="Write and review your post before publishing..." required></textarea><button class="btn">Post to Community</button></form>{post_html}'''
     return page('Community',content,'community')
+
+@app.route('/community/post/<int:post_id>/edit', methods=['GET','POST'])
+@login_required
+def edit_community_post(post_id):
+    u=current_user(); conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
+    if not post: abort(404)
+    if post['user_id']!=u['id']: abort(403)
+    categories=['Reflection','Business','Retreat','Conscious Coordination','Saved Items']
+    if request.method=='POST':
+        title=request.form.get('title','').strip(); category=request.form.get('category','Reflection').strip(); body=request.form.get('body','').strip()
+        if category not in categories: category='Reflection'
+        if title and body:
+            conn=db(); conn.execute('UPDATE community_posts SET title=?,category=?,body=?,updated_at=? WHERE id=? AND user_id=?',(title,category,body,now(),post_id,u['id'])); conn.commit(); conn.close(); flash('Community post updated.','success'); return redirect(url_for('community'))
+    opts=''.join(f'''<option {'selected' if c==post['category'] else ''}>{c}</option>''' for c in categories)
+    return page('Edit Community Post',f'''<div class="hero"><span class="badge">COMMUNITY</span><h1>Edit Your Post</h1></div><form class="card" method="post"><label><b>Title</b></label><input class="input" name="title" value="{post['title']}" required><label><b>Category</b></label><select class="input" name="category">{opts}</select><label><b>Post</b></label><textarea class="input" name="body" required>{post['body']}</textarea><button class="btn">Save Changes</button> <a class="out" href="{url_for('community')}">Cancel</a></form>''','community')
+
+@app.route('/community/post/<int:post_id>/delete', methods=['POST'])
+@login_required
+def delete_community_post(post_id):
+    u=current_user(); conn=db(); post=conn.execute('SELECT user_id FROM community_posts WHERE id=?',(post_id,)).fetchone()
+    if not post: conn.close(); abort(404)
+    if post['user_id']!=u['id']: conn.close(); abort(403)
+    conn.execute('DELETE FROM community_posts WHERE id=?',(post_id,)); conn.commit(); conn.close(); flash('Community post deleted.','success'); return redirect(url_for('community'))
 
 @app.route('/profile', methods=['GET','POST'])
 @login_required
@@ -290,34 +344,75 @@ def profile():
 def journal():
     u=current_user()
     if request.method=='POST':
-        title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); category=request.form.get('category','Reflections'); shared=request.form.get('visibility')=='community'
+        title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); category=request.form.get('category','Reflection'); shared=request.form.get('visibility')=='community'
         if title and body:
             conn=db(); cur=conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,body,category,1 if shared else 0,now(),now()))
-            if shared: conn.execute('INSERT INTO community_posts(user_id,body,created_at) VALUES(?,?,?)',(u['id'],body,now()))
+            if shared: conn.execute('INSERT INTO community_posts(user_id,title,category,body,created_at,updated_at) VALUES(?,?,?,?,?,?)',(u['id'],title,category,body,now(),now()))
             conn.commit(); conn.close(); flash('Journal entry saved.' + (' A separate copy was shared to Community.' if shared else ''),'success'); return redirect(url_for('journal'))
     conn=db(); entries=conn.execute('SELECT * FROM journal_entries WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall(); conn.close()
     entries_html=''.join(f'''<article class="card"><span class="badge">{e['category'].upper()}</span><h3>{e['title']}</h3><p>{e['body']}</p><p class="muted small">{'Private original • community copy shared' if e['shared_copy'] else 'Private Journal only'} • {e['created_at']}</p></article>''' for e in entries) or '<div class="empty"><h3>Your Journal is private and ready</h3><p class="muted">Reflections, business notes, Retreat planning and saved coordination ideas can live here.</p></div>'
-    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>Private Command Center</h1><p class="muted">Private by default. Sharing creates a separate Community copy while the original remains private.</p></div><div class="grid"><a class="moreitem" href="#new">Reflections</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('business_plan')}">Business</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="#entries">Saved Items</a></div><form class="card" id="new" method="post"><input class="input" name="title" placeholder="Entry title" required><select class="input" name="category"><option>Reflections</option><option>Business</option><option>Retreats</option><option>Conscious Coordination</option><option>Saved Items</option></select><textarea class="input" name="body" placeholder="Write your reflection..." required></textarea><label><b>Visibility</b></label><select class="input" name="visibility"><option value="private">Keep Private</option><option value="community">Share a Copy to Community</option></select><button class="btn">Save Entry</button></form><div id="entries">{entries_html}</div>'''
+    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>Private Command Center</h1><p class="muted">Private by default. Sharing creates a separate Community copy while the original remains private.</p></div><div class="grid"><a class="moreitem" href="#new">Reflections</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('business_plan')}">Business</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="#entries">Saved Items</a></div><form class="card" id="new" method="post"><input class="input" name="title" placeholder="Entry title" required><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Saved Items</option></select><textarea class="input" name="body" placeholder="Write your reflection..." required></textarea><label><b>Visibility</b></label><select class="input" name="visibility"><option value="private">Keep Private</option><option value="community">Share a Copy to Community</option></select><button class="btn">Save Entry</button></form><div id="entries">{entries_html}</div>'''
     return page('My Journal',content,'more')
 
 @app.route('/inbox')
 @login_required
 def inbox():
     u=current_user(); conn=db(); msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
-    html=''.join(f'''<article class="card"><span class="badge">{m['origin'].upper()}</span><h3>{m['subject']}</h3><p class="muted small">From {m['sender_name']} to {m['recipient_name']} • {m['created_at']}</p><p>{m['body']}</p>{f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin=m["origin"])}">Reply</a>' if m['recipient_id']==u['id'] else ''}</article>''' for m in msgs) or '<div class="empty"><h3>No private conversations yet</h3><p class="muted">Community, Conscious Coordination, Business and Retreat conversations will appear here.</p></div>'
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Notifications are alerts. Inbox is conversation.</p></div>{html}''','more')
+    html=[]
+    for m in msgs:
+        other_id=m['sender_id'] if m['recipient_id']==u['id'] else m['recipient_id']
+        reply=f'''<a class="out" href="{url_for('message_member',recipient_id=other_id,origin=m['origin'],category=m['category'],subject=m['subject'],post_id=m['community_post_id'] or '')}">Reply</a>'''
+        html.append(f'''<article class="card"><div class="chips"><span class="badge">{m['category']}</span><span class="chip">{m['origin']}</span></div><h3>{m['subject']}</h3><p class="muted small">From {m['sender_name']} to {m['recipient_name']} - {m['created_at']}</p><p>{m['body']}</p>{reply}</article>''')
+    rendered=''.join(html) or '<div class="empty"><h3>No private conversations yet</h3><p class="muted">Private member messages are filed here by Reflection, Business, Retreat, Conscious Coordination or Saved Items.</p></div>'
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Each private message keeps its Journal category so conversations stay organized.</p></div>{rendered}''','more')
 
 @app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
 def message_member(recipient_id):
     u=current_user(); conn=db(); recipient=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not recipient: abort(404)
-    origin=request.args.get('origin','Community')
+    if recipient_id==u['id']:
+        flash('You cannot send a private message to yourself.','info'); return redirect(url_for('profile'))
+    categories=['Reflection','Business','Retreat','Conscious Coordination','Saved Items']
+    origin=request.args.get('origin','Profile')
+    post_id=request.args.get('post_id',type=int)
+    post=None
+    if post_id:
+        conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=? AND user_id=?',(post_id,recipient_id)).fetchone(); conn.close()
+        if post: origin='Community'
+    locked_category=post['category'] if post else request.args.get('category','Reflection')
+    if locked_category not in categories: locked_category='Reflection'
     if request.method=='POST':
-        body=request.form.get('body','').strip(); origin=request.form.get('origin','Community'); subject=request.form.get('subject','').strip() or f'{origin} Message from {u["name"]}'
+        body=request.form.get('body','').strip(); posted_post_id=request.form.get('community_post_id',type=int)
+        if posted_post_id:
+            conn=db(); source=conn.execute('SELECT * FROM community_posts WHERE id=? AND user_id=?',(posted_post_id,recipient_id)).fetchone(); conn.close()
+            if not source: abort(400)
+            subject=source['title']; category=source['category']; origin='Community'; post_id=source['id']
+        else:
+            subject='Journal Private Entry'; category=request.form.get('category','Reflection')
+            if category not in categories: category='Reflection'
+            post_id=None; origin='Profile'
         if body:
-            conn=db(); conn.execute('INSERT INTO messages(sender_id,recipient_id,origin,subject,body,created_at) VALUES(?,?,?,?,?,?)',(u['id'],recipient_id,origin,subject,body,now())); conn.commit(); conn.close(); notify(recipient_id,'New Private Message',subject); flash('Private message sent to Journal Inbox.','success'); return redirect(url_for('inbox'))
-    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Message {recipient['name']}</h1><p class="muted">This conversation is private and saved in Journal Inbox.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><label><b>Subject</b></label><input class="input" name="subject" value="{origin} Message from {u['name']}"><textarea class="input" name="body" placeholder="Write your message..." required></textarea><button class="btn">Send Private Message</button></form>''','more')
+            conn=db(); conn.execute('INSERT INTO messages(sender_id,recipient_id,origin,subject,category,community_post_id,body,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],recipient_id,origin,subject,category,post_id,body,now())); conn.commit(); conn.close(); notify(recipient_id,'New Private Message',f'{subject} - {category}'); flash("Private message sent to the member's Journal Inbox.",'success'); return redirect(url_for('inbox'))
+    if post:
+        details=f'''<div class="fact"><small>Title</small><b>{post['title']}</b></div><div class="fact"><small>Category</small><b>{post['category']}</b></div><input type="hidden" name="community_post_id" value="{post['id']}">'''
+        helper="This message came from a Community post, so its title and category are carried into the recipient's Journal Inbox automatically."
+    else:
+        opts=''.join(f'''<option {'selected' if c==locked_category else ''}>{c}</option>''' for c in categories)
+        details=f'''<div class="fact"><small>Title</small><b>Journal Private Entry</b></div><label><b>Journal Category</b></label><select class="input" name="category">{opts}</select>'''
+        helper="Choose the Journal category so the recipient can find this private message in the right part of their Journal Inbox."
+    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Message {recipient['name']}</h1><p class="muted">{helper}</p></div><form class="card" method="post">{details}<label><b>Private Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Private Message</button></form>''','more')
+
+@app.route('/member/<int:user_id>')
+@login_required
+def member_profile(user_id):
+    me=current_user(); conn=db(); member=conn.execute('SELECT id,name,city,headline,about,conscious_paid FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
+    if not member: abort(404)
+    if member['id']!=me['id']:
+        actions=f'''<a class="btn" href="{url_for('message_member',recipient_id=member['id'],origin='Profile')}">Message {member['name']}</a>'''
+    else:
+        actions=f'''<a class="btn" href="{url_for('profile')}">Edit My Profile</a>'''
+    return page(member['name'],f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if member['conscious_paid'] else 'MEMBER'}</span><h1>{member['name']}</h1><p class="muted">{member['city'] or 'City not added'} - {member['headline'] or 'No headline yet'}</p><p>{member['about'] or 'No About information added yet.'}</p><div class="actions">{actions}</div></div><div class="portrait">{initials(member['name'])}</div></div></article>''','community')
 
 @app.route('/notifications')
 @login_required
@@ -353,7 +448,7 @@ def connection_edit():
 def connection_profile(user_id):
     me=current_user(); conn=db(); row=conn.execute('SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=? AND cp.opted_in=1',(user_id,)).fetchone(); conn.close()
     if not row: abort(404)
-    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div><div class="portrait">{initials(row['name'])}</div></div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Not answered'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
+    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Profile',category='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div><div class="portrait">{initials(row['name'])}</div></div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Not answered'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
     return page('Coordination Profile',content,'more')
 
 @app.route('/compatibility/<int:user_id>')
