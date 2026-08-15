@@ -196,13 +196,32 @@ def initials(name):
 # -----------------------------------------------------------------------------
 # Public + account routes
 # -----------------------------------------------------------------------------
+def galaxy_eve_card():
+    return f'''<article class="card paid appcard"><div class="media"><div style="text-align:center"><div class="avatar" style="width:90px;height:90px;margin:auto">GE</div><p><b>Galaxy Eve</b></p></div></div><div class="body"><span class="badge gold">★ Featured Hosted App</span><h2>Galaxy Eve</h2><p><b>Conscious Coordinator • Content Creator</b></p><p class="muted">Content • Collaborations • Creator Experiences</p><a class="btn" href="{url_for('galaxy_eve_app')}">Open App</a></div></article>'''
+
+
+def regular_business_cards(rows):
+    if not rows:
+        return '<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Published Hosted Business Apps appear automatically after their owners publish them.</p></div>'
+    return ''.join(f'''<article class="card appcard"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in rows)
+
+
 @app.route('/')
 def home():
-    conn=db(); businesses=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 ORDER BY CASE WHEN lower(b.name)=lower(?) THEN 0 ELSE 1 END,b.name', ('Galaxy Eve',)).fetchall(); conn.close()
-    cards=''.join(f'''<article class="card appcard {'paid' if b['name'].lower()=='galaxy eve' else ''}"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge {'gold' if b['name'].lower()=='galaxy eve' else ''}">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in businesses)
-    if not cards: cards='<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Published Hosted Business Apps are shown automatically. No fake businesses are inserted.</p></div>'
+    q=request.args.get('q','').strip()
+    conn=db()
+    businesses=conn.execute("SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 AND lower(b.name)<>lower('Galaxy Eve') ORDER BY b.name").fetchall()
+    conn.close()
+    if q:
+        needle=q.lower()
+        businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
+    galaxy_match=(not q) or (q.lower() in 'galaxy eve conscious coordinator content creator content collaborations creator experiences'.lower())
+    galaxy=galaxy_eve_card() if galaxy_match else ''
+    other=regular_business_cards(businesses)
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, retreats, conscious connection, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
-    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{cards}</div>
+    <form method="get" class="card"><input class="input" name="q" value="{q}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
+    <div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div>
+    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
     <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">MOON TODAY</span><h2>Current-sky reflection</h2><p class="muted"><b>Reflection, not prediction.</b> Connect an astronomy/ephemeris provider when you are ready to publish live planetary positions.</p><div class="chips"><span class="chip">Mercury</span><span class="chip">Venus</span><span class="chip">Mars</span><span class="chip">Jupiter</span><span class="chip">Saturn</span></div></div></article>
     <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Own Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Professional questionnaire + editable plan content + Marketing Strategy + 90-Day Launch Plan.</p><a class="btn" href="{url_for('startup')}">Start My Business Plan</a></article></div>'''
     return page('Home',content,'home')
@@ -381,10 +400,20 @@ def video(user_id):
 # -----------------------------------------------------------------------------
 @app.route('/business')
 def business_network():
-    conn=db(); rows=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 ORDER BY CASE WHEN lower(b.name)=lower(?) THEN 0 ELSE 1 END,b.name',('Galaxy Eve',)).fetchall(); conn.close()
-    cards=''.join(f'''<article class="card appcard {'paid' if b['name'].lower()=='galaxy eve' else ''}"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge {'gold' if b['name'].lower()=='galaxy eve' else ''}">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title']}</b></p><p class="muted">{b['category']} • {b['location']}<br>{b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in rows) or '<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Free Hosted Business Apps become visible after the owner publishes them.</p></div>'
+    q=request.args.get('q','').strip()
+    conn=db(); rows=conn.execute("SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 AND lower(b.name)<>lower('Galaxy Eve') ORDER BY b.name").fetchall(); conn.close()
+    if q:
+        needle=q.lower()
+        rows=[b for b in rows if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
+    galaxy_match=(not q) or (q.lower() in 'galaxy eve conscious coordinator content creator content collaborations creator experiences'.lower())
+    galaxy=galaxy_eve_card() if galaxy_match else ''
+    cards=regular_business_cards(rows)
     create=url_for('business_builder',step=1) if session.get('user_id') else url_for('join')
-    return page('Business Network',f'''<div class="hero"><span class="badge">BUSINESS NETWORK</span><h1>Discover Wellness Within the Community</h1><p class="muted">Businesses join free and receive one Hosted Business App structure after completing the builder.</p><div class="actions"><a class="btn" href="{create}">Create My FREE Hosted App</a><a class="out" href="{url_for('startup')}">Professional Business Development • $79.99</a>{f'<a class="out" href="{url_for("business_dashboard")}">My Business Dashboard</a>' if session.get('user_id') else ''}</div></div><div class="grid">{cards}</div>''','business')
+    return page('Business Network',f'''<div class="hero"><span class="badge">BUSINESS NETWORK</span><h1>Discover Wellness Within the Community</h1><p class="muted">Businesses join free and receive one Hosted Business App structure after completing the builder.</p><div class="actions"><a class="btn" href="{create}">Create My FREE Hosted App</a><a class="out" href="{url_for('startup')}">Professional Business Development • $79.99</a>{f'<a class="out" href="{url_for("business_dashboard")}">My Business Dashboard</a>' if session.get('user_id') else ''}</div></div><form method="get" class="card"><input class="input" name="q" value="{q}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form><div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div><div class="topspace"><h2>Community Businesses</h2></div><div class="grid">{cards}</div>''','business')
+
+@app.route('/business/galaxy-eve')
+def galaxy_eve_app():
+    return page('Galaxy Eve',f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>Galaxy Eve</h1><h3>Conscious Coordinator • Content Creator</h3><p class="muted">Content • Collaborations • Creator Experiences</p></div><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Watch</span><span class="chip">Events</span><span class="chip">Retreats</span><span class="chip">Media Kit</span><span class="chip">Collaborations</span><span class="chip">Social Links</span><span class="chip">Contact</span></div><div class="grid"><article class="card"><h2>Creator Media</h2><div class="media"><div style="text-align:center"><div class="avatar" style="width:100px;height:100px;margin:auto">GE</div><p class="muted">Authorized Galaxy Eve photos and videos appear here when added.</p></div></div></article><article class="card"><h2>Creator Experiences</h2><p class="muted">Content, collaborations, events, Retreat invitations and creator experiences.</p></article></div>''','business')
 
 @app.route('/business/builder/<int:step>', methods=['GET','POST'])
 @login_required
