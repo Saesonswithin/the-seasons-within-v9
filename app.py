@@ -2,6 +2,8 @@ import os
 import json
 import sqlite3
 import smtplib
+import subprocess
+import shutil
 from email.message import EmailMessage
 from datetime import datetime
 from functools import wraps
@@ -16,7 +18,7 @@ DB_PATH = os.environ.get('DATABASE_PATH', str(Path(__file__).with_name('seasons_
 PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR', Path(__file__).with_name('data')))
 UPLOAD_DIR = PERSISTENT_DATA_DIR / 'uploads'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 RETREAT_ADMIN_EMAIL = os.environ.get('RETREAT_ADMIN_EMAIL', 'e.reed81@gmail.com')
 SMTP_HOST = os.environ.get('SMTP_HOST', '').strip()
 SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
@@ -114,6 +116,33 @@ def init_db():
         updated_at TEXT NOT NULL,
         FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS business_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        media_kind TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_calendar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        event_type TEXT NOT NULL DEFAULT 'Event',
+        event_date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        location TEXT DEFAULT '',
+        capacity TEXT DEFAULT '',
+        booking_status TEXT DEFAULT 'Open',
+        notes TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS connection_profiles (
         user_id INTEGER PRIMARY KEY,
         coordination_types TEXT DEFAULT '',
@@ -152,6 +181,12 @@ def init_db():
         ("notifications","link","ALTER TABLE notifications ADD COLUMN link TEXT DEFAULT ''"),
         ("journal_entries","source_post_id","ALTER TABLE journal_entries ADD COLUMN source_post_id INTEGER"),
         ("businesses","retreat_participating","ALTER TABLE businesses ADD COLUMN retreat_participating INTEGER NOT NULL DEFAULT 0"),
+        ("businesses","logo_name","ALTER TABLE businesses ADD COLUMN logo_name TEXT DEFAULT ''"),
+        ("businesses","cover_name","ALTER TABLE businesses ADD COLUMN cover_name TEXT DEFAULT ''"),
+        ("businesses","cover_type","ALTER TABLE businesses ADD COLUMN cover_type TEXT DEFAULT ''"),
+        ("businesses","gallery_enabled","ALTER TABLE businesses ADD COLUMN gallery_enabled INTEGER NOT NULL DEFAULT 0"),
+        ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
+        ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
@@ -300,6 +335,39 @@ def community_media(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+
+BUSINESS_IMAGE_EXT={'.jpg','.jpeg','.png','.gif','.webp'}
+BUSINESS_VIDEO_EXT={'.mp4','.mov','.webm','.m4v'}
+
+def _store_business_upload(file_storage, business_id, kind, allowed_exts):
+    if not file_storage or not getattr(file_storage,'filename',''):
+        return ''
+    name=secure_filename(file_storage.filename)
+    ext=Path(name).suffix.lower()
+    if ext not in allowed_exts:
+        return ''
+    stamp=datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    stored=f'b{business_id}_{kind}_{stamp}{ext}'
+    file_storage.save(UPLOAD_DIR/stored)
+    return stored
+
+def _video_duration_seconds(path):
+    ffprobe=shutil.which('ffprobe')
+    if not ffprobe:
+        return None
+    try:
+        result=subprocess.run([ffprobe,'-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],capture_output=True,text=True,timeout=20)
+        return float(result.stdout.strip()) if result.returncode==0 and result.stdout.strip() else None
+    except Exception:
+        return None
+
+def business_media_src(name):
+    return url_for('business_media_file',filename=name) if name else ''
+
+@app.route('/business-media/<path:filename>')
+def business_media_file(filename):
+    return send_from_directory(UPLOAD_DIR, filename)
+
 def initials(name):
     return ''.join(p[0] for p in (name or '?').split()[:2]).upper()
 
@@ -313,7 +381,12 @@ def galaxy_eve_card():
 def regular_business_cards(rows):
     if not rows:
         return '<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Published Hosted Business Apps appear automatically after their owners publish them.</p></div>'
-    return ''.join(f'''<article class="card appcard"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(b['name'])}</div></div><div class="body"><span class="badge">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''' for b in rows)
+    cards=[]
+    for b in rows:
+        logo=business_media_src(b['logo_name']) if 'logo_name' in b.keys() and b['logo_name'] else ''
+        media=f'<img src="{logo}" alt="{b["name"]} logo" style="width:100%;height:100%;object-fit:cover">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
+        cards.append(f'''<article class="card appcard"><div class="media">{media}</div><div class="body"><span class="badge">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''')
+    return ''.join(cards)
 
 
 @app.route('/')
@@ -427,7 +500,7 @@ def community_post_delete(post_id):
 @login_required
 def profile():
     u=current_user(); public_html=public_journal_cards(u['id'],u['id'])
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'}</span><h1>{u['name']}</h1><p class="muted">{u['city'] or 'Add your city'} • {u['headline'] or 'Add a headline'}</p><p>{u['about'] or ''}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('message_member',recipient_id=u['id'],origin='Profile')}">Message Member</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article><div class="grid"><a class="moreitem" href="{url_for('community')}">Community</a><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('notifications')}">Notifications</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div><article class="card"><h2>Member Astrology</h2><p class="muted">Sun • Moon • Mercury • Venus • Mars • Jupiter • Saturn. Rising/houses only when accurate birth data supports them.</p></article><div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'}</span><h1>{u['name']}</h1><p class="muted">{u['city'] or 'Add your city'} • {u['headline'] or 'Add a headline'}</p><p>{u['about'] or ''}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('message_member',recipient_id=u['id'],origin='Profile')}">Message Member</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article><div class="grid"><a class="moreitem" href="{url_for('community')}">Community</a><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div><article class="card"><h2>Member Astrology</h2><p class="muted">Sun • Moon • Mercury • Venus • Mars • Jupiter • Saturn. Rising/houses only when accurate birth data supports them.</p></article><div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
     return page('My Profile',content,'profile')
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -501,58 +574,64 @@ def journal_entry_delete(entry_id):
 @login_required
 def inbox():
     u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int)
-    conn=db(); msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
+    conn=db()
+    unread=conn.execute('SELECT COUNT(*) n FROM messages WHERE recipient_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']
+    msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
     if category!='All' and category in JOURNAL_CATEGORIES: msgs=[m for m in msgs if m['category']==category]
     cards=[]
     for m in msgs:
-        reply=f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin="Reply",category=m["category"],subject=m["subject"])}">Reply</a>' if m['recipient_id']==u['id'] else ''
+        reply=f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin="Reply",subject=m["subject"],post_id=m["source_post_id"] if m["source_post_id"] else None)}">Reply</a>' if m['recipient_id']==u['id'] else ''
         dates=f'<p><b>Preferred Dates:</b> {m["preferred_dates"]}</p>' if 'preferred_dates' in m.keys() and m['preferred_dates'] else ''
         season=f'<p><b>Season:</b> {m["season"]}</p>' if 'season' in m.keys() and m['season'] else ''
-        anchor=f' id="message-{m["id"]}"'
-        highlight=' style="outline:3px solid #ead7ad"' if focus==m['id'] else ''
-        cards.append(f'<article class="card"{anchor}{highlight}><span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p>{reply}</article>')
-    html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Community, Conscious Coordination, Business and Retreat conversations will appear here.</p></div>'
+        anchor=f' id="message-{m["id"]}"'; highlight=' style="outline:3px solid #ead7ad"' if focus==m['id'] else ''
+        unread_badge='<span class="badge gold">NEW</span>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
+        open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
+        cards.append(f'<article class="card"{anchor}{highlight}>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p><div class="actions">{open_action}{reply}</div></article>')
+    html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Notifications are alerts. Inbox is conversation. Messages stay organized by Journal filing section.</p></div>{filters}{html}''','more')
+    status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{status}{filters}{html}''','more')
+
+@app.route('/inbox/read/<int:message_id>')
+@login_required
+def inbox_read(message_id):
+    u=current_user(); conn=db(); m=conn.execute('SELECT * FROM messages WHERE id=? AND (sender_id=? OR recipient_id=?)',(message_id,u['id'],u['id'])).fetchone()
+    if not m: conn.close(); abort(404)
+    if m['recipient_id']==u['id'] and not m['read_at']:
+        conn.execute('UPDATE messages SET read_at=? WHERE id=?',(now(),message_id)); conn.commit()
+    conn.close()
+    return redirect(url_for('inbox',category=m['category'],message_id=message_id)+f'#message-{message_id}')
 
 @app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
 def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not r: abort(404)
-    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); category=request.args.get('category','Journal Entry'); subject=request.args.get('subject','')
-    post=None
+    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); subject=request.args.get('subject','')
+    post=None; category='Journal Entry'
     if post_id:
         conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
         if post:
             category=post['category']; subject=post['title']
-    locked_category=bool(post)
     show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
         body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int)
-        category=journal_category_for_public(request.form.get('category',category or 'Journal Entry'))
+        category=post['category'] if post else 'Journal Entry'
         subject=request.form.get('subject','').strip()
         preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
-        preferred_dates=''
-        if preferred_start and preferred_end: preferred_dates=f'{preferred_start} to {preferred_end}'
-        elif preferred_start: preferred_dates=preferred_start
-        elif preferred_end: preferred_dates=preferred_end
+        preferred_dates=f'{preferred_start} to {preferred_end}' if preferred_start and preferred_end else (preferred_start or preferred_end)
         if body and subject:
-            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
-            link=url_for('inbox',message_id=message_id)+f'#message-{message_id}'
+            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
+            link=url_for('inbox_read',message_id=message_id)
             notify(recipient_id,'New Private Message',f'{u["name"]} sent you “{subject}”. Open your Journal Inbox to read it.',link)
-            flash(f'Message sent privately to {r["name"]}\'s Journal Inbox. A notification was sent too.','success')
+            flash(f'Message sent privately to {r["name"]}\'s Journal Inbox.','success')
             return redirect(url_for('inbox',message_id=message_id)+f'#message-{message_id}')
         flash('Please give your message a title and write your message.','info')
-    if locked_category:
-        category_field=f'<input type="hidden" name="category" value="{category}"><p><b>Filed under:</b> {category}</p>'
-    else:
-        opts=''.join(f'<option {"selected" if category==c else ""}>{c}</option>' for c in JOURNAL_CATEGORIES)
-        category_field=f'<label><b>File this message under</b></label><select class="input" name="category">{opts}</select>'
     schedule=''
     if show_schedule:
         schedule='''<div class="grid"><div><label><b>Choose Your Preferred Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>Choose Your Preferred End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option value="">Choose a season</option><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select>'''
-    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Message</h1><p class="muted">This message will be delivered privately to {r['name']}'s Journal Inbox. They will also receive a Notification telling them where to read it.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{subject or ''}" placeholder="Enter your message title" required>{category_field}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Message</button></form>''','more')
+    locked_note=f'<p><b>Community post:</b> {post["title"]} • {post["category"]}</p>' if post else '<p class="muted">This private message will be filed automatically under <b>Journal Entry</b> in the recipient\'s Journal Inbox.</p>'
+    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Message</h1><p class="muted">This message will be delivered privately to {r['name']}'s Journal Inbox. They will receive a new-message alert.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{subject or ''}" placeholder="Enter your message title" required>{locked_note}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Message</button></form>''','more')
 
 @app.route('/notifications')
 @login_required
@@ -658,50 +737,140 @@ def galaxy_eve_app():
 @login_required
 def business_builder(step):
     if step<1 or step>9: abort(404)
-    draft=session.get('business_draft',{})
-    fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features'],5:[],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']}
+    u=current_user(); draft=session.get('business_draft',{})
+    conn=db(); existing_business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    if not draft and existing_business:
+        draft={k:(existing_business[k] if k in existing_business.keys() else '') for k in ['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']}
+        draft['retreat_participating']='1' if existing_business['retreat_participating'] else ''
+        session['business_draft']=draft
+    fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features'],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']}
     if request.method=='POST':
         for k in fields.get(step,[]): draft[k]=request.form.get(k,'').strip()
+        if step==4: draft['retreat_participating']='1' if request.form.get('retreat_participating') else ''
         session['business_draft']=draft; session.modified=True
+        if step==5:
+            if not existing_business:
+                name=draft.get('name','').strip()
+                if not name: flash('Business Name is required before media can be uploaded.','error'); return redirect(url_for('business_builder',step=1))
+                conn=db(); cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,active,created_at,updated_at,retreat_participating) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?,?)''',(u['id'],name,draft.get('owner_title',''),draft.get('category',''),draft.get('location',''),draft.get('tagline',''),draft.get('description',''),draft.get('story',''),draft.get('offers',''),draft.get('features',''),now(),now(),1 if draft.get('retreat_participating') else 0)); bid=cur.lastrowid; conn.commit(); existing_business=conn.execute('SELECT * FROM businesses WHERE id=?',(bid,)).fetchone(); conn.close()
+            bid=existing_business['id']
+            logo=_store_business_upload(request.files.get('logo'),bid,'logo',BUSINESS_IMAGE_EXT)
+            cover_file=request.files.get('cover'); cover=''; cover_type=''
+            if cover_file and cover_file.filename:
+                ext=Path(secure_filename(cover_file.filename)).suffix.lower(); allowed=BUSINESS_IMAGE_EXT|BUSINESS_VIDEO_EXT
+                cover=_store_business_upload(cover_file,bid,'cover',allowed); cover_type='video' if ext in BUSINESS_VIDEO_EXT else 'image'
+            gallery_files=[f for f in request.files.getlist('gallery') if f and f.filename]
+            video_files=[f for f in request.files.getlist('business_videos') if f and f.filename][:3]
+            conn=db()
+            if logo: conn.execute('UPDATE businesses SET logo_name=?,updated_at=? WHERE id=?',(logo,now(),bid))
+            if cover: conn.execute('UPDATE businesses SET cover_name=?,cover_type=?,updated_at=? WHERE id=?',(cover,cover_type,now(),bid))
+            conn.execute('UPDATE businesses SET gallery_enabled=?,retreat_participating=?,updated_at=? WHERE id=?',(1 if request.form.get('gallery_enabled') else 0,1 if draft.get('retreat_participating') else 0,now(),bid))
+            for f in gallery_files:
+                stored=_store_business_upload(f,bid,'gallery',BUSINESS_IMAGE_EXT)
+                if stored: conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,created_at) VALUES(?,?,?,?)',(bid,'gallery',stored,now()))
+            existing_videos=conn.execute("SELECT COUNT(*) n FROM business_media WHERE business_id=? AND media_kind='video'",(bid,)).fetchone()['n']
+            allowed_slots=max(0,3-existing_videos)
+            for idx,f in enumerate(video_files[:allowed_slots],start=1):
+                stored=_store_business_upload(f,bid,'video',BUSINESS_VIDEO_EXT)
+                if not stored: continue
+                dur=_video_duration_seconds(UPLOAD_DIR/stored)
+                if dur is not None and dur>180:
+                    (UPLOAD_DIR/stored).unlink(missing_ok=True); flash(f'Business video {idx} was longer than 3 minutes and was not saved.','error'); continue
+                title=request.form.get(f'video_title_{idx}','').strip(); desc=request.form.get(f'video_description_{idx}','').strip()
+                conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,title,description,created_at) VALUES(?,?,?,?,?,?)',(bid,'video',stored,title,desc,now()))
+            conn.commit(); conn.close()
         if step==9:
             name=draft.get('name','').strip()
             if not name: flash('Business Name is required. Return to Step 1.','error'); return redirect(url_for('business_builder',step=1))
-            u=current_user(); conn=db(); existing=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); vals=[draft.get(k,'') for k in ['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']]
+            conn=db(); existing=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); vals=[draft.get(k,'') for k in ['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links']]
+            retreat=1 if draft.get('retreat_participating') else 0
             if existing:
-                conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,active=1,updated_at=? WHERE id=?''',(*vals,now(),existing['id'])); bid=existing['id']
+                conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,retreat_participating=?,active=1,updated_at=? WHERE id=?''',(*vals,retreat,now(),existing['id'])); bid=existing['id']
             else:
-                cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,now(),now())); bid=cur.lastrowid
+                cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,retreat_participating,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,retreat,now(),now())); bid=cur.lastrowid
             conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your FREE Hosted Business App is published to Home and the Business Network.','success'); return redirect(url_for('business_app',business_id=bid))
         return redirect(url_for('business_builder',step=min(9,step+1)))
     steps=''.join(f'<span class="step {"on" if i==step else ""}">{i}</span>' for i in range(1,10))
     if step==1: body=f'''<label><b>Business Name</b></label><input class="input" name="name" value="{draft.get('name','')}" required><label><b>Owner/Creator Title</b></label><input class="input" name="owner_title" value="{draft.get('owner_title','')}"><label><b>Business Type</b></label><input class="input" name="category" value="{draft.get('category','')}"><label><b>Location / Service Area</b></label><input class="input" name="location" value="{draft.get('location','')}">'''
     elif step==2: body=f'''<label><b>Description</b></label><textarea class="input" name="description">{draft.get('description','')}</textarea><label><b>Founder / Business Story</b></label><textarea class="input" name="story">{draft.get('story','')}</textarea><label><b>Tagline</b></label><input class="input" name="tagline" value="{draft.get('tagline','')}">'''
     elif step==3: body=f'''<label><b>What Do You Offer?</b></label><textarea class="input" name="offers" placeholder="Services, products, classes, courses, events, Retreats, content, memberships, consultations">{draft.get('offers','')}</textarea>'''
-    elif step==4: body=f'''<label><b>App Features</b></label><textarea class="input" name="features" placeholder="Booking, Classes, Courses, Shop, Videos, Events, Retreats, Media Kit, Affiliate Links">{draft.get('features','')}</textarea>'''
-    elif step==5: body='''<h2>Branding</h2><p class="muted">Logo and cover photo/video upload storage requires an object-storage provider in production. Until connected, the Seasons Within brand mark is used as the safe fallback.</p>'''
-    elif step==6: body=''.join(f'<label><b>{label}</b></label><input class="input" name="{k}" value="{draft.get(k,"")}">' for k,label in [('website','Website'),('instagram','Instagram'),('tiktok','TikTok'),('youtube','YouTube'),('facebook','Facebook'),('booking_url','Booking'),('store_url','Store'),('podcast_url','Podcast'),('affiliate_links','Affiliate / Resource Links')])
-    elif step==7: body=f'''<h2>Preview</h2><article class="card appcard"><div class="media"><div class="avatar" style="width:90px;height:90px">{initials(draft.get('name','Business'))}</div></div><div class="body"><span class="badge">Hosted App</span><h2>{draft.get('name','Your Business')}</h2><p><b>{draft.get('owner_title','')}</b></p><p class="muted">{draft.get('category','')} • {draft.get('location','')}<br>{draft.get('tagline','')}</p></div></article>'''
+    elif step==4: body=f'''<label><b>App Features</b></label><textarea class="input" name="features" placeholder="Booking, Classes, Courses, Shop, Videos, Events, Retreats, Media Kit, Photo Gallery, Affiliate Links">{draft.get('features','')}</textarea><div class="card"><label><input type="checkbox" name="retreat_participating" {'checked' if draft.get('retreat_participating') else ''}> <b>Yes, I want this Hosted App to participate in Retreat opportunities.</b></label><p class="muted small">Published participating businesses can appear on Retreats and in Desired Businesses / Providers.</p></div>'''
+    elif step==5:
+        bid=existing_business['id'] if existing_business else 0
+        conn=db(); media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY id',(bid,)).fetchall() if bid else []; conn.close()
+        gallery_count=sum(1 for m in media if m['media_kind']=='gallery'); video_count=sum(1 for m in media if m['media_kind']=='video')
+        body=f'''<h2>Branding & Media</h2><p class="muted">Your logo is the Hosted App profile image. Your cover photo/video is the hero of the business page.</p><label><b>Business Logo</b></label><input class="input" type="file" name="logo" accept="image/*"><label><b>Cover Photo or Cover Video</b></label><input class="input" type="file" name="cover" accept="image/*,video/*"><label><input type="checkbox" name="gallery_enabled" {'checked' if existing_business and existing_business['gallery_enabled'] else ''}> <b>Show a Business Photo Gallery</b></label><input class="input" type="file" name="gallery" accept="image/*" multiple><p class="muted small">Current gallery: {gallery_count} photo(s). Add as many photos as your storage allowance supports.</p><h3>Business Videos — up to 3 videos, 3 minutes each</h3><p class="muted small">Current videos: {video_count}/3. Video duration is checked when ffprobe is available on the server and also checked in the browser before upload.</p><input class="input business-video" type="file" name="business_videos" accept="video/*" multiple><div class="grid"><div><input class="input" name="video_title_1" placeholder="Video 1 title"><textarea class="input" name="video_description_1" placeholder="Video 1 short description"></textarea></div><div><input class="input" name="video_title_2" placeholder="Video 2 title"><textarea class="input" name="video_description_2" placeholder="Video 2 short description"></textarea></div><div><input class="input" name="video_title_3" placeholder="Video 3 title"><textarea class="input" name="video_description_3" placeholder="Video 3 short description"></textarea></div></div><script>document.querySelectorAll('.business-video').forEach(function(inp){{inp.addEventListener('change',function(){{if(this.files.length>3){{alert('Choose no more than 3 videos.');this.value='';return;}}Array.from(this.files).forEach(function(f){{var v=document.createElement('video');v.preload='metadata';v.onloadedmetadata=function(){{URL.revokeObjectURL(v.src);if(v.duration>180){{alert(f.name+' is longer than 3 minutes. Please choose a shorter video.');inp.value='';}}}};v.src=URL.createObjectURL(f);}});}});}});</script>'''
+    elif step==6: body=''.join(f'<label><b>{label}</b></label><input class="input" type="url" name="{k}" value="{draft.get(k,"")}" placeholder="https://...">' for k,label in [('website','Website'),('instagram','Instagram'),('tiktok','TikTok'),('youtube','YouTube'),('facebook','Facebook'),('booking_url','Booking'),('store_url','Store'),('podcast_url','Podcast'),('affiliate_links','Affiliate / Resource Links')])
+    elif step==7:
+        logo=business_media_src(existing_business['logo_name']) if existing_business and existing_business['logo_name'] else ''
+        cover=business_media_src(existing_business['cover_name']) if existing_business and existing_business['cover_name'] else ''
+        logo_html=f'<img src="{logo}" alt="Business logo" style="width:90px;height:90px;border-radius:50%;object-fit:cover">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(draft.get("name","Business"))}</div>'
+        cover_html=f'<img src="{cover}" alt="Cover" style="width:100%;height:100%;object-fit:cover">' if cover and existing_business['cover_type']!='video' else (f'<video controls muted style="width:100%;height:100%;object-fit:cover"><source src="{cover}"></video>' if cover else logo_html)
+        links=''.join(f'<a class="chip" href="{draft.get(k)}" target="_blank" rel="noopener">{label}</a>' for k,label in [('website','Website'),('instagram','Instagram'),('tiktok','TikTok'),('youtube','YouTube'),('facebook','Facebook'),('booking_url','Booking'),('store_url','Store'),('podcast_url','Podcast')] if draft.get(k))
+        body=f'''<h2>Preview</h2><article class="card appcard"><div class="media">{cover_html}</div><div class="body"><div>{logo_html}</div><span class="badge">Hosted App</span><h2>{draft.get('name','Your Business')}</h2><p><b>{draft.get('owner_title','')}</b></p><p class="muted">{draft.get('category','')} • {draft.get('location','')}<br>{draft.get('tagline','')}</p><div class="chips">{links}</div></div></article>'''
     elif step==8: body='<h2>Edit</h2><p class="muted">Use the Back buttons to change any builder answer before publishing.</p>'
-    else: body='<h2>Publish My App</h2><p class="muted">Publishing activates this Hosted App and places it on Home and the Business Network. Hosting is FREE.</p>'
+    else: body='<h2>Publish My App</h2><p class="muted">Publishing activates this Hosted App and places it on Home and the Business Network. Retreat participation is included when selected. Hosting is FREE.</p>'
     back=f'<a class="out" href="{url_for("business_builder",step=step-1)}">Back</a>' if step>1 else ''
     submit='Publish My App' if step==9 else 'Continue'
-    return page('Hosted App Builder',f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER</span><h1>Step {step} of 9</h1><div class="steps">{steps}</div></div><form class="card" method="post">{body}<div class="actions">{back}<button class="btn">{submit}</button></div></form>''','business')
+    enctype=' enctype="multipart/form-data"' if step==5 else ''
+    return page('Hosted App Builder',f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER</span><h1>Step {step} of 9</h1><div class="steps">{steps}</div></div><form class="card" method="post"{enctype}>{body}<div class="actions">{back}<button class="btn">{submit}</button></div></form>''','business')
 
 @app.route('/business/app/<int:business_id>')
 def business_app(business_id):
-    conn=db(); b=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.id=? AND b.active=1',(business_id,)).fetchone(); conn.close()
+    conn=db(); b=conn.execute('SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.id=? AND b.active=1',(business_id,)).fetchone(); media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY sort_order,id',(business_id,)).fetchall(); events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND event_date>=date('now') ORDER BY event_date,start_time LIMIT 8",(business_id,)).fetchall(); conn.close()
     if not b: abort(404)
-    links=''.join(f'<a class="chip" href="{url}" target="_blank" rel="noopener">{label}</a>' for label,url in [('Website',b['website']),('Instagram',b['instagram']),('TikTok',b['tiktok']),('YouTube',b['youtube']),('Facebook',b['facebook'])] if url)
+    links=''.join(f'<a class="chip" href="{url}" target="_blank" rel="noopener">{label}</a>' for label,url in [('Website',b['website']),('Instagram',b['instagram']),('TikTok',b['tiktok']),('YouTube',b['youtube']),('Facebook',b['facebook']),('Booking',b['booking_url']),('Store',b['store_url']),('Podcast',b['podcast_url'])] if url)
     featurechips=''.join(f'<span class="chip">{x.strip()}</span>' for x in (b['features'] or '').split(',') if x.strip())
+    logo=business_media_src(b['logo_name']) if b['logo_name'] else ''
+    cover=business_media_src(b['cover_name']) if b['cover_name'] else ''
+    logo_html=f'<img src="{logo}" alt="{b["name"]} logo" style="width:92px;height:92px;border-radius:50%;object-fit:cover;border:4px solid white">' if logo else f'<div class="avatar" style="width:92px;height:92px">{initials(b["name"])}</div>'
+    if cover:
+        cover_html=f'<video controls preload="metadata" style="width:100%;max-height:520px;border-radius:18px;object-fit:cover"><source src="{cover}"></video>' if b['cover_type']=='video' else f'<img src="{cover}" alt="{b["name"]} cover" style="width:100%;max-height:520px;border-radius:18px;object-fit:cover">'
+    else: cover_html=''
+    videos=[m for m in media if m['media_kind']=='video'][:3]; gallery=[m for m in media if m['media_kind']=='gallery']
+    videos_html=''.join(f'<article class="card"><video controls preload="metadata" style="width:100%;max-height:420px"><source src="{business_media_src(m["file_name"])}"></video><h3>{m["title"] or "Business Video"}</h3><p class="muted">{m["description"]}</p></article>' for m in videos)
+    gallery_html=''.join(f'<img src="{business_media_src(m["file_name"])}" alt="Business gallery" style="width:100%;height:220px;object-fit:cover;border-radius:16px">' for m in gallery)
+    events_html=''.join(f'<article class="card"><span class="badge">{e["event_type"]}</span><h3>{e["title"]}</h3><p><b>{e["event_date"]}</b> • {e["start_time"]}–{e["end_time"]}</p><p class="muted">{e["location"]} • {e["booking_status"]}</p></article>' for e in events)
+    dynamic=''
+    features=(b['features'] or '').lower()
+    if any(x in features for x in ['class','program','event','retreat','booking']): dynamic=f'<div class="topspace"><h2>Programs, Classes & Upcoming Experiences</h2></div><div class="grid">{events_html or "<div class=\"empty\">Upcoming programs, classes, events and Retreats will appear here.</div>"}</div>'
+    if videos: dynamic+=f'<div class="topspace"><h2>Watch</h2></div><div class="grid">{videos_html}</div>'
+    if b['gallery_enabled'] and gallery: dynamic+=f'<div class="topspace"><h2>Business Photo Gallery</h2></div><div class="grid">{gallery_html}</div>'
     affiliate=f'<article class="card"><h2>Affiliate / Resource Links</h2><p>{b["affiliate_links"]}</p><p class="muted small"><b>Disclosure:</b> Some resource links may be affiliate links. The business owner is responsible for accurate disclosures.</p></article>' if b['affiliate_links'] else ''
-    return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>{b['name']}</h1><h3>{b['owner_title'] or b['category']}</h3><p class="muted">{b['location']} • {b['tagline']}</p><div class="chips">{links}</div></div><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Contact</span>{featurechips}</div><div class="grid"><article class="card"><h2>About</h2><p>{b['description'] or 'Business description coming soon.'}</p><p class="muted">{b['story']}</p></article><article class="card"><h2>What We Offer</h2><p>{b['offers'] or 'Offers will appear here after the owner adds them.'}</p></article></div>{affiliate}''','business')
+    retreat_badge='<span class="badge heart">Retreat Provider</span>' if b['retreat_participating'] else ''
+    return page(b['name'],f'''<div class="hero paid">{cover_html}<div class="profilehero"><div><span class="badge gold">★ HOSTED BUSINESS APP</span>{retreat_badge}<h1>{b['name']}</h1><h3>{b['owner_title'] or b['category']}</h3><p class="muted">{b['location']} • {b['tagline']}</p><div class="chips">{links}</div></div>{logo_html}</div></div><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Contact</span>{featurechips}</div><div class="grid"><article class="card"><h2>About</h2><p>{b['description'] or 'Business description coming soon.'}</p><p class="muted">{b['story']}</p></article><article class="card"><h2>What We Offer</h2><p>{b['offers'] or 'Offers will appear here after the owner adds them.'}</p></article></div>{dynamic}{affiliate}''','business')
 
 @app.route('/business/dashboard')
 @login_required
 def business_dashboard():
     u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close()
-    app_link=f'<a class="moreitem" href="{url_for("business_app",business_id=b["id"])}">Preview Hosted App</a>' if b and b['active'] else f'<a class="moreitem" href="{url_for("business_builder",step=1)}">Build My FREE Hosted App</a>'
-    return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Manage the free Hosted App and the separate Professional Business Development package.</p></div><div class="grid">{app_link}<a class="moreitem" href="{url_for('business_builder',step=1)}">Edit Hosted App</a><a class="moreitem" href="{url_for('startup')}">Professional Business Development • $79.99</a><a class="moreitem" href="{url_for('business_plan')}">My Business Plan</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('inbox')}">Business Inquiries</a><a class="moreitem" href="{url_for('journal')}">Business Journal</a></div>''','business')
+    if b:
+        app_links=f'<a class="moreitem" href="{url_for("business_app",business_id=b["id"])}">Preview Hosted App</a><a class="moreitem" href="{url_for("business_builder",step=1)}">Edit Hosted App</a><a class="moreitem" href="{url_for("business_calendar_page")}">Business Calendar</a>'
+    else:
+        app_links=f'<a class="moreitem" href="{url_for("business_builder",step=1)}">Build My FREE Hosted App</a>'
+    return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Manage the free Hosted App and the separate Professional Business Development package.</p></div><div class="grid">{app_links}<a class="moreitem" href="{url_for('startup')}">Professional Business Development • $79.99</a><a class="moreitem" href="{url_for('business_plan')}">My Business Plan</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('inbox')}">Business Inquiries</a><a class="moreitem" href="{url_for('journal',section='Business')}">Business Journal</a></div>''','business')
+
+@app.route('/business/calendar', methods=['GET','POST'])
+@login_required
+def business_calendar_page():
+    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+    if not b: conn.close(); flash('Create your FREE Hosted App first.','info'); return redirect(url_for('business_builder',step=1))
+    if request.method=='POST':
+        title=request.form.get('title','').strip(); event_type=request.form.get('event_type','Event').strip(); event_date=request.form.get('event_date','').strip(); start_time=request.form.get('start_time','').strip(); end_time=request.form.get('end_time','').strip(); location=request.form.get('location','').strip(); capacity=request.form.get('capacity','').strip(); booking_status=request.form.get('booking_status','Open').strip(); notes=request.form.get('notes','').strip()
+        if title and event_date and start_time and end_time:
+            overlap=conn.execute('''SELECT id,title FROM business_calendar WHERE business_id=? AND event_date=? AND NOT(end_time<=? OR start_time>=?) LIMIT 1''',(b['id'],event_date,start_time,end_time)).fetchone()
+            if overlap: flash(f'That time overlaps with “{overlap["title"]}”. Choose another time.','error')
+            else:
+                conn.execute('''INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(b['id'],title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,now(),now())); conn.commit(); flash('Business calendar item saved.','success')
+        else: flash('Title, date, start time and end time are required.','info')
+    events=conn.execute('SELECT * FROM business_calendar WHERE business_id=? ORDER BY event_date,start_time',(b['id'],)).fetchall(); conn.close()
+    cards=''.join(f'<article class="card"><span class="badge">{e["event_type"]}</span><h3>{e["title"]}</h3><p><b>{e["event_date"]}</b> • {e["start_time"]}–{e["end_time"]}</p><p class="muted">{e["location"]} • Capacity: {e["capacity"] or "Not set"} • {e["booking_status"]}</p></article>' for e in events) or '<div class="empty">No calendar items yet.</div>'
+    return page('Business Calendar',f'''<div class="hero"><span class="badge">BUSINESS CALENDAR</span><h1>{b['name']} Schedule</h1><p class="muted">Use one calendar for classes, programs, appointments, events and Retreats so your schedule does not collide.</p><a class="out" href="{url_for('google_calendar_connect')}">Connect Google Calendar</a></div><form class="card" method="post"><label><b>Title</b></label><input class="input" name="title" required><label><b>Type</b></label><select class="input" name="event_type"><option>Class</option><option>Program</option><option>Appointment</option><option>Event</option><option>Retreat</option><option>Other</option></select><div class="grid"><div><label><b>Date</b></label><input class="input" type="date" name="event_date" required></div><div><label><b>Start Time</b></label><input class="input" type="time" name="start_time" required></div><div><label><b>End Time</b></label><input class="input" type="time" name="end_time" required></div></div><label><b>Location / Online Link</b></label><input class="input" name="location"><label><b>Capacity</b></label><input class="input" type="number" min="1" name="capacity"><label><b>Booking Status</b></label><select class="input" name="booking_status"><option>Open</option><option>Full</option><option>Private</option><option>Cancelled</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><button class="btn">Add to Business Calendar</button></form><div class="topspace"><h2>My Schedule</h2></div>{cards}''','business')
+
+@app.route('/business/calendar/google')
+@login_required
+def google_calendar_connect():
+    return page('Connect Google Calendar','''<div class="hero"><span class="badge">GOOGLE CALENDAR</span><h1>Connect Google Calendar</h1><p class="muted">The Seasons Within Business Calendar works independently now. Live Google Calendar synchronization requires Google OAuth credentials and the Google Calendar API. This connection point is ready for that integration; it does not pretend synchronization is active before credentials are configured.</p></div>''','business')
 
 # -----------------------------------------------------------------------------
 # $79.99 Professional Business Development
@@ -821,7 +990,7 @@ def membership():
 @app.route('/more')
 @login_required
 def more():
-    return page('More',f'''<div class="hero"><span class="badge">MEMBER MENU</span><h1>Everything in One Place</h1></div><div class="moregrid"><a class="moreitem" href="{url_for('journal')}">My Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('notifications')}">Notifications</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">Business Dashboard</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('membership')}">Membership</a><a class="moreitem" href="{url_for('settings')}">Settings</a><a class="moreitem" href="{url_for('logout')}">Log Out</a></div>''','more')
+    return page('More',f'''<div class="hero"><span class="badge">MEMBER MENU</span><h1>Everything in One Place</h1></div><div class="moregrid"><a class="moreitem" href="{url_for('journal')}">My Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">Business Dashboard</a><a class="moreitem" href="{url_for('retreats')}">Retreats</a><a class="moreitem" href="{url_for('membership')}">Membership</a><a class="moreitem" href="{url_for('settings')}">Settings</a><a class="moreitem" href="{url_for('logout')}">Log Out</a></div>''','more')
 
 @app.route('/settings')
 @login_required
