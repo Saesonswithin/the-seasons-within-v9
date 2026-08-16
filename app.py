@@ -452,21 +452,37 @@ def send_retreat_email(to_addresses, subject, body):
         return False
 
 
+
 def current_user():
-    uid = session.get('user_id')
+    uid=session.get('user_id')
     if not uid:
         return None
-    conn = db(); row = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone(); conn.close()
+    try:
+        conn=db()
+        try:
+            row=conn.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        app.logger.exception('Could not load current user from session')
+        return None
+    if not row:
+        # Stale browser session after a deploy/database reset or user deletion.
+        session.pop('user_id',None)
+        return None
     return row
+
 
 
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        if not session.get('user_id'):
-            flash('Please log in to open that member area.', 'info')
-            return redirect(url_for('login', next=request.path))
-        return fn(*args, **kwargs)
+        user=current_user()
+        if not user:
+            session.pop('user_id',None)
+            flash('Please log in to continue.','info')
+            return redirect(url_for('login',next=request.path))
+        return fn(*args,**kwargs)
     return wrapper
 
 
@@ -996,6 +1012,9 @@ def logout():
 
 def community():
     u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
     cp=safe_connection_profile(u['id'])
     if not conscious_coordination_ready(u,cp):
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your Conscious Coordination Profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Join the Community</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Conscious Coordination</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
@@ -1071,6 +1090,9 @@ def community_post_delete(post_id):
 
 def profile():
     u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
     cp=safe_connection_profile(u['id'])
     ready=conscious_coordination_ready(u,cp)
     business=None
@@ -1360,6 +1382,9 @@ def astrology_reflections():
 
 def connections():
     u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
     own_row=safe_connection_profile(u['id'])
     participating=conscious_coordination_ready(u,own_row)
     own=dict(own_row) if own_row else {}
@@ -1486,7 +1511,11 @@ def coordination_post_comment(post_id):
 @app.route('/conscious-coordination/profile/edit', methods=['GET','POST'])
 @login_required
 def connection_edit():
-    u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone(); existing_media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(u['id'],)).fetchall(); conn.close()
+    u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
+    conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone(); existing_media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(u['id'],)).fetchall(); conn.close()
     if request.method=='POST':
         dob=request.form.get('dob','').strip(); birth_time=request.form.get('birth_time','').strip(); birth_city=request.form.get('birth_city','').strip(); birth_region=request.form.get('birth_region','').strip(); birth_country=request.form.get('birth_country','').strip(); time_unknown=1 if request.form.get('birth_time_unknown') and not birth_time else 0; exact=1 if request.form.get('exact_time') and birth_time else 0
         if not dob or not birth_city or not birth_country:
