@@ -254,6 +254,34 @@ def init_db():
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
+    # Conscious Coordination profile discovery, media, and private-interest support.
+    for table, column, ddl in [
+        ("connection_profiles","preferred_state","ALTER TABLE connection_profiles ADD COLUMN preferred_state TEXT DEFAULT ''"),
+        ("connection_profiles","preferred_city","ALTER TABLE connection_profiles ADD COLUMN preferred_city TEXT DEFAULT ''"),
+        ("connection_profiles","distance_preference","ALTER TABLE connection_profiles ADD COLUMN distance_preference TEXT DEFAULT ''"),
+        ("connection_profiles","display_business_app","ALTER TABLE connection_profiles ADD COLUMN display_business_app INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in cols: conn.execute(ddl)
+    conn.executescript('''
+    CREATE TABLE IF NOT EXISTS coordination_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        media_type TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS coordination_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_user_id INTEGER NOT NULL,
+        to_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(from_user_id,to_user_id),
+        FOREIGN KEY(from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(to_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
     conn.execute("UPDATE journal_entries SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE community_posts SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE messages SET category='Journal Entry' WHERE category='Saved Items'")
@@ -609,7 +637,9 @@ def journal():
     if not entries_html: entries_html=f'<div class="empty"><h3>No {section} entries yet</h3><p class="muted">Writing filed under {section} will appear here.</p></div>'
     tabs=f'''<div class="grid"><a class="moreitem" href="{url_for('journal',section='Reflection')}">Reflections</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('journal',section='Business')}">Business</a><a class="moreitem" href="{url_for('journal',section='Retreat')}">Retreats</a><a class="moreitem" href="{url_for('connections')}">Conscious Coordination</a><a class="moreitem" href="{url_for('journal',section='Journal Entry')}">Journal Entry</a></div>'''
     opts=''.join(f'<option {"selected" if section==c else ""}>{c}</option>' for c in JOURNAL_CATEGORIES)
-    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>Private Command Center</h1><p class="muted">Private by default. Sharing creates a separate Community copy while the original remains private.</p></div>{tabs}<form class="card" id="new" method="post"><h2>New {section}</h2><input class="input" name="title" placeholder="Entry title" required><select class="input" name="category">{opts}</select><textarea class="input" name="body" placeholder="Write your entry..." required></textarea><label><b>Visibility</b></label><select class="input" name="visibility"><option value="private">Keep Private</option><option value="community">Share a Copy to Community</option></select><button class="btn">Save Entry</button></form><div id="entries"><div class="topspace"><span class="badge">{section.upper()}</span><h2>{'Reflections' if section=='Reflection' else section}</h2></div>{entries_html}</div>'''
+    conn=db(); coordination_exists=conn.execute('SELECT 1 FROM connection_profiles WHERE user_id=? AND opted_in=1',(u['id'],)).fetchone(); conn.close()
+    coordination_profile_link=f'<article class="card"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h3>My Coordination Profile</h3><p class="muted">Your private Coordination notes stay in this Journal section. Your participating profile is displayed in Conscious Coordination.</p><a class="btn" href="{url_for("connection_profile",user_id=u["id"])}">View My Coordination Profile</a></article>' if section=='Conscious Coordination' and coordination_exists else ''
+    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>Private Command Center</h1><p class="muted">Private by default. Sharing creates a separate Community copy while the original remains private.</p></div>{tabs}{coordination_profile_link}<form class="card" id="new" method="post"><h2>New {section}</h2><input class="input" name="title" placeholder="Entry title" required><select class="input" name="category">{opts}</select><textarea class="input" name="body" placeholder="Write your entry..." required></textarea><label><b>Visibility</b></label><select class="input" name="visibility"><option value="private">Keep Private</option><option value="community">Share a Copy to Community</option></select><button class="btn">Save Entry</button></form><div id="entries"><div class="topspace"><span class="badge">{section.upper()}</span><h2>{'Reflections' if section=='Reflection' else section}</h2></div>{entries_html}</div>'''
     return page('My Journal',content,'more')
 
 @app.route('/journal/entry/<int:entry_id>/edit', methods=['GET','POST'])
@@ -654,7 +684,8 @@ def inbox():
         anchor=f' id="message-{m["id"]}"'; highlight=' style="outline:3px solid #ead7ad"' if focus==m['id'] else ''
         unread_badge='<span class="badge gold">NEW</span>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
-        cards.append(f'<article class="card"{anchor}{highlight}>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p><div class="actions">{open_action}{reply}</div></article>')
+        coordination_profile_action=f'<a class="out" href="{url_for("connection_profile",user_id=m["sender_id"])}">View Coordination Profile</a>' if m['category']=='Conscious Coordination' and m['sender_id']!=u['id'] else ''
+        cards.append(f'<article class="card"{anchor}{highlight}>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p><div class="actions">{open_action}{coordination_profile_action}{reply}</div></article>')
     html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
@@ -684,7 +715,7 @@ def message_member(recipient_id):
     show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
         body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int)
-        category=post['category'] if post else 'Journal Entry'
+        category=post['category'] if post else ('Conscious Coordination' if origin=='Conscious Coordination' else 'Journal Entry')
         subject=request.form.get('subject','').strip()
         preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
         preferred_dates=f'{preferred_start} to {preferred_end}' if preferred_start and preferred_end else (preferred_start or preferred_end)
@@ -721,7 +752,7 @@ def connections():
     u=current_user(); conn=db()
     own=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
     host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-    members=conn.execute('''SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? ORDER BY u.name''',(u['id'],)).fetchall()
+    members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? ORDER BY u.name''',(u['id'],)).fetchall()
     posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
     conn.close()
     participating=bool(own and own['opted_in'])
@@ -737,6 +768,14 @@ def connections():
         members=[m for m in members if chosen in splitv(m['coordination_types'])]
     else:
         members=[m for m in members if splitv(m['coordination_types']) & own_types]
+    pref_state=(own['preferred_state'] or '').strip() if 'preferred_state' in own.keys() else ''
+    pref_city=(own['preferred_city'] or '').strip() if 'preferred_city' in own.keys() else ''
+    distance=(own['distance_preference'] or '').strip() if 'distance_preference' in own.keys() else ''
+    if distance in {'10 miles','25 miles'} and pref_city:
+        members=[m for m in members if (m['city'] or '').strip().lower()==pref_city.lower()]
+    elif distance in {'50 miles','100 miles','Statewide'} and pref_state:
+        members=[m for m in members if (m['birth_region'] or '').strip().lower()==pref_state.lower()]
+
     def preview(m):
         fields=('coordination_types','lifestyle','values_text','communication','affection')
         scores=[]
@@ -747,12 +786,11 @@ def connections():
     cards=[]
     for m in members:
         score=preview(m)
-        photo=(f'<img src="{url_for("community_media",filename=m["photo_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%" alt="{m["name"]}">' if 'photo_name' in m.keys() and m['photo_name'] else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
-        cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'BASIC PROFILE'}</span><h3>{m['name']}</h3><p class="muted">{m['city'] or 'Location not shared'} • {m['coordination_types'] or 'Coordination type not set'}</p><p>{m['seeking'] or ''}</p>{f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else '<p class="muted small">Complete more matching choices for a compatibility preview.</p>'}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Send Message</a></div></div>{photo}</div></article>''')
-    member_cards=''.join(cards) or '<div class="empty"><h3>No participating members match your selected connection types yet</h3><p class="muted">Only real members who opted into Conscious Coordination and selected compatible connection types appear here.</p></div>'
-
+        photo=(f'<img src="{url_for("community_media",filename=m["photo_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%" alt="{html.escape(m["name"],quote=True)}">' if 'photo_name' in m.keys() and m['photo_name'] else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
+        location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
+        cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'BASIC PROFILE'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Coordination type not set')}</p><p>{html.escape(m['seeking'] or '')}</p>{f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else '<p class="muted small">Complete more matching choices for a compatibility preview.</p>'}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Send Message</a></div></div>{photo}</div></article>''')
+    member_cards=''.join(cards) or '<div class="empty"><h3>No participating members match your selected choices yet</h3><p class="muted">Only real members who opted into Conscious Coordination and match your selected connection/location preferences appear here.</p></div>'
     filters='<a class="chip" href="'+url_for('connections')+'">All My Choices</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
-
     is_host=bool(u['is_admin'] or (u['name'] or '').strip().lower()=='galaxy eve')
     host_form=''
     if is_host:
@@ -763,13 +801,15 @@ def connections():
         if p['media_name']:
             src=url_for('community_media',filename=p['media_name'])
             media=f'<video controls playsinline style="width:100%;max-height:520px;border-radius:16px" src="{src}"></video>' if p['media_type']=='video' else f'<img src="{src}" style="width:100%;max-height:520px;object-fit:cover;border-radius:16px" alt="Conscious Coordination post media">'
-        link=f'<p><a class="out" href="{p["link_url"]}" target="_blank" rel="noopener">Open Shared Link</a></p>' if p['link_url'] else ''
+        link=f'<p><a class="out" href="{html.escape(p["link_url"],quote=True)}" target="_blank" rel="noopener">Open Shared Link</a></p>' if p['link_url'] else ''
         comment=''
         if host:
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     feed=''.join(feed_cards) or '<div class="empty"><h3>Galaxy Eve posts will appear here</h3><p class="muted">Only the Conscious Coordinator / authorized host can publish to this feed. Participating members can respond privately beneath host posts.</p></div>'
-    content=f'''<div class="hero"><span class="badge heart">♡ PARTICIPATING MEMBERS ONLY</span><h1>Conscious Coordination</h1><p class="muted">Relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Edit My Coordination Profile</a><a class="out" href="{url_for('journal',section='Conscious Coordination')}">My Coordination Journal Notes</a></div></div>{host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2><p class="muted">Members do not post to this feed. They can respond privately under Galaxy Eve's posts; those responses go to her Journal Inbox.</p></div>{feed}<div class="topspace"><h2>Discover Participating Members</h2><p class="muted">Your directory is organized around the connection types you selected in your Coordination Profile.</p><div class="chips">{filters}</div></div><div class="grid">{member_cards}</div>'''
+    location_note=' • '.join(x for x in [pref_city,pref_state,distance] if x)
+    location_display=f'<p class="muted small"><b>Your location preference:</b> {html.escape(location_note)}</p>' if location_note else ''
+    content=f'''<div class="hero"><span class="badge heart">♡ PARTICIPATING MEMBERS ONLY</span><h1>Conscious Coordination</h1><p class="muted">Relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Coordination Profile</a><a class="out" href="{url_for('connection_edit')}">Edit My Coordination Profile</a><a class="out" href="{url_for('journal',section='Conscious Coordination')}">My Coordination Journal</a></div></div>{host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2><p class="muted">Members do not post to this feed. They can respond privately under Galaxy Eve's posts; those responses go to her Journal Inbox.</p></div>{feed}<div class="topspace"><h2>Discover Participating Members</h2><p class="muted">Your directory is organized around the connection and location choices you selected in your Coordination Profile.</p><div class="chips">{filters}</div></div>{location_display}<div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
 
 
@@ -807,33 +847,49 @@ def coordination_post_comment(post_id):
 @app.route('/conscious-coordination/edit', methods=['GET','POST'])
 @login_required
 def connection_edit():
-    u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
-    multi_fields=['coordination_types','meet_preferences','lifestyle','seeking','overwhelmed','regulate','other_emotions','communication','affection','values_text','conflict_style','repair','boundaries','trust','business_style','retreat_style']
+    u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone(); existing_media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(u['id'],)).fetchall(); conn.close()
     if request.method=='POST':
-        data={}
-        for k in multi_fields:
-            data[k]=', '.join(dict.fromkeys([x.strip() for x in request.form.getlist(k) if x.strip()]))
-        for k in ['age_range','location_preference','occupation','family','about_me']:
-            data[k]=request.form.get(k,'').strip()
-        photo_name=cp['photo_name'] if cp and 'photo_name' in cp.keys() and cp['photo_name'] else ''
-        uploaded=request.files.get('photo')
-        if uploaded and uploaded.filename:
+        multi_fields=['coordination_types','meet_preferences','age_range','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style']
+        data={k:', '.join(request.form.getlist(k)) for k in multi_fields}
+        data.update({'location_preference':'','preferred_state':request.form.get('preferred_state','').strip(),'preferred_city':request.form.get('preferred_city','').strip(),'distance_preference':request.form.get('distance_preference','').strip(),'occupation':request.form.get('occupation','').strip(),'family':request.form.get('family','').strip(),'about_me':request.form.get('about_me','').strip(),'display_business_app':1 if request.form.get('display_business_app')=='1' and business else 0})
+        data['location_preference']=' • '.join(x for x in [data['preferred_city'],data['preferred_state'],data['distance_preference']] if x)
+        photo_name=cp['photo_name'] if cp and 'photo_name' in cp.keys() else ''
+        uploads=request.files.getlist('photos'); video_uploads=request.files.getlist('videos'); paid=bool(u['conscious_paid'] or u['is_admin']); max_photos=7 if paid else 1; max_videos=2 if paid else 0
+        conn=db(); current_photos=conn.execute("SELECT COUNT(*) n FROM coordination_media WHERE user_id=? AND media_type='image'",(u['id'],)).fetchone()['n']; current_videos=conn.execute("SELECT COUNT(*) n FROM coordination_media WHERE user_id=? AND media_type='video'",(u['id'],)).fetchone()['n']
+        if photo_name and not conn.execute('SELECT 1 FROM coordination_media WHERE user_id=? AND file_name=?',(u['id'],photo_name)).fetchone(): current_photos+=1
+        for uploaded in uploads:
+            if not getattr(uploaded,'filename','') or current_photos>=max_photos: continue
             stored,kind=save_community_media(uploaded,u['id'])
-            if stored and kind=='image': photo_name=stored
-        keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']
-        vals=[data.get(k,'') for k in keys]
-        conn=db(); conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at,photo_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name''',(u['id'],*vals,now(),photo_name)); conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connections'))
+            if stored and kind=='image':
+                conn.execute('INSERT INTO coordination_media(user_id,media_type,file_name,created_at) VALUES(?,?,?,?)',(u['id'],'image',stored,now())); current_photos+=1; photo_name=photo_name or stored
+            elif stored:
+                try: (UPLOAD_DIR/stored).unlink(missing_ok=True)
+                except Exception: pass
+        for uploaded in video_uploads:
+            if not paid or not getattr(uploaded,'filename','') or current_videos>=max_videos: continue
+            stored,kind=save_community_media(uploaded,u['id'])
+            if stored and kind=='video':
+                conn.execute('INSERT INTO coordination_media(user_id,media_type,file_name,created_at) VALUES(?,?,?,?)',(u['id'],'video',stored,now())); current_videos+=1
+            elif stored:
+                try: (UPLOAD_DIR/stored).unlink(missing_ok=True)
+                except Exception: pass
+        keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']; vals=[data.get(k,'') for k in keys]
+        conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at,photo_name,preferred_state,preferred_city,distance_preference,display_business_app) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name,preferred_state=excluded.preferred_state,preferred_city=excluded.preferred_city,distance_preference=excluded.distance_preference,display_business_app=excluded.display_business_app''',(u['id'],*vals,now(),photo_name,data['preferred_state'],data['preferred_city'],data['distance_preference'],data['display_business_app']))
+        conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connection_profile',user_id=u['id']))
     def val(k): return cp[k] if cp and k in cp.keys() and cp[k] else ''
     def selected(k): return {x.strip() for x in val(k).split(',') if x.strip()}
     def checks(name,label,options,help_text=''):
-        current=selected(name)
-        boxes=''.join(f'<label class="chip" style="display:inline-flex;gap:7px;align-items:center"><input type="checkbox" name="{name}" value="{html.escape(opt,quote=True)}" {"checked" if opt in current else ""}> {opt}</label>' for opt in options)
-        return f'<div class="fact"><label><b>{label}</b></label>{f"<p class=muted small>{help_text}</p>" if help_text else ""}<div class="chips">{boxes}</div></div>'
+        current=selected(name); boxes=''.join(f'<label class="chip" style="display:inline-flex;gap:7px;align-items:center"><input type="checkbox" name="{name}" value="{html.escape(opt,quote=True)}" {"checked" if opt in current else ""}> {opt}</label>' for opt in options)
+        return f'<div class="fact"><label><b>{label}</b></label>{f"<p class=\"muted small\">{help_text}</p>" if help_text else ""}<div class="chips">{boxes}</div></div>'
+    age_options=['18–24','25–34','35–44','45–54','55–64','65+']
+    states=['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','District of Columbia','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming']
+    state_options='<option value="">Any state / not selected</option>'+''.join(f'<option value="{x}" {"selected" if val("preferred_state")==x else ""}>{x}</option>' for x in states)
+    city_list=['Detroit','Ann Arbor','Dearborn','Southfield','Royal Oak','Ferndale','Birmingham','Troy','Novi','Livonia','Farmington Hills','Pontiac','Flint','Lansing','East Lansing','Grand Rapids','Kalamazoo','Battle Creek','Saginaw','Bay City','Midland','Traverse City','Muskegon','Holland','Jackson','Ypsilanti','Sterling Heights','Warren','Rochester Hills','Westland']; datalist=''.join(f'<option value="{x}"></option>' for x in city_list)
     basic=''.join([
         checks('coordination_types','Connection Types',['Love / Dating','Friendship','Business / Collaboration','Retreat / Activity','Shared Wellness'],'Choose all of the kinds of connections you want. Your discovery directory uses these choices.'),
         checks('meet_preferences','Who would you like to meet?',['Women','Men','Nonbinary / Gender Diverse','Any Gender','Local Connections','Open to Distance']),
-        f'<label><b>Age range you prefer</b></label><input class="input" name="age_range" value="{html.escape(val("age_range"),quote=True)}" placeholder="Example: 35–50 or Open">',
-        f'<label><b>Location preference</b></label><input class="input" name="location_preference" value="{html.escape(val("location_preference"),quote=True)}" placeholder="Local, Michigan, open to distance...">',
+        checks('age_range','Age ranges you prefer',age_options,'Choose every age range you are comfortable coordinating with.'),
+        f'''<div class="card"><h3>Location Preference</h3><p class="muted small">Choose the state, city/area and how far you are willing to Coordinate. Exact mileage matching requires location/geocoding data; this build does not invent distances.</p><label><b>Preferred State</b></label><select class="input" name="preferred_state">{state_options}</select><label><b>Preferred City / Area</b></label><input class="input" name="preferred_city" list="coordination-cities" value="{html.escape(val('preferred_city'),quote=True)}" placeholder="Choose or enter a city/area"><datalist id="coordination-cities">{datalist}</datalist><label><b>How far are you willing to Coordinate?</b></label><select class="input" name="distance_preference"><option value="">Choose distance</option>{''.join(f'<option value="{x}" {"selected" if val("distance_preference")==x else ""}>{x}</option>' for x in ['10 miles','25 miles','50 miles','100 miles','Statewide','Open to distance / online'])}</select></div>''',
         f'<label><b>Occupation</b></label><input class="input" name="occupation" value="{html.escape(val("occupation"),quote=True)}">',
         f'''<label><b>Children / Family</b></label><select class="input" name="family"><option value="">Choose</option>{''.join(f'<option {"selected" if val("family")==x else ""}>{x}</option>' for x in ['No children','Have children','Open to children','Prefer not to say'])}</select>''',
         checks('lifestyle','Lifestyle & Interests',['Wellness & self-care','Nature & outdoors','Travel','Dining & culture','Creative life','Spirituality','Fitness','Homebody / quiet time','Social / community']),
@@ -843,31 +899,68 @@ def connection_edit():
         checks('other_emotions',"When another person is emotional, I usually...",['Listen first','Offer reassurance','Ask what they need','Help problem-solve','Give space when requested']),
         checks('communication','Communication style',['Direct but gentle','Thoughtful and measured','Warm and expressive','Brief and practical','Need time to process first']),
         checks('affection','Love languages / affection',['Quality Time','Acts of Service','Words of Affirmation','Physical Touch','Gifts','Emotional Presence']),
-        checks('values_text','Lifestyle & Values',['Trust','Growth','Reliability','Family','Freedom','Creativity','Wellness','Community','Spirituality','Adventure'])
-    ])
+        checks('values_text','Lifestyle & Values',['Trust','Growth','Reliability','Family','Freedom','Creativity','Wellness','Community','Spirituality','Adventure'])])
     if u['conscious_paid'] or u['is_admin']:
-        full='<h2>Full Membership — Deeper Coordination</h2>'+''.join([
-            checks('conflict_style','Conflict style',['Talk it through calmly','Need time before discussing','Prefer direct resolution','Avoid conflict until ready','Seek compromise']),
-            checks('repair','Repair & accountability',['Apologize directly','Need actions to match words','Talk through what happened','Give space then reconnect','Focus on solutions']),
-            checks('boundaries','Boundaries',['Clear verbal boundaries','Need advance notice / planning','Value privacy and alone time','Flexible with communication','Prefer frequent check-ins']),
-            checks('trust','Trust grows through...',['Consistency','Honesty','Time','Shared experiences','Emotional openness','Reliability']),
-            checks('business_style','Business partner style',['Structured planner','Flexible collaborator','Big-picture visionary','Detail-oriented','Independent','Team-oriented']),
-            checks('retreat_style','Retreat coordination style',['Quiet / restorative','Social / interactive','Structured itinerary','Flexible / free-flowing','Nature-focused','Luxury / comfort','Adventure / activity'])
-        ])
+        full='<h2>Full Membership — Deeper Coordination</h2>'+''.join([checks('conflict_style','Conflict style',['Talk it through calmly','Need time before discussing','Prefer direct resolution','Avoid conflict until ready','Seek compromise']),checks('repair','Repair & accountability',['Apologize directly','Need actions to match words','Talk through what happened','Give space then reconnect','Focus on solutions']),checks('boundaries','Boundaries',['Clear verbal boundaries','Need advance notice / planning','Value privacy and alone time','Flexible with communication','Prefer frequent check-ins']),checks('trust','Trust grows through...',['Consistency','Honesty','Time','Shared experiences','Emotional openness','Reliability']),checks('business_style','Business partner style',['Structured planner','Flexible collaborator','Big-picture visionary','Detail-oriented','Independent','Team-oriented']),checks('retreat_style','Retreat coordination style',['Quiet / restorative','Social / interactive','Structured itinerary','Flexible / free-flowing','Nature-focused','Luxury / comfort','Adventure / activity'])])
     else:
         full=f'''<article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h3>Deeper Coordination Questions</h3><p class="muted">Full members can add deeper conflict, repair, boundary, trust, business-collaboration and Retreat-style preferences for full compatibility reports.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Full Membership</a></article>'''
-    photo=f'<img src="{url_for("community_media",filename=val("photo_name"))}" style="width:110px;height:110px;object-fit:cover;border-radius:50%">' if val('photo_name') else ''
-    content=f'''<div class="hero"><span class="badge heart">♡ COORDINATION PROFILE</span><h1>Create / Edit Conscious Coordination Profile</h1><p class="muted">Choose all answers that fit you. These self-reported choices organize member discovery and compatibility. They are not a mental-health diagnosis or a prediction of relationship success.</p></div><form class="card" method="post" enctype="multipart/form-data">{photo}<label><b>Profile Photo</b></label><input class="input" type="file" name="photo" accept="image/*">{basic}{full}<label><b>About Me</b></label><textarea class="input" name="about_me" placeholder="Write this part in your own words.">{html.escape(val('about_me'))}</textarea><button class="btn">Save Coordination Profile</button></form>'''
+    media_cards=[]
+    for m in existing_media:
+        src=url_for('community_media',filename=m['file_name']); media_cards.append(f'<div class="media">'+(f'<video controls playsinline src="{src}" style="width:100%;height:100%;object-fit:cover"></video>' if m['media_type']=='video' else f'<img src="{src}" style="width:100%;height:100%;object-fit:cover">')+'</div>')
+    media_preview=''.join(media_cards)
+    media_section=f'''<article class="card"><h2>Coordination Profile Media</h2><p class="muted">{'Full members may display up to 7 photos and 2 profile videos.' if (u['conscious_paid'] or u['is_admin']) else 'Free basic profiles may display 1 photo. Upgrade to Full Membership for up to 7 photos and 2 profile videos.'}</p>{f'<div class="grid">{media_preview}</div>' if media_preview else ''}<label><b>Add Profile Photo{'s' if (u['conscious_paid'] or u['is_admin']) else ''}</b></label><input class="input" type="file" name="photos" accept="image/*" {'multiple' if (u['conscious_paid'] or u['is_admin']) else ''}>{'<label><b>Add Profile Videos</b></label><input class="input" type="file" name="videos" accept="video/*" multiple>' if (u['conscious_paid'] or u['is_admin']) else ''}</article>'''
+    if business:
+        checked='checked' if val('display_business_app') and str(val('display_business_app')) not in {'0',''} else ''
+        business_section=f'''<article class="card paid"><span class="badge gold">HOSTED BUSINESS APP</span><h2>Show My Business on My Coordination Profile</h2><p class="muted">Your published Hosted Business App can appear as a separate business card on your Conscious Coordination Profile.</p><label><input type="checkbox" name="display_business_app" value="1" {checked}> Display <b>{html.escape(business['name'])}</b> on my Coordination Profile</label></article>'''
+    else:
+        business_section='<article class="card"><h3>Hosted Business App</h3><p class="muted">You have not created a published Hosted Business App yet. If you create one later, you can return here and choose to display it on your Coordination Profile.</p></article>'
+    content=f'''<div class="hero"><span class="badge heart">♡ COORDINATION PROFILE</span><h1>Create / Edit Conscious Coordination Profile</h1><p class="muted">Choose all answers that fit you. These self-reported choices organize member discovery and compatibility. They are not a mental-health diagnosis or a prediction of relationship success.</p></div><form class="card" method="post" enctype="multipart/form-data">{media_section}{basic}{full}{business_section}<label><b>About Me</b></label><textarea class="input" name="about_me" placeholder="Write this part in your own words.">{html.escape(val('about_me'))}</textarea><button class="btn">Save Coordination Profile</button></form>'''
     return page('Edit Coordination Profile',content,'more')
+
 
 @app.route('/conscious-coordination/profile/<int:user_id>')
 @login_required
 def connection_profile(user_id):
-    me=current_user(); conn=db(); row=conn.execute('SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=? AND cp.opted_in=1',(user_id,)).fetchone(); conn.close()
+    me=current_user(); conn=db(); row=conn.execute('SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=? AND cp.opted_in=1',(user_id,)).fetchone(); media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(user_id,)).fetchall(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone(); liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone(); conn.close()
     if not row: abort(404)
-    photo=(f'<img src="{url_for("community_media",filename=row["photo_name"])}" style="width:150px;height:150px;object-fit:cover;border-radius:50%" alt="{row["name"]}">' if 'photo_name' in row.keys() and row['photo_name'] else f'<div class="portrait">{initials(row["name"])}</div>')
-    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><p>{row['seeking'] or ''}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div>{photo}</div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Full profile answer not shared'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
+    photo=(f'<img src="{url_for("community_media",filename=row["photo_name"])}" style="width:150px;height:150px;object-fit:cover;border-radius:50%" alt="{html.escape(row["name"],quote=True)}">' if 'photo_name' in row.keys() and row['photo_name'] else f'<div class="portrait">{initials(row["name"])}</div>')
+    actions=f'<a class="btn" href="{url_for("message_member",recipient_id=user_id,origin="Conscious Coordination")}">Send Journal Message</a><a class="out" href="{url_for("compatibility",user_id=user_id)}">Compatibility</a>'
+    if me['id']!=user_id:
+        actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
+    else:
+        actions+=f'<a class="out" href="{url_for("connection_edit")}">Edit My Coordination Profile</a><a class="out" href="{url_for("journal",section="Conscious Coordination")}">My Coordination Journal</a>'
+    gallery=[]; seen=set()
+    if row['photo_name']:
+        seen.add(row['photo_name']); gallery.append(f'<div class="media"><img src="{url_for("community_media",filename=row["photo_name"])}" style="width:100%;height:100%;object-fit:cover"></div>')
+    for m in media:
+        if m['file_name'] in seen: continue
+        seen.add(m['file_name']); src=url_for('community_media',filename=m['file_name']); gallery.append(f'<div class="media">'+(f'<video controls playsinline src="{src}" style="width:100%;height:100%;object-fit:cover"></video>' if m['media_type']=='video' else f'<img src="{src}" style="width:100%;height:100%;object-fit:cover">')+'</div>')
+    gallery_html=f'<div class="topspace"><h2>Profile Photos & Videos</h2></div><div class="grid">{"".join(gallery)}</div>' if gallery else ''
+    business_html=''
+    if business and 'display_business_app' in row.keys() and row['display_business_app']:
+        business_html=f'''<div class="topspace"><span class="badge gold">HOSTED BUSINESS APP</span><h2>Business</h2></div><article class="card paid"><div class="profilehero"><div><h2>{html.escape(business['name'])}</h2><p><b>{html.escape(business['owner_title'] or business['category'] or '')}</b></p><p class="muted">{html.escape(business['location'] or '')} • {html.escape(business['tagline'] or '')}</p><a class="btn" href="{url_for('business_app',business_id=business['id'])}">Open Business App</a></div>{f'<img src="{business_media_src(business["logo_name"])}" style="width:100px;height:100px;object-fit:cover;border-radius:50%">' if business['logo_name'] else ''}</div></article>'''
+    location=' • '.join(x for x in [(row['city'] or '').strip(),(row['birth_region'] or '').strip()] if x) or 'Location not shared'; preference=' • '.join(x for x in [(row['preferred_city'] if 'preferred_city' in row.keys() else ''),(row['preferred_state'] if 'preferred_state' in row.keys() else ''),(row['distance_preference'] if 'distance_preference' in row.keys() else '')] if x)
+    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{html.escape(row['name'])}</h1><p class="muted">{html.escape(location)} • {html.escape(row['coordination_types'] or '')}</p><p>{html.escape(row['seeking'] or '')}</p>{f'<p class="muted small"><b>Coordinates around:</b> {html.escape(preference)}</p>' if preference else ''}<div class="actions">{actions}</div></div>{photo}</div></article>{gallery_html}<div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{html.escape(row['communication'] or 'Not answered')}</b></div><div class="fact"><small>Conflict</small><b>{html.escape(row['conflict_style'] or 'Full profile answer not shared')}</b></div><div class="fact"><small>Affection</small><b>{html.escape(row['affection'] or 'Not answered')}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{html.escape(row['values_text'] or 'Not answered')}</p><h3>About</h3><p>{html.escape(row['about_me'] or 'Not added')}</p></article></div>{business_html}'''
     return page('Coordination Profile',content,'more')
+
+@app.route('/conscious-coordination/profile/<int:user_id>/like', methods=['POST'])
+@login_required
+def coordination_like(user_id):
+    me=current_user()
+    if me['id']==user_id:
+        flash('Your own Coordination Profile is already yours.','info'); return redirect(url_for('connection_profile',user_id=user_id))
+    conn=db(); other=conn.execute('SELECT u.*,cp.opted_in FROM users u JOIN connection_profiles cp ON cp.user_id=u.id WHERE u.id=? AND cp.opted_in=1',(user_id,)).fetchone()
+    if not other: conn.close(); abort(404)
+    existing=conn.execute('SELECT id FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone()
+    if not existing:
+        conn.execute('INSERT INTO coordination_likes(from_user_id,to_user_id,created_at) VALUES(?,?,?)',(me['id'],user_id,now()))
+        subject=f'Conscious Coordination Interest — {me["name"]}'; body=f'{me["name"]} liked your Conscious Coordination Profile and is interested in connecting. You can view their Coordination Profile and decide whether you want to send a private Journal message.'
+        cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)''',(me['id'],user_id,'Conscious Coordination',subject,body,'Conscious Coordination',None,'','',now())); mid=cur.lastrowid
+        conn.commit(); conn.close(); notify(user_id,'New Conscious Coordination Interest',f'{me["name"]} liked your Coordination Profile. Open your Journal Inbox to respond privately.',url_for('inbox_read',message_id=mid)); flash('Your interest was sent privately.','success')
+    else:
+        conn.close(); flash('You already sent interest to this member.','info')
+    return redirect(url_for('connection_profile',user_id=user_id))
+
 
 @app.route('/compatibility/<int:user_id>')
 @login_required
