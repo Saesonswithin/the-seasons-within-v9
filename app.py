@@ -8,6 +8,7 @@ import textwrap
 import html
 import subprocess
 import shutil
+import calendar as pycalendar
 from email.message import EmailMessage
 from datetime import datetime, timedelta
 from functools import wraps
@@ -18,8 +19,11 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
-DB_PATH = os.environ.get('DATABASE_PATH', str(Path(__file__).with_name('seasons_within.db')))
 PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR', Path(__file__).with_name('data')))
+PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+_default_app_db = Path(__file__).with_name('seasons_within.db')
+_default_persistent_db = PERSISTENT_DATA_DIR / 'seasons_within.db'
+DB_PATH = os.environ.get('DATABASE_PATH', str(_default_persistent_db if os.environ.get('PERSISTENT_DATA_DIR') else _default_app_db))
 UPLOAD_DIR = PERSISTENT_DATA_DIR / 'uploads'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
@@ -197,6 +201,19 @@ def init_db():
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
     conn.executescript('''
+    CREATE TABLE IF NOT EXISTS coordination_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        link_url TEXT DEFAULT '',
+        media_name TEXT DEFAULT '',
+        media_type TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+    conn.executescript('''
     CREATE TABLE IF NOT EXISTS business_plan_intake (
         user_id INTEGER PRIMARY KEY,
         payload TEXT NOT NULL DEFAULT '{}',
@@ -225,6 +242,7 @@ def init_db():
     );
     ''')
     for table, column, ddl in [
+        ("connection_profiles","photo_name","ALTER TABLE connection_profiles ADD COLUMN photo_name TEXT DEFAULT ''"),
         ("businesses","contact_email","ALTER TABLE businesses ADD COLUMN contact_email TEXT DEFAULT ''"),
         ("businesses","contact_phone","ALTER TABLE businesses ADD COLUMN contact_phone TEXT DEFAULT ''"),
         ("business_calendar","source","ALTER TABLE business_calendar ADD COLUMN source TEXT DEFAULT 'Owner'"),
@@ -700,24 +718,146 @@ def notifications():
 @app.route('/conscious-coordination')
 @login_required
 def connections():
-    u=current_user(); conn=db(); own=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); members=conn.execute('''SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? ORDER BY u.name''',(u['id'],)).fetchall(); conn.close()
+    u=current_user(); conn=db()
+    own=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
+    host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
+    members=conn.execute('''SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? ORDER BY u.name''',(u['id'],)).fetchall()
+    posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
+    conn.close()
     participating=bool(own and own['opted_in'])
     if not participating:
-        content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Would You Like to Join Conscious Coordination?</h1><p class="muted">Choose whether you want to participate in the private Conscious Coordination community for relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p></div><div class="two"><article class="card"><span class="badge">FREE BASIC PROFILE</span><h2>Join Conscious Coordination</h2><p class="muted">Create one basic profile with one photo, basic profile details, selected emotional/social information, basic astrology and a Basic Compatibility Preview.</p><a class="btn" href="{url_for('connection_edit')}">Yes — Create My Coordination Profile</a></article><article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>$10.99 / month</h2><p class="muted">Up to 7 photos and 2 profile videos, deeper questions, full compatibility, birth-chart comparison, connection suggestions and compatible-member alerts.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Full Membership</a></article></div><article class="card"><span class="badge">HOST AREA</span><h2>Galaxy Eve / Authorized Hosts</h2><p class="muted">Galaxy Eve hosts creator prompts, videos, experiences, Retreat invitations and authorized host content for participating members.</p></article><p class="muted small">Not ready to participate? You can leave this page without creating a profile and join later from My Profile, More or Settings.</p>'''
+        content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Would You Like to Join Conscious Coordination?</h1><p class="muted">Choose whether you want to participate in the private Conscious Coordination community for relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p></div><div class="two"><article class="card"><span class="badge">FREE BASIC PROFILE</span><h2>Join Conscious Coordination</h2><p class="muted">Create one basic profile with one photo, basic profile details, selected emotional/social information, basic astrology and a Basic Compatibility Preview.</p><a class="btn" href="{url_for('connection_edit')}">Yes — Create My Coordination Profile</a></article><article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>$10.99 / month</h2><p class="muted">Up to 7 photos and 2 profile videos, deeper questions, full compatibility, birth-chart comparison, connection suggestions and compatible-member alerts.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Full Membership</a></article></div><article class="card"><span class="badge">HOST AREA</span><h2>Galaxy Eve • Conscious Coordinator</h2><p class="muted">Galaxy Eve hosts the private Conscious Coordination feed with prompts, videos, experiences, events and Retreat invitations. Participating members can respond privately to her posts after joining.</p></article><p class="muted small">Not ready to participate? You can leave this page without creating a profile and join later from My Profile, More or Settings.</p>'''
         return page('Conscious Coordination',content,'more')
-    cards=''.join(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'BASIC PROFILE'}</span><h3>{m['name']}</h3><p class="muted">{m['city'] or 'Location not shared'} • {m['coordination_types'] or 'Coordination type not set'}</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Send Message</a></div></article>''' for m in members) or '<div class="empty"><h3>Participating members will appear here</h3><p class="muted">The directory does not invent profiles.</p></div>'
-    content=f'''<div class="hero"><span class="badge heart">♡ PARTICIPATING MEMBERS ONLY</span><h1>Conscious Coordination</h1><p class="muted">Relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Edit My Coordination Profile</a><a class="out" href="{url_for('journal',section='Conscious Coordination')}">My Coordination Journal Notes</a></div></div><article class="card"><span class="badge">HOST AREA</span><h2>Galaxy Eve / Authorized Hosts</h2><p class="muted">Creator prompts, videos, experiences, Retreat invitations and host content appear here only from authorized real accounts.</p></article><div class="topspace"><h2>Discover Participating Members</h2><p class="muted">Private directory of real members who chose to participate.</p></div><div class="grid">{cards}</div>'''
+
+    def splitv(v):
+        return {x.strip() for x in (v or '').split(',') if x.strip()}
+    own_types=splitv(own['coordination_types']) or {'Love / Dating','Friendship','Business / Collaboration','Retreat / Activity','Shared Wellness'}
+    chosen=request.args.get('type','').strip()
+    if chosen and chosen in own_types:
+        members=[m for m in members if chosen in splitv(m['coordination_types'])]
+    else:
+        members=[m for m in members if splitv(m['coordination_types']) & own_types]
+    def preview(m):
+        fields=('coordination_types','lifestyle','values_text','communication','affection')
+        scores=[]
+        for k in fields:
+            a=splitv(own[k]); b=splitv(m[k])
+            if a and b: scores.append(round(100*len(a&b)/max(1,len(a|b))))
+        return round(sum(scores)/len(scores)) if scores else None
+    cards=[]
+    for m in members:
+        score=preview(m)
+        photo=(f'<img src="{url_for("community_media",filename=m["photo_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%" alt="{m["name"]}">' if 'photo_name' in m.keys() and m['photo_name'] else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
+        cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'BASIC PROFILE'}</span><h3>{m['name']}</h3><p class="muted">{m['city'] or 'Location not shared'} • {m['coordination_types'] or 'Coordination type not set'}</p><p>{m['seeking'] or ''}</p>{f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else '<p class="muted small">Complete more matching choices for a compatibility preview.</p>'}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Send Message</a></div></div>{photo}</div></article>''')
+    member_cards=''.join(cards) or '<div class="empty"><h3>No participating members match your selected connection types yet</h3><p class="muted">Only real members who opted into Conscious Coordination and selected compatible connection types appear here.</p></div>'
+
+    filters='<a class="chip" href="'+url_for('connections')+'">All My Choices</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
+
+    is_host=bool(u['is_admin'] or (u['name'] or '').strip().lower()=='galaxy eve')
+    host_form=''
+    if is_host:
+        host_form=f'''<form class="card paid" method="post" enctype="multipart/form-data" action="{url_for('coordination_post_create')}"><span class="badge gold">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>Post to Conscious Coordination</h2><input class="input" name="title" placeholder="Post title" required><textarea class="input" name="body" placeholder="News, prompt, experience, event or Retreat invitation..." required></textarea><label><b>Optional Link</b></label><input class="input" type="url" name="link_url" placeholder="https://..."><label><b>Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post as Conscious Coordinator</button></form>'''
+    feed_cards=[]
+    for p in posts:
+        media=''
+        if p['media_name']:
+            src=url_for('community_media',filename=p['media_name'])
+            media=f'<video controls playsinline style="width:100%;max-height:520px;border-radius:16px" src="{src}"></video>' if p['media_type']=='video' else f'<img src="{src}" style="width:100%;max-height:520px;object-fit:cover;border-radius:16px" alt="Conscious Coordination post media">'
+        link=f'<p><a class="out" href="{p["link_url"]}" target="_blank" rel="noopener">Open Shared Link</a></p>' if p['link_url'] else ''
+        comment=''
+        if host:
+            comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
+        feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
+    feed=''.join(feed_cards) or '<div class="empty"><h3>Galaxy Eve posts will appear here</h3><p class="muted">Only the Conscious Coordinator / authorized host can publish to this feed. Participating members can respond privately beneath host posts.</p></div>'
+    content=f'''<div class="hero"><span class="badge heart">♡ PARTICIPATING MEMBERS ONLY</span><h1>Conscious Coordination</h1><p class="muted">Relationship, friendship, business collaboration, Retreat/activity connections and shared wellness experiences.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Edit My Coordination Profile</a><a class="out" href="{url_for('journal',section='Conscious Coordination')}">My Coordination Journal Notes</a></div></div>{host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2><p class="muted">Members do not post to this feed. They can respond privately under Galaxy Eve's posts; those responses go to her Journal Inbox.</p></div>{feed}<div class="topspace"><h2>Discover Participating Members</h2><p class="muted">Your directory is organized around the connection types you selected in your Coordination Profile.</p><div class="chips">{filters}</div></div><div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
+
+
+@app.route('/conscious-coordination/host-post', methods=['POST'])
+@login_required
+def coordination_post_create():
+    u=current_user()
+    if not (u['is_admin'] or (u['name'] or '').strip().lower()=='galaxy eve'):
+        abort(403)
+    title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); link_url=request.form.get('link_url','').strip()
+    media_name,media_type=save_community_media(request.files.get('media'),u['id'])
+    if title and body:
+        conn=db(); conn.execute('INSERT INTO coordination_posts(author_id,title,body,link_url,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,body,link_url,media_name,media_type,now())); conn.commit(); conn.close()
+        flash('Conscious Coordination post published.','success')
+    return redirect(url_for('connections'))
+
+
+@app.route('/conscious-coordination/post/<int:post_id>/comment', methods=['POST'])
+@login_required
+def coordination_post_comment(post_id):
+    u=current_user(); body=request.form.get('body','').strip()
+    conn=db(); post=conn.execute('SELECT * FROM coordination_posts WHERE id=?',(post_id,)).fetchone(); host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
+    if not post or not host:
+        conn.close(); flash('Galaxy Eve is not available to receive that response yet.','info'); return redirect(url_for('connections'))
+    if body:
+        subject=f'Conscious Coordination — {post["title"]}'
+        cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],host['id'],'Conscious Coordination',subject,body,'Conscious Coordination',None,'','',now()))
+        mid=cur.lastrowid; conn.commit(); conn.close()
+        notify(host['id'],'New Conscious Coordination Response',f'{u["name"]} responded privately to “{post["title"]}”.',url_for('inbox_read',message_id=mid))
+        flash("Your response was sent privately to Galaxy Eve's Journal Inbox.",'success')
+    else:
+        conn.close()
+    return redirect(url_for('connections')+f'#coordination-post-{post_id}')
 
 @app.route('/conscious-coordination/edit', methods=['GET','POST'])
 @login_required
 def connection_edit():
     u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
+    multi_fields=['coordination_types','meet_preferences','lifestyle','seeking','overwhelmed','regulate','other_emotions','communication','affection','values_text','conflict_style','repair','boundaries','trust','business_style','retreat_style']
     if request.method=='POST':
-        keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']; vals=[request.form.get(k,'').strip() for k in keys]
-        conn=db(); conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at''',(u['id'],*vals,now())); conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connections'))
-    def val(k): return cp[k] if cp and cp[k] else ''
-    content=f'''<div class="hero"><span class="badge heart">♡ COORDINATION PROFILE</span><h1>Create / Edit Conscious Coordination Profile</h1><p class="muted">Self-reported behavior supports reflection and compatibility. It is not a mental-health diagnosis or a prediction of relationship success.</p></div><form class="card" method="post"><label><b>Coordination Types</b></label><input class="input" name="coordination_types" value="{val('coordination_types')}" placeholder="Love/Dating, Friendship, Business/Collaboration, Retreat/Activity"><label><b>Who would you like to meet?</b></label><input class="input" name="meet_preferences" value="{val('meet_preferences')}"><label><b>Age range</b></label><input class="input" name="age_range" value="{val('age_range')}"><label><b>Location preference</b></label><input class="input" name="location_preference" value="{val('location_preference')}"><label><b>Occupation</b></label><input class="input" name="occupation" value="{val('occupation')}"><label><b>Children / family</b></label><input class="input" name="family" value="{val('family')}"><label><b>Lifestyle</b></label><textarea class="input" name="lifestyle">{val('lifestyle')}</textarea><label><b>What are you seeking?</b></label><textarea class="input" name="seeking">{val('seeking')}</textarea><h2>Emotional & Communication Intelligence</h2><label><b>When overwhelmed...</b></label><textarea class="input" name="overwhelmed">{val('overwhelmed')}</textarea><label><b>What helps you regulate?</b></label><textarea class="input" name="regulate">{val('regulate')}</textarea><label><b>How do you handle another person's emotions?</b></label><textarea class="input" name="other_emotions">{val('other_emotions')}</textarea><label><b>Conflict style</b></label><textarea class="input" name="conflict_style">{val('conflict_style')}</textarea><label><b>Repair & accountability</b></label><textarea class="input" name="repair">{val('repair')}</textarea><label><b>Boundaries</b></label><textarea class="input" name="boundaries">{val('boundaries')}</textarea><label><b>Trust</b></label><textarea class="input" name="trust">{val('trust')}</textarea><label><b>Love languages / affection</b></label><textarea class="input" name="affection">{val('affection')}</textarea><label><b>Communication style</b></label><textarea class="input" name="communication">{val('communication')}</textarea><label><b>Lifestyle & values</b></label><textarea class="input" name="values_text">{val('values_text')}</textarea><label><b>Business partner style</b></label><textarea class="input" name="business_style">{val('business_style')}</textarea><label><b>Retreat coordination style</b></label><textarea class="input" name="retreat_style">{val('retreat_style')}</textarea><label><b>About Me</b></label><textarea class="input" name="about_me">{val('about_me')}</textarea><button class="btn">Save Profile</button></form>'''
+        data={}
+        for k in multi_fields:
+            data[k]=', '.join(dict.fromkeys([x.strip() for x in request.form.getlist(k) if x.strip()]))
+        for k in ['age_range','location_preference','occupation','family','about_me']:
+            data[k]=request.form.get(k,'').strip()
+        photo_name=cp['photo_name'] if cp and 'photo_name' in cp.keys() and cp['photo_name'] else ''
+        uploaded=request.files.get('photo')
+        if uploaded and uploaded.filename:
+            stored,kind=save_community_media(uploaded,u['id'])
+            if stored and kind=='image': photo_name=stored
+        keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']
+        vals=[data.get(k,'') for k in keys]
+        conn=db(); conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at,photo_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name''',(u['id'],*vals,now(),photo_name)); conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connections'))
+    def val(k): return cp[k] if cp and k in cp.keys() and cp[k] else ''
+    def selected(k): return {x.strip() for x in val(k).split(',') if x.strip()}
+    def checks(name,label,options,help_text=''):
+        current=selected(name)
+        boxes=''.join(f'<label class="chip" style="display:inline-flex;gap:7px;align-items:center"><input type="checkbox" name="{name}" value="{html.escape(opt,quote=True)}" {"checked" if opt in current else ""}> {opt}</label>' for opt in options)
+        return f'<div class="fact"><label><b>{label}</b></label>{f"<p class=muted small>{help_text}</p>" if help_text else ""}<div class="chips">{boxes}</div></div>'
+    basic=''.join([
+        checks('coordination_types','Connection Types',['Love / Dating','Friendship','Business / Collaboration','Retreat / Activity','Shared Wellness'],'Choose all of the kinds of connections you want. Your discovery directory uses these choices.'),
+        checks('meet_preferences','Who would you like to meet?',['Women','Men','Nonbinary / Gender Diverse','Any Gender','Local Connections','Open to Distance']),
+        f'<label><b>Age range you prefer</b></label><input class="input" name="age_range" value="{html.escape(val("age_range"),quote=True)}" placeholder="Example: 35–50 or Open">',
+        f'<label><b>Location preference</b></label><input class="input" name="location_preference" value="{html.escape(val("location_preference"),quote=True)}" placeholder="Local, Michigan, open to distance...">',
+        f'<label><b>Occupation</b></label><input class="input" name="occupation" value="{html.escape(val("occupation"),quote=True)}">',
+        f'''<label><b>Children / Family</b></label><select class="input" name="family"><option value="">Choose</option>{''.join(f'<option {"selected" if val("family")==x else ""}>{x}</option>' for x in ['No children','Have children','Open to children','Prefer not to say'])}</select>''',
+        checks('lifestyle','Lifestyle & Interests',['Wellness & self-care','Nature & outdoors','Travel','Dining & culture','Creative life','Spirituality','Fitness','Homebody / quiet time','Social / community']),
+        checks('seeking','What are you seeking?',['Long-term relationship','Dating / getting to know someone','Friendship','Business collaborator','Retreat / activity partner','Wellness connections']),
+        checks('overwhelmed','When I am upset or overwhelmed, I usually...',['Need quiet time before talking','Want to talk fairly soon','Need reassurance before discussing it','Prefer practical problem-solving']),
+        checks('regulate','What helps you regulate?',['Quiet time','Movement / exercise','Nature','Breathing / meditation','Talking with someone I trust','Music / creative activity','Rest']),
+        checks('other_emotions',"When another person is emotional, I usually...",['Listen first','Offer reassurance','Ask what they need','Help problem-solve','Give space when requested']),
+        checks('communication','Communication style',['Direct but gentle','Thoughtful and measured','Warm and expressive','Brief and practical','Need time to process first']),
+        checks('affection','Love languages / affection',['Quality Time','Acts of Service','Words of Affirmation','Physical Touch','Gifts','Emotional Presence']),
+        checks('values_text','Lifestyle & Values',['Trust','Growth','Reliability','Family','Freedom','Creativity','Wellness','Community','Spirituality','Adventure'])
+    ])
+    if u['conscious_paid'] or u['is_admin']:
+        full='<h2>Full Membership — Deeper Coordination</h2>'+''.join([
+            checks('conflict_style','Conflict style',['Talk it through calmly','Need time before discussing','Prefer direct resolution','Avoid conflict until ready','Seek compromise']),
+            checks('repair','Repair & accountability',['Apologize directly','Need actions to match words','Talk through what happened','Give space then reconnect','Focus on solutions']),
+            checks('boundaries','Boundaries',['Clear verbal boundaries','Need advance notice / planning','Value privacy and alone time','Flexible with communication','Prefer frequent check-ins']),
+            checks('trust','Trust grows through...',['Consistency','Honesty','Time','Shared experiences','Emotional openness','Reliability']),
+            checks('business_style','Business partner style',['Structured planner','Flexible collaborator','Big-picture visionary','Detail-oriented','Independent','Team-oriented']),
+            checks('retreat_style','Retreat coordination style',['Quiet / restorative','Social / interactive','Structured itinerary','Flexible / free-flowing','Nature-focused','Luxury / comfort','Adventure / activity'])
+        ])
+    else:
+        full=f'''<article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h3>Deeper Coordination Questions</h3><p class="muted">Full members can add deeper conflict, repair, boundary, trust, business-collaboration and Retreat-style preferences for full compatibility reports.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Full Membership</a></article>'''
+    photo=f'<img src="{url_for("community_media",filename=val("photo_name"))}" style="width:110px;height:110px;object-fit:cover;border-radius:50%">' if val('photo_name') else ''
+    content=f'''<div class="hero"><span class="badge heart">♡ COORDINATION PROFILE</span><h1>Create / Edit Conscious Coordination Profile</h1><p class="muted">Choose all answers that fit you. These self-reported choices organize member discovery and compatibility. They are not a mental-health diagnosis or a prediction of relationship success.</p></div><form class="card" method="post" enctype="multipart/form-data">{photo}<label><b>Profile Photo</b></label><input class="input" type="file" name="photo" accept="image/*">{basic}{full}<label><b>About Me</b></label><textarea class="input" name="about_me" placeholder="Write this part in your own words.">{html.escape(val('about_me'))}</textarea><button class="btn">Save Coordination Profile</button></form>'''
     return page('Edit Coordination Profile',content,'more')
 
 @app.route('/conscious-coordination/profile/<int:user_id>')
@@ -725,7 +865,8 @@ def connection_edit():
 def connection_profile(user_id):
     me=current_user(); conn=db(); row=conn.execute('SELECT cp.*,u.name,u.city,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.user_id=? AND cp.opted_in=1',(user_id,)).fetchone(); conn.close()
     if not row: abort(404)
-    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div><div class="portrait">{initials(row['name'])}</div></div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Not answered'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
+    photo=(f'<img src="{url_for("community_media",filename=row["photo_name"])}" style="width:150px;height:150px;object-fit:cover;border-radius:50%" alt="{row["name"]}">' if 'photo_name' in row.keys() and row['photo_name'] else f'<div class="portrait">{initials(row["name"])}</div>')
+    content=f'''<article class="card {'paid' if row['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if row['conscious_paid'] else ''}">{'★ $10.99 FULL CONSCIOUS COORDINATION PROFILE' if row['conscious_paid'] else 'BASIC CONSCIOUS COORDINATION PROFILE'}</span><h1>{row['name']}</h1><p class="muted">{row['city'] or 'Location not shared'} • {row['coordination_types']}</p><p>{row['seeking'] or ''}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Message Member</a><a class="out" href="{url_for('compatibility',user_id=user_id)}">Compatibility</a></div></div>{photo}</div></article><div class="grid"><article class="card"><h2>How They Connect</h2><div class="fact"><small>Communication</small><b>{row['communication'] or 'Not answered'}</b></div><div class="fact"><small>Conflict</small><b>{row['conflict_style'] or 'Full profile answer not shared'}</b></div><div class="fact"><small>Affection</small><b>{row['affection'] or 'Not answered'}</b></div></article><article class="card"><h2>Lifestyle & Values</h2><p>{row['values_text'] or 'Not answered'}</p><h3>About</h3><p>{row['about_me'] or 'Not added'}</p></article></div>'''
     return page('Coordination Profile',content,'more')
 
 @app.route('/compatibility/<int:user_id>')
@@ -951,45 +1092,101 @@ def business_builder(step):
     button='Publish My App' if step==9 else 'Save & Continue'
     return page('Hosted App Builder',f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER • STEP {step} OF 9</span><h1>{titles[step]}</h1><div class="meter"><i style="width:{step/9*100}%"></i></div></div><form class="card" method="post"{enctype}>{form}<div class="actions">{back}<button class="btn">{button}</button></div></form>''','business')
 
+def _business_month_shift(year, month, delta):
+    total=year*12+(month-1)+delta
+    return total//12, total%12+1
+
+def business_calendar_grid(events, business_id, selected_date='', month_value='', owner=False):
+    today=datetime.utcnow().date()
+    try:
+        if month_value:
+            year,month=[int(x) for x in month_value.split('-',1)]
+            datetime(year,month,1)
+        else:
+            year,month=today.year,today.month
+    except Exception:
+        year,month=today.year,today.month
+    by_date={}
+    for e in events:
+        by_date.setdefault(e['event_date'],[]).append(e)
+    prev_y,prev_m=_business_month_shift(year,month,-1); next_y,next_m=_business_month_shift(year,month,1)
+    if owner:
+        prev_link=url_for('business_calendar_page',month=f'{prev_y:04d}-{prev_m:02d}')
+        next_link=url_for('business_calendar_page',month=f'{next_y:04d}-{next_m:02d}')
+    else:
+        prev_link=url_for('business_app',business_id=business_id,month=f'{prev_y:04d}-{prev_m:02d}')+'#book'
+        next_link=url_for('business_app',business_id=business_id,month=f'{next_y:04d}-{next_m:02d}')+'#book'
+    headers=''.join(f'<div style="font-weight:800;text-align:center;padding:8px">{d}</div>' for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])
+    cells=[]
+    for week in pycalendar.Calendar(firstweekday=6).monthdayscalendar(year,month):
+        for day in week:
+            if not day:
+                cells.append('<div style="min-height:105px;border:1px solid var(--line);background:#faf7fc;border-radius:12px"></div>')
+                continue
+            ds=f'{year:04d}-{month:02d}-{day:02d}'; rows=by_date.get(ds,[])
+            open_rows=[e for e in rows if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
+            blocked=[e for e in rows if e['event_type']=='Blocked / Unavailable' or e['booking_status'] in ('Private','Full')]
+            selected='box-shadow:0 0 0 3px #a978c7 inset;' if selected_date==ds else ''
+            if owner:
+                href=url_for('business_calendar_page',month=f'{year:04d}-{month:02d}',date=ds)+'#calendar-day'
+            elif open_rows:
+                href=url_for('business_app',business_id=business_id,month=f'{year:04d}-{month:02d}',date=ds)+'#book-times'
+            else:
+                href=''
+            badges=[]
+            if open_rows: badges.append(f'<span class="badge" style="margin-top:5px">{len(open_rows)} open</span>')
+            if blocked: badges.append('<span class="badge" style="margin-top:5px;background:#f8e9ef">busy</span>')
+            inner=f'<b>{day}</b><div>{"".join(badges)}</div>'
+            tag=f'<a href="{href}" style="display:block;color:inherit;height:100%">{inner}</a>' if href else inner
+            cells.append(f'<div style="min-height:105px;border:1px solid var(--line);background:white;border-radius:12px;padding:8px;{selected}">{tag}</div>')
+    title=datetime(year,month,1).strftime('%B %Y')
+    return f'''<div class="card"><div class="topspace" style="margin-top:0"><a class="out" href="{prev_link}">‹ Previous</a><h2>{title}</h2><a class="out" href="{next_link}">Next ›</a></div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">{headers}{''.join(cells)}</div><p class="muted small">Open dates can be selected. Busy/blocked time is shown so the same calendar can protect classes, appointments, events and Retreats from collisions.</p></div>'''
+
 @app.route('/business/app/<int:business_id>')
 def business_app(business_id):
     conn=db(); b=conn.execute('SELECT * FROM businesses WHERE id=? AND active=1',(business_id,)).fetchone()
+    if not b: conn.close(); abort(404)
     media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(business_id,)).fetchall()
-    events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status='Open' ORDER BY event_date,start_time",(business_id,)).fetchall(); conn.close()
-    if not b: abort(404)
-    tab=request.args.get('tab','home').lower(); logo=business_media_src(b['logo_name'])
+    events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(business_id,)).fetchall(); conn.close()
+    logo=business_media_src(b['logo_name'])
     if b['cover_name']:
-        src=business_media_src(b['cover_name']); cover_html=f'<video controls playsinline src="{src}"></video>' if b['cover_type']=='video' else f'<img src="{src}" alt="{b["name"]} cover">'
-    else: cover_html=f'<div style="text-align:center"><img src="{logo}" style="width:120px;height:120px;object-fit:cover;border-radius:50%"><p class="muted">Add a cover photo or video in Edit Hosted App.</p></div>'
-    nav=f'''<div class="chips"><a class="chip" href="{url_for('business_app',business_id=b['id'],tab='home')}">Home</a><a class="chip" href="{url_for('business_app',business_id=b['id'],tab='about')}">About</a><a class="chip" href="{url_for('business_app',business_id=b['id'],tab='contact')}">Contact</a><a class="chip" href="{url_for('business_app',business_id=b['id'],tab='book')}">Book</a></div>'''
+        src=business_media_src(b['cover_name']); cover_html=f'<video controls playsinline style="width:100%;height:100%;object-fit:cover" src="{src}"></video>' if b['cover_type']=='video' else f'<img src="{src}" alt="{b["name"]} cover" style="width:100%;height:100%;object-fit:cover">'
+    else:
+        cover_html=f'<div style="text-align:center"><img src="{logo}" style="width:140px;height:140px;object-fit:cover;border-radius:50%"><p class="muted">Business cover media can be added from Edit Hosted App.</p></div>'
     external=[]
     for label,key in [('Website','website'),('Instagram','instagram'),('TikTok','tiktok'),('YouTube','youtube'),('Facebook','facebook'),('Store','store_url'),('Podcast','podcast_url')]:
         if b[key]: external.append(f'<a class="out" href="{b[key]}" target="_blank" rel="noopener">{label}</a>')
     ext_html='<div class="actions">'+''.join(external)+'</div>' if external else ''
-    if tab=='about': body=f'''<article class="card"><h2>About {b['name']}</h2><p>{b['description'] or 'Business description coming soon.'}</p><h3>Our Story</h3><p>{b['story'] or 'Business story coming soon.'}</p><h3>What We Offer</h3><p>{b['offers'] or 'Offers will appear here.'}</p></article>'''
-    elif tab=='contact': body=f'''<article class="card"><h2>Contact {b['name']}</h2><p class="muted">Contact information is business information entered by the business owner.</p>{f'<p><b>Email:</b> {b["contact_email"]}</p>' if b['contact_email'] else ''}{f'<p><b>Phone:</b> {b["contact_phone"]}</p>' if b['contact_phone'] else ''}{ext_html}</article>'''
-    elif tab=='book':
-        cards=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{e['title']}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">{e['location']} • Capacity: {e['capacity'] or 'Not set'}</p><a class="btn" href="{url_for('business_book',business_id=b['id'],calendar_id=e['id'])}">Book / Request</a></article>''' for e in events) or '<div class="empty"><h3>No open booking times yet</h3><p class="muted">The business owner can add classes, programs, appointments, events and Retreat availability from Business Calendar.</p></div>'
-        body=f'''<div class="hero"><span class="badge">BOOK</span><h2>Book with {b['name']}</h2><p class="muted">All classes, programs, appointments, events and Retreats use one Business Calendar so bookings do not collide.</p></div><div class="grid">{cards}</div>{f'<a class="out" href="{b["booking_url"]}" target="_blank" rel="noopener">External Booking Website</a>' if b['booking_url'] else ''}'''
+    gallery=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
+    gallery_html=''.join(f'<div class="media"><img src="{business_media_src(m["file_name"])}" alt="Business gallery photo"></div>' for m in gallery)
+    video_html=''.join(f'''<article class="card"><video controls playsinline style="width:100%;border-radius:16px" src="{business_media_src(m['file_name'])}"></video><h3>{m['title'] or 'Business Video'}</h3><p class="muted">{m['description'] or ''}</p></article>''' for m in videos)
+
+    month=request.args.get('month',''); selected_date=request.args.get('date','')
+    calendar_html=business_calendar_grid(events,b['id'],selected_date,month,False)
+    open_events=[e for e in events if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
+    if selected_date:
+        shown=[e for e in open_events if e['event_date']==selected_date]
+        heading=f'Available on {selected_date}'
     else:
-        gallery=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
-        gallery_html=''.join(f'<div class="media"><img src="{business_media_src(m["file_name"])}" alt="Business gallery photo"></div>' for m in gallery)
-        video_html=''.join(f'''<article class="card"><video controls playsinline style="width:100%;border-radius:16px" src="{business_media_src(m['file_name'])}"></video><h3>{m['title'] or 'Business Video'}</h3><p class="muted">{m['description'] or ''}</p></article>''' for m in videos)
-        feature_text=(b['features'] or '').lower(); module_cards=[]
-        for key,label in [('class','Classes'),('program','Programs'),('course','Courses'),('event','Events'),('retreat','Retreats'),('service','Services')]:
-            if key in feature_text or key in (b['offers'] or '').lower(): module_cards.append(f'<article class="card"><h2>{label}</h2><p class="muted">{label} configured by this business appear through the Book section and Business Calendar.</p><a class="btn" href="{url_for("business_app",business_id=b["id"],tab="book")}">View {label}</a></article>')
-        body=f'''<div class="media" style="height:360px">{cover_html}</div><article class="card"><h2>{b['tagline'] or b['name']}</h2><p>{b['description']}</p>{ext_html}</article><div class="grid">{''.join(module_cards)}</div>{f'<div class="topspace"><h2>Business Photo Gallery</h2></div><div class="grid">{gallery_html}</div>' if b['gallery_enabled'] and gallery_html else ''}{f'<div class="topspace"><h2>Videos</h2></div><div class="grid">{video_html}</div>' if video_html else ''}'''
-    return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><div class="profilehero"><div><h1>{b['name']}</h1><h3>{b['owner_title'] or b['category']}</h3><p class="muted">{b['location']} • {b['tagline']}</p></div><img src="{logo}" style="width:110px;height:110px;object-fit:cover;border-radius:50%"></div></div>{nav}{body}''','business')
+        shown=open_events[:8]; heading='Upcoming Classes & Open Times'
+    slots=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{e['title']}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">{e['location']} • Capacity: {e['capacity'] or 'Not set'}</p><a class="btn" href="{url_for('business_book',business_id=b['id'],calendar_id=e['id'])}">Book / Request</a></article>''' for e in shown) or '<div class="empty"><h3>No open times on this date</h3><p class="muted">Choose another open date on the calendar.</p></div>'
+
+    home_section=f'''<section id="home"><div class="media" style="height:380px">{cover_html}</div><article class="card"><span class="badge">HOME</span><h2>{b['tagline'] or b['name']}</h2><p>{b['description'] or 'Business description coming soon.'}</p>{ext_html}</article>{f'<div class="topspace"><h2>Business Photo Gallery</h2></div><div class="grid">{gallery_html}</div>' if b['gallery_enabled'] and gallery_html else ''}{f'<div class="topspace"><h2>Videos</h2></div><div class="grid">{video_html}</div>' if video_html else ''}</section>'''
+    about_section=f'''<section id="about" class="topspace"><article class="card"><span class="badge">ABOUT</span><h2>About {b['name']}</h2><p>{b['description'] or 'Business description coming soon.'}</p><h3>Our Story</h3><p>{b['story'] or 'Business story coming soon.'}</p><h3>What We Offer</h3><p>{b['offers'] or 'Offers will appear here.'}</p></article></section>'''
+    contact_section=f'''<section id="contact" class="topspace"><article class="card"><span class="badge">CONTACT</span><h2>Contact {b['name']}</h2>{f'<p><b>Email:</b> {b["contact_email"]}</p>' if b['contact_email'] else ''}{f'<p><b>Phone:</b> {b["contact_phone"]}</p>' if b['contact_phone'] else ''}{ext_html}</article></section>'''
+    book_section=f'''<section id="book" class="topspace"><div class="hero"><span class="badge">BOOK</span><h2>Book with {b['name']}</h2><p class="muted">Classes, programs, appointments, events and Retreats all use this one Business Calendar so bookings do not collide.</p></div>{calendar_html}<div id="book-times" class="topspace"><h2>{heading}</h2></div><div class="grid">{slots}</div>{f'<p><a class="out" href="{b["booking_url"]}" target="_blank" rel="noopener">External Booking Website</a></p>' if b['booking_url'] else ''}</section>'''
+    section_labels='<div class="card"><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Contact</span><span class="chip">Book</span></div><p class="muted small">These are sections of this Hosted Business App. Scroll to view the business information and booking calendar.</p></div>'
+    return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><div class="profilehero"><div><h1>{b['name']}</h1><h3>{b['owner_title'] or b['category']}</h3><p class="muted">{b['location']} • {b['tagline']}</p></div><img src="{logo}" style="width:110px;height:110px;object-fit:cover;border-radius:50%"></div></div>{section_labels}{home_section}{about_section}{contact_section}{book_section}''','business')
 
 @app.route('/business/<int:business_id>/book/<int:calendar_id>', methods=['GET','POST'])
 @login_required
 def business_book(business_id,calendar_id):
-    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE id=? AND active=1',(business_id,)).fetchone(); e=conn.execute("SELECT * FROM business_calendar WHERE id=? AND business_id=? AND booking_status='Open'",(calendar_id,business_id)).fetchone()
+    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE id=? AND active=1',(business_id,)).fetchone(); e=conn.execute("SELECT * FROM business_calendar WHERE id=? AND business_id=? AND booking_status='Open' AND event_type<>'Blocked / Unavailable'",(calendar_id,business_id)).fetchone()
     if not b or not e: conn.close(); abort(404)
     if request.method=='POST':
         name=request.form.get('name','').strip() or u['name']; email=request.form.get('email','').strip() or u['email']; guests=request.form.get('guests','').strip() or '1'; notes=request.form.get('notes','').strip()
-        current=conn.execute("SELECT * FROM business_calendar WHERE id=? AND booking_status='Open'",(calendar_id,)).fetchone()
-        if not current: conn.close(); flash('That time is no longer available.','error'); return redirect(url_for('business_app',business_id=business_id,tab='book'))
+        current=conn.execute("SELECT * FROM business_calendar WHERE id=? AND booking_status='Open' AND event_type<>'Blocked / Unavailable'",(calendar_id,)).fetchone()
+        if not current: conn.close(); flash('That time is no longer available.','error'); return redirect(url_for('business_app',business_id=business_id)+'#book')
         try: requested=max(1,int(guests))
         except Exception: requested=1
         try: capacity=int(current['capacity']) if current['capacity'] else 0
@@ -997,25 +1194,28 @@ def business_book(business_id,calendar_id):
         prior=conn.execute("SELECT guests FROM business_bookings WHERE calendar_id=? AND status IN ('Requested','Confirmed')",(calendar_id,)).fetchall()
         used=sum(int(x['guests'] or 1) if str(x['guests'] or '1').isdigit() else 1 for x in prior)
         if capacity and used+requested>capacity:
-            conn.close(); flash('That class/event does not have enough remaining capacity.','error'); return redirect(url_for('business_app',business_id=business_id,tab='book'))
+            conn.close(); flash('That class/event does not have enough remaining capacity.','error'); return redirect(url_for('business_app',business_id=business_id)+'#book')
         conn.execute('''INSERT INTO business_bookings(business_id,calendar_id,booked_by_user_id,customer_name,customer_email,booking_type,title,event_date,start_time,end_time,guests,notes,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business_id,calendar_id,u['id'],name,email,e['event_type'],e['title'],e['event_date'],e['start_time'],e['end_time'],str(requested),notes,'Requested',now()))
         multi=e['event_type'] in ('Class','Program','Event') and capacity>1
         if multi:
             new_status='Full' if used+requested>=capacity else 'Open'; conn.execute("UPDATE business_calendar SET booking_status=?,source='Hosted App Booking',updated_at=? WHERE id=?",(new_status,now(),calendar_id))
         else:
             conn.execute("UPDATE business_calendar SET booking_status='Private',source='Hosted App Booking',booked_by_user_id=?,updated_at=? WHERE id=?",(u['id'],now(),calendar_id))
-        conn.commit(); conn.close(); notify(b['owner_id'],'New Business Booking',f'{name} requested {e["title"]} for {e["event_date"]}.',url_for('business_calendar_page')); flash('Booking request sent and recorded on the business calendar.','success'); return redirect(url_for('business_app',business_id=business_id,tab='book'))
+        conn.commit(); conn.close(); notify(b['owner_id'],'New Business Booking',f'{name} requested {e["title"]} for {e["event_date"]}.',url_for('business_calendar_page',date=e['event_date'])); flash('Booking request sent and recorded on the business calendar.','success'); return redirect(url_for('business_app',business_id=business_id,date=e['event_date'])+'#book')
     conn.close()
-    return page('Book',f'''<div class="hero"><span class="badge">BOOK</span><h1>{b['name']}</h1><h2>{e['title']}</h2><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">This booking uses the same business calendar as classes, appointments, events and Retreats.</p></div><form class="card" method="post"><label><b>Your Name</b></label><input class="input" name="name" value="{u['name']}" required><label><b>Your Email</b></label><input class="input" type="email" name="email" value="{u['email']}" required><label><b>Guests / Seats</b></label><input class="input" type="number" min="1" name="guests" value="1"><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><button class="btn">Send Booking Request</button></form>''','business')
+    return page('Book',f'''<div class="hero"><span class="badge">BOOK</span><h1>{b['name']}</h1><h2>{e['title']}</h2><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">This booking uses the same calendar as classes, appointments, events, Retreats and owner-blocked time.</p></div><form class="card" method="post"><label><b>Your Name</b></label><input class="input" name="name" value="{u['name']}" required><label><b>Your Email</b></label><input class="input" type="email" name="email" value="{u['email']}" required><label><b>Guests / Seats</b></label><input class="input" type="number" min="1" name="guests" value="1"><label><b>Booking Notes</b></label><textarea class="input" name="notes" placeholder="Anything the business should know?"></textarea><button class="btn">Request This Time</button></form>''','business')
 
 @app.route('/business/dashboard')
 @login_required
 def business_dashboard():
     u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); unread=conn.execute('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']; conn.close()
-    if not b: return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>Create Your Hosted Business App</h1><p class="muted">Your business dashboard will appear after you begin the free Hosted App Builder.</p><a class="btn" href="{url_for('business_builder',step=1)}">Build My FREE Hosted App</a></div>''','business')
-    app_card=f'''<article class="card paid"><div class="profilehero"><div><span class="badge gold">MY HOSTED BUSINESS APP</span><h2>{b['name']}</h2><p class="muted">{b['category']} • {b['location']} • {'Published' if b['active'] else 'Draft'}</p><div class="actions">{f'<a class="btn" href="{url_for("business_app",business_id=b["id"])}">Open App</a>' if b['active'] else ''}<a class="out" href="{url_for('business_builder',step=1)}">Edit Hosted App</a></div></div><img src="{business_media_src(b['logo_name'])}" style="width:100px;height:100px;object-fit:cover;border-radius:50%"></div></article>'''
-    links=f'''<div class="grid"><a class="moreitem" href="{url_for('inbox')}">Journal Inbox<br><small>Business inquiries + private conversations</small></a><a class="moreitem" href="{url_for('notifications')}">Notifications<br><small>{unread} unread alerts</small></a><a class="moreitem" href="{url_for('business_calendar_page')}">Business Calendar<br><small>Classes • Retreats • blocked time • bookings</small></a><a class="moreitem" href="{url_for('business_plan')}">My Business Plan<br><small>Questionnaire • Plan • Marketing • Launch • Versions</small></a></div>'''
-    return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Manage your Hosted Business App, messages, notifications, one master schedule and professional Business Plan workspace.</p></div>{app_card}{links}''','business')
+    if not b:
+        return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>Create Your Hosted Business App</h1><p class="muted">Your business dashboard appears after you begin the FREE Hosted App Builder.</p><a class="btn" href="{url_for('business_builder',step=1)}">Build My FREE Hosted App</a></div>''','business')
+    logo=business_media_src(b['logo_name'])
+    app_actions=(f'<a class="btn" href="{url_for("business_app",business_id=b["id"])}">Open Hosted App</a>' if b['active'] else '')+f'<a class="out" href="{url_for("business_builder",step=1)}">Edit Hosted App</a>'
+    app_card=f'''<article class="card paid"><div class="profilehero"><div><span class="badge gold">MY HOSTED BUSINESS APP</span><h2>{b['name']}</h2><p class="muted">{b['category']} • {b['location']} • {'Published' if b['active'] else 'Draft'}</p><div class="actions">{app_actions}</div></div><img src="{logo}" style="width:105px;height:105px;object-fit:cover;border-radius:50%"></div></article>'''
+    links=f'''<div class="grid"><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Journal Inbox<br><small>Business inquiries + private conversations</small></a><a class="moreitem" href="{url_for('notifications')}">Notifications<br><small>{unread} unread alerts</small></a><a class="moreitem" href="{url_for('business_calendar_page')}">Business Calendar<br><small>Classes • Retreats • availability • blocked time • bookings</small></a><a class="moreitem" href="{url_for('journal',section='Business')}">Business Journal<br><small>Private business notes and records</small></a><a class="moreitem" href="{url_for('business_plan')}">My Business Plan<br><small>Questionnaire • Plan • Marketing • Launch • Versions</small></a></div>'''
+    return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Your Hosted Business App and business tools live here as soon as the app is created.</p></div>{app_card}{links}''','business')
 
 @app.route('/business/calendar', methods=['GET','POST'])
 @login_required
@@ -1024,6 +1224,7 @@ def business_calendar_page():
     if not b: conn.close(); return redirect(url_for('business_builder',step=1))
     if request.method=='POST':
         title=request.form.get('title','').strip(); event_type=request.form.get('event_type','Other'); event_date=request.form.get('event_date',''); start_time=request.form.get('start_time',''); end_time=request.form.get('end_time',''); location=request.form.get('location','').strip(); capacity=request.form.get('capacity','').strip(); booking_status=request.form.get('booking_status','Open'); notes=request.form.get('notes','').strip()
+        if event_type=='Blocked / Unavailable': booking_status='Private'
         if title and event_date and start_time and end_time:
             overlap=conn.execute('''SELECT id,title FROM business_calendar WHERE business_id=? AND event_date=? AND booking_status<>'Cancelled' AND NOT(end_time<=? OR start_time>=?) LIMIT 1''',(b['id'],event_date,start_time,end_time)).fetchone()
             if overlap: flash(f'That time overlaps with “{overlap["title"]}”. Choose another time.','error')
@@ -1031,9 +1232,21 @@ def business_calendar_page():
                 conn.execute('''INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(b['id'],title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,'Owner',now(),now())); conn.commit(); flash('Business calendar item saved.','success')
         else: flash('Title, date, start time and end time are required.','info')
     events=conn.execute('SELECT * FROM business_calendar WHERE business_id=? ORDER BY event_date,start_time',(b['id'],)).fetchall(); bookings=conn.execute('SELECT * FROM business_bookings WHERE business_id=? ORDER BY id DESC',(b['id'],)).fetchall(); conn.close()
-    cards=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{e['title']}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">{e['location']} • Capacity: {e['capacity'] or 'Not set'} • {e['booking_status']} • Source: {e['source'] or 'Owner'}</p></article>''' for e in events) or '<div class="empty">No calendar items yet.</div>'
+    selected_date=request.args.get('date',''); month=request.args.get('month','')
+    calendar_html=business_calendar_grid(events,b['id'],selected_date,month,True)
+    shown=[e for e in events if not selected_date or e['event_date']==selected_date]
+    cards=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{e['title']}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">{e['location']} • Capacity: {e['capacity'] or 'Not set'} • {e['booking_status']} • Source: {e['source'] or 'Owner'}</p><form method="post" action="{url_for('business_calendar_delete',event_id=e['id'])}" onsubmit="return confirm('Delete this calendar item?')"><button class="out danger">Delete</button></form></article>''' for e in shown) or '<div class="empty">No calendar items for this date yet.</div>'
     booking_cards=''.join(f'''<article class="card"><span class="badge">{x['status']}</span><h3>{x['title']}</h3><p>{x['customer_name']} • {x['customer_email']}</p><p class="muted">{x['event_date']} • {x['start_time']}–{x['end_time']} • Guests: {x['guests'] or '—'}</p><p>{x['notes']}</p></article>''' for x in bookings) or '<div class="empty">Bookings and requests will appear here.</div>'
-    return page('Business Calendar',f'''<div class="hero"><span class="badge">BUSINESS CALENDAR</span><h1>{b['name']} Schedule</h1><p class="muted">One calendar controls classes, programs, appointments, events, Retreats and personal blocked time. Any booking made through the Hosted App uses this same calendar.</p><a class="out" href="{url_for('google_calendar_connect')}">Connect Google Calendar</a></div><form class="card" method="post"><h2>Add Schedule / Block Time</h2><label><b>Title</b></label><input class="input" name="title" placeholder="Class, Retreat, Personal Appointment, Unavailable" required><label><b>Type</b></label><select class="input" name="event_type"><option>Class</option><option>Program</option><option>Appointment</option><option>Event</option><option>Retreat</option><option>Blocked / Unavailable</option><option>Other</option></select><div class="grid"><div><label><b>Date</b></label><input class="input" type="date" name="event_date" required></div><div><label><b>Start Time</b></label><input class="input" type="time" name="start_time" required></div><div><label><b>End Time</b></label><input class="input" type="time" name="end_time" required></div></div><label><b>Location / Online Link</b></label><input class="input" name="location"><label><b>Capacity</b></label><input class="input" type="number" min="1" name="capacity"><label><b>Booking Status</b></label><select class="input" name="booking_status"><option>Open</option><option>Private</option><option>Full</option><option>Cancelled</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><button class="btn">Add to Business Calendar</button></form><div class="topspace"><h2>My Schedule</h2></div>{cards}<div class="topspace"><h2>Bookings / Requests</h2></div>{booking_cards}''','business')
+    return page('Business Calendar',f'''<div class="hero"><span class="badge">BUSINESS CALENDAR</span><h1>{b['name']} Schedule</h1><p class="muted">One calendar controls classes, programs, appointments, events, Retreats, availability and personal blocked time so your schedule does not collide.</p><a class="out" href="{url_for('google_calendar_connect')}">Connect Google Calendar</a></div>{calendar_html}<form class="card" method="post"><h2>Add Class, Availability or Block Time</h2><label><b>Title</b></label><input class="input" name="title" placeholder="Yoga Class, Appointment Availability, Personal Appointment, Unavailable" required><label><b>Type</b></label><select class="input" name="event_type"><option>Class</option><option>Program</option><option>Appointment</option><option>Availability</option><option>Event</option><option>Retreat</option><option>Blocked / Unavailable</option><option>Other</option></select><div class="grid"><div><label><b>Date</b></label><input class="input" type="date" name="event_date" required></div><div><label><b>Start Time</b></label><input class="input" type="time" name="start_time" required></div><div><label><b>End Time</b></label><input class="input" type="time" name="end_time" required></div></div><label><b>Location / Online Link</b></label><input class="input" name="location"><label><b>Capacity</b></label><input class="input" type="number" min="1" name="capacity"><label><b>Booking Status</b></label><select class="input" name="booking_status"><option>Open</option><option>Private</option><option>Full</option><option>Cancelled</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><button class="btn">Add to Business Calendar</button></form><div id="calendar-day" class="topspace"><h2>{'Schedule for '+selected_date if selected_date else 'My Schedule'}</h2></div>{cards}<div class="topspace"><h2>Bookings / Requests</h2></div>{booking_cards}''','business')
+
+
+@app.route('/business/calendar/<int:event_id>/delete', methods=['POST'])
+@login_required
+def business_calendar_delete(event_id):
+    u=current_user(); conn=db(); row=conn.execute('''SELECT c.id FROM business_calendar c JOIN businesses b ON b.id=c.business_id WHERE c.id=? AND b.owner_id=?''',(event_id,u['id'])).fetchone()
+    if row:
+        conn.execute('DELETE FROM business_calendar WHERE id=?',(event_id,)); conn.commit(); flash('Calendar item deleted.','success')
+    conn.close(); return redirect(url_for('business_calendar_page'))
 
 @app.route('/business/calendar/google')
 @login_required
