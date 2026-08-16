@@ -1098,6 +1098,7 @@ def community_post_delete(post_id):
 
 
 
+
 def profile():
     u=current_user()
     if not u:
@@ -1129,43 +1130,124 @@ def profile():
         except Exception:
             app.logger.exception('Could not sync Conscious Coordination city to My Profile')
 
+    access_badge='FULL ACCESS TESTING' if FULL_ACCESS_TESTING else ('★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER')
+
     if ready:
-        cp_types=(cp['coordination_types'] or '') if cp and 'coordination_types' in cp.keys() else ''
-        cp_city=(cp['preferred_city'] or '') if cp and 'preferred_city' in cp.keys() else ''
-        cp_state=(cp['preferred_state'] or '') if cp and 'preferred_state' in cp.keys() else ''
+        cpd=dict(cp) if cp else {}
+        cp_types=cpd.get('coordination_types','')
+        cp_city=cpd.get('preferred_city','')
+        cp_state=cpd.get('preferred_state','')
         cp_location=' • '.join(x for x in [cp_city,cp_state] if x) or display_city or 'Location not added'
 
+        facts=[
+            ('Communication',cpd.get('communication')),
+            ('Emotional Rhythm',cpd.get('overwhelmed')),
+            ('What Helps Me Regulate',cpd.get('regulate')),
+            ('When Others Are Emotional',cpd.get('other_emotions')),
+            ('Conflict',cpd.get('conflict_style')),
+            ('Repair & Accountability',cpd.get('repair')),
+            ('Boundaries',cpd.get('boundaries')),
+            ('Trust',cpd.get('trust')),
+            ('Love Languages / Affection',cpd.get('affection')),
+            ('Lifestyle & Values',cpd.get('values_text')),
+            ('Business Collaboration Style',cpd.get('business_style')),
+            ('Retreat / Activity Style',cpd.get('retreat_style')),
+            ('Children / Family',cpd.get('family')),
+            ('Occupation',cpd.get('occupation')),
+        ]
+        fact_html=''.join(
+            f'<div class="fact"><small>{html.escape(label)}</small><b>{html.escape(value or "Not answered")}</b></div>'
+            for label,value in facts
+        )
+        about=cpd.get('about_me') or u['about'] or ''
+
+        coordination_profile=f'''<article class="card">
+        <span class="badge heart">COMMUNITY MEMBER</span>
+        <h2>My Conscious Coordination Profile</h2>
+        <p class="muted">{html.escape(cp_location)}{(' • '+html.escape(cp_types)) if cp_types else ''}</p>
+        <div class="grid">{fact_html}</div>
+        <h3>About Me</h3><p>{html.escape(about)}</p>
+        <div class="actions">
+            <a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a>
+            <a class="out" href="{url_for('community')}">Enter Community</a>
+        </div>
+        </article>'''
+
         chart=member_chart_data(u)
-        planet_items=[]
+        planet_cards=[]
         if chart.get('ready'):
             for name in PLANET_NAMES:
                 p=(chart.get('planets') or {}).get(name)
-                if p:
-                    planet_items.append(
-                        f'''<a class="moreitem" href="{url_for('planet_interpretation',user_id=u['id'],planet=name.lower())}">
-                        <small>{html.escape(name.upper())}</small><br>
-                        {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°
-                        <br><span class="small">Open deeper interpretation</span></a>'''
-                    )
+                if not p:
+                    continue
+                planet_cards.append(
+                    f'''<a class="moreitem" href="{url_for('planet_interpretation',user_id=u['id'],planet=name.lower())}">
+                    <small>{html.escape(name.upper())}</small><br>
+                    {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°
+                    <br><span class="small">Open deeper interpretation</span></a>'''
+                )
             rising=chart.get('rising') or chart.get('ascendant')
             if isinstance(rising,dict) and u['exact_time']:
-                planet_items.append(
-                    f'''<div class="moreitem"><small>RISING</small><br>{html.escape(str(rising.get('sign','')))} {html.escape(str(rising.get('degree','')))}°</div>'''
+                planet_cards.append(
+                    f'''<div class="moreitem"><small>RISING</small><br>
+                    {html.escape(str(rising.get('sign','')))} {html.escape(str(rising.get('degree','')))}°</div>'''
                 )
+            planetary_body=f'''<div class="moregrid">{''.join(planet_cards)}</div>
+            <div class="actions">
+                <a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">Open My Full Conscious Coordination</a>
+                <a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a>
+            </div>'''
+        else:
+            reason=chart.get('reason') or 'The planetary calculation did not return placements.'
+            planetary_body=f'''<div class="fact"><small>TEST STATUS</small><b>{html.escape(reason)}</b></div>
+            <p class="muted small">Your saved birth information remains attached to this profile. This test status is shown so the calculation layer cannot fail silently while we verify the full profile.</p>
+            <div class="actions"><a class="out" href="{url_for('edit_profile')}">Review My Profile Information</a></div>'''
 
-        planetary_section=''
-        if planet_items:
-            planetary_section=f'''<article class="card"><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Your calculated placements are interpreted with your complete Conscious Coordination profile—not as generic planet definitions.</p><div class="moregrid">{''.join(planet_items)}</div><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">Open My Full Conscious Coordination</a><a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a></div></article>'''
+        planetary_section=f'''<article class="card">
+        <span class="badge heart">CONSCIOUS COORDINATION</span>
+        <h2>Your Planetary Coordination</h2>
+        <p class="muted">These calculated placements work together with your complete Conscious Coordination profile. Open a placement for a whole-pattern interpretation rather than a generic definition.</p>
+        {planetary_body}
+        </article>'''
 
-        community_profile=f'''<article class="card"><span class="badge heart">COMMUNITY MEMBER</span><h2>My Conscious Coordination Profile</h2><p class="muted">{html.escape(cp_location)}{(' • '+html.escape(cp_types)) if cp_types else ''}</p><p>Your Conscious Coordination Profile is complete and connected to this Member Profile.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a><a class="out" href="{url_for('community')}">Enter Community</a></div></article>'''
+        testing_section=''
+        if FULL_ACCESS_TESTING:
+            testing_section=f'''<article class="card paid">
+            <span class="badge gold">FULL ACCESS TESTING</span>
+            <h2>Full Reports Are Open</h2>
+            <p class="muted">This test build leaves the upgraded Conscious Coordination paths open so you can review full compatibility reports, deeper member planetary interpretation and private-video initiation.</p>
+            </article>'''
+
         public_html=public_journal_cards(u['id'],u['id'])
-        community_section=f'''{community_profile}{planetary_section}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
+        community_section=f'''{coordination_profile}{planetary_section}{testing_section}
+        <div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2>
+        <p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>
+        {public_html}'''
     else:
-        community_section=f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Join The Seasons Within Community</h2><p class="muted">Complete your Conscious Coordination Profile to unlock the member Community.</p><a class="btn" href="{url_for('connection_edit')}">Join the Community</a></article>'''
+        community_section=f'''<article class="card">
+        <span class="badge heart">JOIN THE COMMUNITY</span>
+        <h2>Join The Seasons Within Community</h2>
+        <p class="muted">Complete your Conscious Coordination Profile to unlock the member Community and your complete Conscious Coordination experience.</p>
+        <a class="btn" href="{url_for('connection_edit')}">Join the Community</a>
+        </article>'''
 
-    access_badge='FULL ACCESS TESTING' if FULL_ACCESS_TESTING else ('★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER')
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{access_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article>
-    <div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>
+    content=f'''<article class="card">
+    <div class="profilehero"><div>
+        <span class="badge">{access_badge}</span>
+        <h1>{html.escape(u['name'])}</h1>
+        <p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p>
+        <p>{html.escape(u['about'] or '')}</p>
+        <div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div>
+    </div><div class="portrait">{initials(u['name'])}</div></div>
+    </article>
+
+    <div class="grid">
+        <a class="moreitem" href="{url_for('journal')}">My Private Journal</a>
+        <a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a>
+        <a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a>
+        <a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a>
+    </div>
+
     {business_html}{community_section}'''
     return page('My Profile',content,'profile')
 
