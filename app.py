@@ -980,6 +980,83 @@ def _split_choices(v):
     return {x.strip().lower() for x in re.split(r'[,|;/]+',v or '') if x.strip()}
 
 
+
+def member_coordination_scores(user, cp_row):
+    """Self-reported coordination indicators for a single member.
+
+    These are profile-based indicators, not clinical scores and not two-person
+    compatibility. They summarize how complete/consistent the member's selected
+    approaches are across the Conscious Coordination questionnaire.
+    """
+    cp=dict(cp_row) if cp_row else {}
+
+    def choices(key):
+        return _split_choices(cp.get(key,''))
+
+    def answered(*keys):
+        return sum(1 for k in keys if choices(k) or (cp.get(k,'') or '').strip())
+
+    def score_group(keys, supportive=None, base=58):
+        total=max(1,len(keys))
+        completion=answered(*keys)/total
+        score=base + round(completion*24)
+        if supportive:
+            hits=0
+            possible=0
+            for key,opts in supportive.items():
+                selected=choices(key)
+                if selected:
+                    possible+=1
+                    if selected & {x.lower() for x in opts}:
+                        hits+=1
+            if possible:
+                score += round((hits/possible)*10)
+        return max(35,min(96,score))
+
+    metrics=[
+        ('Social & Emotional Intelligence',score_group(
+            ['other_emotions','regulate','overwhelmed'],
+            {'other_emotions':['listen first','ask what they need','give space when requested'],
+             'regulate':['quiet time','movement / exercise','nature','breathing / meditation','talking with someone i trust','music / creative activity','rest']},
+            56)),
+        ('Communication',score_group(
+            ['communication'],
+            {'communication':['direct but gentle','thoughtful and measured','warm and expressive','need time to process first']},
+            58)),
+        ('Conflict',score_group(
+            ['conflict_style'],
+            {'conflict_style':['talk it through calmly','prefer direct resolution','seek compromise','need time before discussing']},
+            54)),
+        ('Repair & Accountability',score_group(
+            ['repair'],
+            {'repair':['apologize directly','need actions to match words','talk through what happened','focus on solutions','give space then reconnect']},
+            56)),
+        ('Emotional Rhythm',score_group(
+            ['overwhelmed','regulate','other_emotions'],None,56)),
+        ('Love Languages / Affection',score_group(
+            ['affection'],None,60)),
+        ('Lifestyle & Values',score_group(
+            ['lifestyle','values_text','family'],None,58)),
+        ('Boundaries',score_group(
+            ['boundaries','trust'],
+            {'boundaries':['clear verbal boundaries','need advance notice / planning','value privacy and alone time','flexible with communication'],
+             'trust':['consistency','honesty','time','shared experiences','emotional openness','reliability']},
+            56)),
+        ('Business Collaboration',score_group(
+            ['business_style'],None,58)),
+    ]
+
+    chart=member_chart_data(user)
+    if chart.get('ready'):
+        planet_count=sum(1 for p in PLANET_NAMES if (chart.get('planets') or {}).get(p))
+        planetary=max(60,min(96,60+planet_count*5))
+    else:
+        planetary=60
+    metrics.append(('Planetary Coordination',planetary))
+
+    overall=round(sum(score for _,score in metrics)/len(metrics)) if metrics else 0
+    return {'overall':overall,'metrics':metrics}
+
 def basic_compatibility(me_id,other_id,kind='general'):
     conn=db()
     arow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me_id,)).fetchone()
@@ -1320,6 +1397,7 @@ def community_post_delete(post_id):
 
 
 
+
 def profile():
     u=current_user()
     if not u:
@@ -1353,49 +1431,9 @@ def profile():
 
     member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'
 
+    planetary_section=''
     if ready:
-        cpd=dict(cp) if cp else {}
-        cp_types=cpd.get('coordination_types','')
-        cp_city=cpd.get('preferred_city','')
-        cp_state=cpd.get('preferred_state','')
-        cp_location=' • '.join(x for x in [cp_city,cp_state] if x) or display_city or 'Location not added'
-
-        facts=[
-            ('Communication',cpd.get('communication')),
-            ('Emotional Rhythm',cpd.get('overwhelmed')),
-            ('What Helps Me Regulate',cpd.get('regulate')),
-            ('When Others Are Emotional',cpd.get('other_emotions')),
-            ('Conflict',cpd.get('conflict_style')),
-            ('Repair & Accountability',cpd.get('repair')),
-            ('Boundaries',cpd.get('boundaries')),
-            ('Trust',cpd.get('trust')),
-            ('Love Languages / Affection',cpd.get('affection')),
-            ('Lifestyle & Values',cpd.get('values_text')),
-            ('Business Collaboration Style',cpd.get('business_style')),
-            ('Retreat / Activity Style',cpd.get('retreat_style')),
-            ('Children / Family',cpd.get('family')),
-            ('Occupation',cpd.get('occupation')),
-        ]
-        fact_html=''.join(
-            f'<div class="fact"><small>{html.escape(label)}</small><b>{html.escape(value or "Not answered")}</b></div>'
-            for label,value in facts
-        )
-        about=cpd.get('about_me') or u['about'] or ''
-
-        coordination_profile=f'''<article class="card">
-        <span class="badge heart">COMMUNITY MEMBER</span>
-        <h2>My Conscious Coordination Profile</h2>
-        <p class="muted">{html.escape(cp_location)}{(' • '+html.escape(cp_types)) if cp_types else ''}</p>
-        <div class="grid">{fact_html}</div>
-        <h3>About Me</h3><p>{html.escape(about)}</p>
-        <div class="actions">
-            <a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a>
-            <a class="out" href="{url_for('community')}">Enter Community</a>
-        </div>
-        </article>'''
-
         chart=member_chart_data(u)
-        planetary_section=''
         if chart.get('ready'):
             planet_cards=[]
             for name in PLANET_NAMES:
@@ -1409,22 +1447,20 @@ def profile():
                     {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°
                     <br><span class="small">Open deeper interpretation{html.escape(sensitive)}</span></a>'''
                 )
-
             rising=chart.get('rising') or chart.get('ascendant')
             if isinstance(rising,dict) and u['exact_time']:
                 planet_cards.append(
-                    f'''<div class="moreitem"><small>RISING</small><br>
-                    {html.escape(str(rising.get('sign','')))} {html.escape(str(rising.get('degree','')))}°</div>'''
+                    f'''<div class="moreitem"><small>RISING</small><br>{html.escape(str(rising.get('sign','')))} {html.escape(str(rising.get('degree','')))}°</div>'''
                 )
 
             time_note=''
             if chart.get('time_approximate'):
-                time_note='<p class="muted small">Birth time is unknown, so core planetary positions use the birth date with a local-noon calculation. Rising and houses are withheld; a time-sensitive Moon is identified rather than treated as certain.</p>'
+                time_note='<p class="muted small">Birth time is unknown, so Rising and houses are not shown. A time-sensitive Moon is identified rather than treated as certain.</p>'
 
             planetary_section=f'''<article class="card">
             <span class="badge heart">CONSCIOUS COORDINATION</span>
             <h2>Your Planetary Coordination</h2>
-            <p class="muted">Your calculated Sun, Moon, Mercury, Venus, Mars, Jupiter and Saturn work together with the Conscious Coordination profile you created. Open a placement for a whole-pattern interpretation rather than a generic definition.</p>
+            <p class="muted">Your calculated Sun, Moon, Mercury, Venus, Mars, Jupiter and Saturn work with your complete Conscious Coordination profile.</p>
             <div class="moregrid">{''.join(planet_cards)}</div>
             {time_note}
             <div class="actions">
@@ -1433,8 +1469,9 @@ def profile():
             </div>
             </article>'''
 
+    if ready:
         public_html=public_journal_cards(u['id'],u['id'])
-        community_section=f'''{coordination_profile}{planetary_section}
+        community_section=f'''{planetary_section}
         <div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2>
         <p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>
         {public_html}'''
@@ -1442,7 +1479,7 @@ def profile():
         community_section=f'''<article class="card">
         <span class="badge heart">JOIN THE COMMUNITY</span>
         <h2>Join The Seasons Within Community</h2>
-        <p class="muted">Complete your Conscious Coordination Profile to unlock the member Community and your complete Conscious Coordination experience.</p>
+        <p class="muted">Complete your Conscious Coordination Profile to unlock the member Community.</p>
         <a class="btn" href="{url_for('connection_edit')}">Join the Community</a>
         </article>'''
 
@@ -1489,19 +1526,77 @@ def edit_profile():
 
 @app.route('/member/<int:user_id>')
 @login_required
+
 def member_profile(user_id):
-    u=current_user(); conn=db()
+    u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
+
+    conn=db()
     me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
     if not conscious_coordination_ready(u,me_cp):
         conn.close()
         flash('Join the Community by completing your Conscious Coordination Profile.','info')
         return redirect(url_for('connections'))
+
     m=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
-    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone(); conn.close()
-    if not m: abort(404)
-    if m['id']==u['id']: return redirect(url_for('profile'))
-    public_html=public_journal_cards(m['id'],u['id']); business_html=member_business_card(business) if business else ''
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if m['conscious_paid'] else 'FREE MEMBER'}</span><h1>{m['name']}</h1><p class="muted">{m['city'] or ''} • {m['headline'] or ''}</p><p>{m['about'] or ''}</p><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Message Member</a></div><div class="portrait">{initials(m['name'])}</div></div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{m['name']}'s Community Posts</h2></div>{public_html}'''
+    cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone()
+    conn.close()
+
+    if not m:
+        abort(404)
+    if m['id']==u['id']:
+        return redirect(url_for('profile'))
+
+    public_html=public_journal_cards(m['id'],u['id'])
+    business_html=member_business_card(business) if business else ''
+
+    chart=member_chart_data(m)
+    planetary=''
+    if chart.get('ready'):
+        cards=[]
+        for name in PLANET_NAMES:
+            p=(chart.get('planets') or {}).get(name)
+            if not p:
+                continue
+            if has_full_access(u):
+                cards.append(
+                    f'''<a class="moreitem" href="{url_for('planet_interpretation',user_id=user_id,planet=name.lower())}">
+                    <small>{html.escape(name.upper())}</small><br>
+                    {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°
+                    <br><span class="small">Open deeper interpretation</span></a>'''
+                )
+            else:
+                cards.append(
+                    f'''<div class="moreitem"><small>{html.escape(name.upper())}</small><br>
+                    {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°</div>'''
+                )
+        planetary=f'''<article class="card">
+        <span class="badge heart">CONSCIOUS COORDINATION</span>
+        <h2>Planetary Coordination</h2>
+        <div class="moregrid">{''.join(cards)}</div>
+        {f'<div class="actions"><a class="out" href="{url_for("birth_chart",user_id=user_id)}">View Full Conscious Coordination</a></div>' if has_full_access(u) else ''}
+        </article>'''
+
+    content=f'''<article class="card">
+    <div class="profilehero"><div>
+        <span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if m['conscious_paid'] else 'COMMUNITY MEMBER'}</span>
+        <h1>{html.escape(m['name'])}</h1>
+        <p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}</p>
+        <p>{html.escape(m['about'] or '')}</p>
+        <div class="actions">
+            <a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a>
+            <a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a>
+        </div>
+    </div><div class="portrait">{initials(m['name'])}</div></div>
+    </article>
+    {business_html}
+    {planetary}
+    <div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2>
+    <p class="muted">Only Journal entries this member chose to share with Community appear here.</p></div>
+    {public_html}'''
     return page(m['name'],content,'profile')
 
 @app.route('/journal', methods=['GET','POST'])
@@ -1958,57 +2053,87 @@ def connection_edit():
 
 
 
+
 def connection_profile(user_id):
-    me=current_user(); conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(user_id,)).fetchall(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone(); liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone(); conn.close()
-    if not user: abort(404)
-    me_ready=conscious_coordination_ready(me,me_cp); target_ready=conscious_coordination_ready(user,cp_row)
-    if user_id==me['id'] and target_ready:
-        return redirect(url_for('profile'))
+    me=current_user()
+    if not me:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
+
+    conn=db()
+    user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
+    cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+    me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone()
+    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone()
+    liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone()
+    conn.close()
+
+    if not user:
+        abort(404)
+
+    me_ready=conscious_coordination_ready(me,me_cp)
+    target_ready=conscious_coordination_ready(user,cp_row)
+
     if user_id!=me['id'] and not me_ready:
-        flash('Join the Community by completing your Conscious Coordination Profile first.','info'); return redirect(url_for('community'))
-    if user_id!=me['id'] and not target_ready: abort(404)
-    cp=dict(cp_row) if cp_row else {}; completed=target_ready; chart=member_chart_data(user)
-    photo_name=cp.get('photo_name',''); photo=(f'<img src="{url_for("community_media",filename=photo_name)}" style="width:150px;height:150px;object-fit:cover;border-radius:50%" alt="{html.escape(user["name"],quote=True)}">' if photo_name else f'<div class="portrait">{initials(user["name"])}</div>')
-    actions=''
+        flash('Join the Community by completing your Conscious Coordination Profile first.','info')
+        return redirect(url_for('community'))
+    if not target_ready:
+        if user_id==me['id']:
+            return redirect(url_for('connection_edit'))
+        abort(404)
+
+    cp=dict(cp_row) if cp_row else {}
+    location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),
+                                     (cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
+    coordination_types=cp.get('coordination_types','')
+    about=cp.get('about_me') or user['about'] or ''
+
+    scores=member_coordination_scores(user,cp_row)
+    metric_cards=''.join(
+        f'''<article class="card"><h3>{html.escape(label)} — {score}%</h3>
+        <div class="meter"><i style="width:{score}%"></i></div></article>'''
+        for label,score in scores['metrics']
+    )
+
     if me['id']==user_id:
-        actions+=f'<a class="btn" href="{url_for("connection_edit")}">{"Edit" if completed else "Complete"} My Conscious Coordination Profile</a>'
-        if completed: actions+=f'<a class="out" href="{url_for("community")}">Enter Community</a>'
-        if completed and chart.get('ready'): actions+=f'<a class="out" href="{url_for("birth_chart",user_id=user_id)}">Open My Full Conscious Coordination</a>'
+        actions=f'''<a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a>
+        <a class="out" href="{url_for('profile')}">View My Public Journal</a>
+        <a class="out" href="{url_for('community')}">Enter Community</a>'''
     else:
-        actions+=f'<a class="btn" href="{url_for("message_member",recipient_id=user_id,origin="Conscious Coordination")}">Private Journal Entry</a><a class="out" href="{url_for("compatibility",user_id=user_id)}">Compatibility</a>'
-        if has_full_access(me) and chart.get('ready'): actions+=f'<a class="out" href="{url_for("birth_chart",user_id=user_id)}">View Full Conscious Coordination</a>'
-        if has_full_access(me): actions+=f'<a class="out" href="{url_for("video",user_id=user_id)}">Private Video</a>'
-        actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
-    placement_html=''
-    if completed and chart.get('ready'):
-        items=[]
-        for name in PLANET_NAMES:
-            pl=(chart.get('planets') or {}).get(name)
-            if not pl: continue
-            if me['id']==user_id or has_full_access(me):
-                inner=f'<a href="{url_for("planet_interpretation",user_id=user_id,planet=name.lower())}"><b>{html.escape(name)}</b> — {html.escape(str(pl.get("sign","")))} {html.escape(str(pl.get("degree","")))}°</a>'
-            else:
-                inner=f'<b>{html.escape(name)}</b> — {html.escape(str(pl.get("sign","")))} {html.escape(str(pl.get("degree","")))}°'
-            items.append(f'<div class="fact">{inner}</div>')
-        rising=chart.get('rising') or chart.get('ascendant')
-        if isinstance(rising,dict) and user['exact_time']: items.append(f'<div class="fact"><b>Rising</b> — {html.escape(str(rising.get("sign","")))} {html.escape(str(rising.get("degree","")))}°</div>')
-        note='<p class="muted small">Upgrade members can open this member’s deeper Conscious Coordination interpretation.</p>' if me['id']!=user_id and not has_full_access(me) else ''
-        placement_html=f'''<article class="card"><span class="badge">CONSCIOUS COORDINATION</span><h2>Planetary Placements</h2><div class="grid">{''.join(items)}</div>{note}</article>'''
-    setup=''
-    if me['id']==user_id and not completed:
-        setup=f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Conscious Coordination Profile</h2><p class="muted">Complete the required birth information and Conscious Coordination questions to unlock Community access.</p><a class="btn" href="{url_for('connection_edit')}">Join the Community</a></article>'''
-    location=' • '.join(x for x in [(user['city'] or '').strip(),(user['birth_region'] or '').strip()] if x) or 'Location not shared'; coordination_types=cp.get('coordination_types',''); about=cp.get('about_me','') or user['about'] or ''
-    details=''
-    if completed:
-        facts=[('Communication',cp.get('communication')),('Emotional Rhythm',cp.get('overwhelmed')),('What Helps Them Regulate',cp.get('regulate')),('When Others Are Emotional',cp.get('other_emotions')),('Conflict',cp.get('conflict_style')),('Repair & Accountability',cp.get('repair')),('Boundaries',cp.get('boundaries')),('Trust',cp.get('trust')),('Love Languages / Affection',cp.get('affection')),('Lifestyle & Values',cp.get('values_text')),('Business Collaboration Style',cp.get('business_style')),('Retreat / Activity Style',cp.get('retreat_style')),('Children / Family',cp.get('family')),('Occupation',cp.get('occupation'))]
-        fact_html=''.join(f'<div class="fact"><small>{html.escape(label)}</small><b>{html.escape(value or "Not answered")}</b></div>' for label,value in facts)
-        details=f'''<article class="card"><h2>How They Coordinate</h2><div class="grid">{fact_html}</div><h3>About</h3><p>{html.escape(about)}</p></article>'''
+        actions=f'''<a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>
+        <a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a>
+        <a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
+        if has_full_access(me):
+            actions+=f'''<a class="out" href="{url_for('birth_chart',user_id=user_id)}">View Full Conscious Coordination</a>
+            <a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
+        actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline">
+        <button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
+
+    business_html=''
     if business and cp.get('display_business_app'):
         business_html=member_business_card(business)
-    elif me['id']==user_id and not business:
-        business_html=f'''<article class="card"><h3>Hosted Business App</h3><p class="muted">Would you like to create a Hosted Business App?</p><a class="btn" href="{url_for('business_builder',step=1)}">Create My FREE Hosted Business App</a></article>'''
-    else: business_html=''
-    content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if user['conscious_paid'] else ''}">{'★ FULL MEMBER' if user['conscious_paid'] else 'MEMBER PROFILE'}</span><h1>{html.escape(user['name'])}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p><p>{html.escape(about)}</p><div class="actions">{actions}</div></div>{photo}</div></article>{setup}{placement_html}{details}{business_html}'''
+
+    title='My Conscious Coordination Profile' if me['id']==user_id else f'{html.escape(user["name"])} — Conscious Coordination Profile'
+
+    content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}">
+    <div class="profilehero"><div>
+        <span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if me['id']==user_id else 'CONSCIOUS COORDINATION PROFILE'}</span>
+        <h1>{title}</h1>
+        <p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>
+        {f'<p>{html.escape(about)}</p>' if about else ''}
+        <div class="actions">{actions}</div>
+    </div><div class="portrait">{initials(user['name'])}</div></div>
+    </article>
+
+    <article class="card">
+        <span class="badge">COORDINATION PROFILE</span>
+        <h2>Overall Coordination — {scores['overall']}%</h2>
+        <div class="meter"><i style="width:{scores['overall']}%"></i></div>
+        <div class="grid">{metric_cards}</div>
+        <p class="muted small">These are self-reported Conscious Coordination indicators, not a mental-health diagnosis. Two-person compatibility is calculated separately when members compare profiles.</p>
+    </article>
+
+    {business_html}'''
     return page('Conscious Coordination Profile',content,'more')
 
 @app.route('/conscious-coordination/profile/<int:user_id>/like', methods=['POST'])
