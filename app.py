@@ -510,14 +510,24 @@ def business_media_src(name):
 def business_media_file(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
+
 def conscious_coordination_ready(user, cp=None):
+    """Return False safely for brand-new/incomplete members; never error on missing optional fields."""
     if not user:
         return False
+    def getv(row,key,default=''):
+        try:
+            return row[key] if row is not None and key in row.keys() else default
+        except Exception:
+            return default
     if cp is None:
-        conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user['id'],)).fetchone(); conn.close()
-    birth_time_ack=bool(user['birth_time'] or ('birth_time_unknown' in user.keys() and user['birth_time_unknown']))
-    birth_ready=bool(user['dob'] and user['birth_city'] and user['birth_country'] and birth_time_ack)
-    return bool(cp and cp['opted_in'] and birth_ready)
+        conn=db()
+        cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(getv(user,'id',0),)).fetchone()
+        conn.close()
+    birth_time_ack=bool(getv(user,'birth_time','') or getv(user,'birth_time_unknown',0))
+    birth_ready=bool(getv(user,'dob','') and getv(user,'birth_city','') and getv(user,'birth_country','') and birth_time_ack)
+    opted_in=bool(getv(cp,'opted_in',0))
+    return bool(opted_in and birth_ready)
 
 def initials(name):
     return ''.join(p[0] for p in (name or '?').split()[:2]).upper()
@@ -760,6 +770,7 @@ def regular_business_cards(rows):
 
 
 @app.route('/')
+
 def home():
     q=request.args.get('q','').strip()
     conn=db()
@@ -771,11 +782,47 @@ def home():
     galaxy_match=(not q) or (q.lower() in 'galaxy eve conscious coordinator content creator content collaborations creator experiences'.lower())
     galaxy=galaxy_eve_card() if galaxy_match else ''
     other=regular_business_cards(businesses)
+
+    sky=current_sky_data()
+    planets=sky.get('planets') or {}
+    moon=planets.get('Moon') or {}
+    phase=sky.get('lunar_phase') or ''
+    if moon:
+        sky_heading=f"Moon in {html.escape(str(moon.get('sign','')))} {html.escape(str(moon.get('degree','')))}°"
+        if phase:
+            sky_heading+=f" • {html.escape(str(phase))}"
+    else:
+        sky_heading="Today's Current-Sky Reflection"
+
+    chips=[]
+    for name in PLANET_NAMES:
+        p=planets.get(name)
+        if p:
+            chips.append(f'<span class="chip">{html.escape(name)} {html.escape(str(p.get("sign","")))} {html.escape(str(p.get("degree","")))}°</span>')
+    sky_chips=''.join(chips)
+
+    mercury=(planets.get('Mercury') or {}).get('sign','')
+    venus=(planets.get('Venus') or {}).get('sign','')
+    mars=(planets.get('Mars') or {}).get('sign','')
+    if planets:
+        reflection_parts=[]
+        if phase:
+            reflection_parts.append(f"The {phase.lower()} offers a simple place to notice what is developing, what needs attention, and what can be released without forcing an outcome.")
+        if mercury:
+            reflection_parts.append(f"With Mercury moving through {mercury}, consider how clearly you are expressing what you mean and whether a conversation needs more listening or more directness.")
+        if venus:
+            reflection_parts.append(f"Venus in {venus} can be used as a reflection on values, connection, appreciation, and what feels worth your time and care.")
+        if mars:
+            reflection_parts.append(f"Mars in {mars} brings attention to how you use energy, initiative, boundaries, and follow-through.")
+        sky_reflection=' '.join(reflection_parts) or "Use today's sky as a pause for reflection: notice your communication, relationships, energy, and what deserves conscious attention."
+    else:
+        sky_reflection="Use today as a conscious check-in: notice what deserves your attention, where communication could be clearer, and what kind of connection or rest would support you."
+
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, retreats, conscious connection, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
-    <form method="get" class="card"><input class="input" name="q" value="{q}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
+    <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
-    <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">MOON TODAY</span><h2>Current-sky reflection</h2><p class="muted"><b>Reflection, not prediction.</b> Connect an astronomy/ephemeris provider when you are ready to publish live planetary positions.</p><div class="chips"><span class="chip">Mercury</span><span class="chip">Venus</span><span class="chip">Mars</span><span class="chip">Jupiter</span><span class="chip">Saturn</span></div></div></article>
+    <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">CURRENT SKY</span><h2>{sky_heading}</h2><p><b>Reflection, not prediction.</b> {html.escape(sky_reflection)}</p>{f'<div class="chips">{sky_chips}</div>' if sky_chips else ''}</div></article>
     <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Own Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Professional questionnaire + editable plan content + Marketing Strategy + 90-Day Launch Plan.</p><a class="btn" href="{url_for('startup')}">Start My Business Plan</a></article></div>'''
     return page('Home',content,'home')
 
@@ -1192,7 +1239,7 @@ def connections():
         business_note=''
         if business:
             business_note=f'''<article class="card"><span class="badge gold">BUSINESS CONSCIOUS COORDINATION</span><h2>{html.escape(business['name'])}</h2><p class="muted">Your business tools remain available while you complete your personal Conscious Coordination Profile.</p><div class="actions"><a class="out" href="{url_for('business_dashboard')}">Open My Business Dashboard</a></div></article>'''
-        content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Complete your Conscious Coordination Profile to enter the member Community and begin member-to-member coordination.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Complete My Conscious Coordination Profile</a><a class="out" href="{url_for('profile')}">View My Member Profile</a></div></div>
+        content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your Conscious Coordination Profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Join the Community</a><a class="out" href="{url_for('profile')}">View My Profile</a></div></div>
         <article class="card"><span class="badge heart">STRENGTHEN YOUR CONSCIOUS COORDINATION PROFILE</span><h2>Complete Your Profile</h2><p class="muted">Your required birth information and connection answers are completed together in this setup. Once saved, Community access opens automatically.</p><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p></article>{business_note}'''
         return page('Conscious Coordination',content,'more')
 
@@ -1324,7 +1371,7 @@ def connection_edit():
                 except Exception: pass
         keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']; vals=[data.get(k,'') for k in keys]
         conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at,photo_name,preferred_state,preferred_city,distance_preference,display_business_app) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name,preferred_state=excluded.preferred_state,preferred_city=excluded.preferred_city,distance_preference=excluded.distance_preference,display_business_app=excluded.display_business_app''',(u['id'],*vals,now(),photo_name,data['preferred_state'],data['preferred_city'],data['distance_preference'],data['display_business_app']))
-        conn.commit(); conn.close(); flash('Conscious Coordination profile saved.','success'); return redirect(url_for('connection_profile',user_id=u['id']))
+        conn.commit(); conn.close(); flash('Conscious Coordination profile saved. Welcome to the Community.','success'); return redirect(url_for('profile'))
     def val(k): return cp[k] if cp and k in cp.keys() and cp[k] else ''
     def selected(k): return {x.strip() for x in val(k).split(',') if x.strip()}
     def checks(name,label,options,help_text=''):
@@ -1376,6 +1423,8 @@ def connection_profile(user_id):
     me=current_user(); conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(user_id,)).fetchall(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone(); liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone(); conn.close()
     if not user: abort(404)
     me_ready=conscious_coordination_ready(me,me_cp); target_ready=conscious_coordination_ready(user,cp_row)
+    if user_id==me['id'] and target_ready:
+        return redirect(url_for('profile'))
     if user_id!=me['id'] and not me_ready:
         flash('Join the Community by completing your Conscious Coordination Profile first.','info'); return redirect(url_for('community'))
     if user_id!=me['id'] and not target_ready: abort(404)
