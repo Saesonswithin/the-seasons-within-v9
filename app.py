@@ -1089,13 +1089,16 @@ def community_post_delete(post_id):
 
 
 
+
 def profile():
     u=current_user()
     if not u:
         session.pop('user_id',None)
         return redirect(url_for('login',next=request.path))
+
     cp=safe_connection_profile(u['id'])
     ready=conscious_coordination_ready(u,cp)
+
     business=None
     try:
         conn=db()
@@ -1105,12 +1108,35 @@ def profile():
             conn.close()
     except Exception:
         app.logger.exception('Could not load member business on My Profile')
+
     business_html=member_business_card(business) if business else ''
+
+    # If this member joined before the city-sync fix, use their saved
+    # Conscious Coordination city immediately and repair users.city in place.
+    display_city=(u['city'] or '').strip()
+    if not display_city and cp and 'preferred_city' in cp.keys() and (cp['preferred_city'] or '').strip():
+        display_city=(cp['preferred_city'] or '').strip()
+        try:
+            conn=db()
+            conn.execute("UPDATE users SET city=? WHERE id=? AND trim(coalesce(city,''))=''",(display_city,u['id']))
+            conn.commit(); conn.close()
+        except Exception:
+            app.logger.exception('Could not sync Conscious Coordination city to My Profile')
+
     if ready:
-        public_html=public_journal_cards(u['id'],u['id']); community_section=f'''<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
+        cp_types=(cp['coordination_types'] or '') if cp and 'coordination_types' in cp.keys() else ''
+        cp_city=(cp['preferred_city'] or '') if cp and 'preferred_city' in cp.keys() else ''
+        cp_state=(cp['preferred_state'] or '') if cp and 'preferred_state' in cp.keys() else ''
+        cp_location=' • '.join(x for x in [cp_city,cp_state] if x) or display_city or 'Location not added'
+        community_profile=f'''<article class="card"><span class="badge heart">COMMUNITY MEMBER</span><h2>My Conscious Coordination Profile</h2><p class="muted">{html.escape(cp_location)}{(' • '+html.escape(cp_types)) if cp_types else ''}</p><p>Your Conscious Coordination Profile is complete and connected to this Member Profile.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a><a class="out" href="{url_for('community')}">Enter Community</a></div></article>'''
+        public_html=public_journal_cards(u['id'],u['id'])
+        community_section=f'''{community_profile}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
     else:
         community_section=f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Join The Seasons Within Community</h2><p class="muted">Complete your Conscious Coordination Profile to unlock the member Community.</p><a class="btn" href="{url_for('connection_edit')}">Join the Community</a></article>'''
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(u['city'] or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article><div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>{business_html}{community_section}'''
+
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article>
+    <div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>
+    {business_html}{community_section}'''
     return page('My Profile',content,'profile')
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -1528,6 +1554,13 @@ def connection_edit():
         data={k:', '.join(request.form.getlist(k)) for k in multi_fields}
         data.update({'location_preference':'','preferred_state':request.form.get('preferred_state','').strip(),'preferred_city':request.form.get('preferred_city','').strip(),'distance_preference':request.form.get('distance_preference','').strip(),'occupation':request.form.get('occupation','').strip(),'family':request.form.get('family','').strip(),'about_me':request.form.get('about_me','').strip(),'display_business_app':1 if request.form.get('display_business_app')=='1' and business else 0})
         data['location_preference']=' • '.join(x for x in [data['preferred_city'],data['preferred_state'],data['distance_preference']] if x)
+        # Keep the main member profile in sync with the city entered during
+        # Conscious Coordination setup when the member has not already set one.
+        if data['preferred_city']:
+            conn=db()
+            conn.execute("UPDATE users SET city=CASE WHEN trim(coalesce(city,''))='' THEN ? ELSE city END WHERE id=?",
+                         (data['preferred_city'],u['id']))
+            conn.commit(); conn.close()
         photo_name=cp['photo_name'] if cp and 'photo_name' in cp.keys() else ''
         uploads=request.files.getlist('photos'); video_uploads=request.files.getlist('videos'); paid=bool(u['conscious_paid'] or u['is_admin']); max_photos=7 if paid else 1; max_videos=2 if paid else 0
         conn=db(); current_photos=conn.execute("SELECT COUNT(*) n FROM coordination_media WHERE user_id=? AND media_type='image'",(u['id'],)).fetchone()['n']; current_videos=conn.execute("SELECT COUNT(*) n FROM coordination_media WHERE user_id=? AND media_type='video'",(u['id'],)).fetchone()['n']
