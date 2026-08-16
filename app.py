@@ -17,6 +17,7 @@ from pathlib import Path
 from flask import Flask, request, redirect, url_for, session, flash, abort, render_template_string, send_from_directory, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import re
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
