@@ -297,10 +297,131 @@ def init_db():
     init_astrology_tables()
 
 
+
+def _ensure_runtime_compat_schema():
+    # Best-effort repair for older persistent Render databases.
+    conn=db()
+    try:
+        try:
+            conn.execute('''CREATE TABLE IF NOT EXISTS connection_profiles (
+                user_id INTEGER PRIMARY KEY,
+                coordination_types TEXT DEFAULT '',
+                meet_preferences TEXT DEFAULT '',
+                age_range TEXT DEFAULT '',
+                location_preference TEXT DEFAULT '',
+                occupation TEXT DEFAULT '',
+                family TEXT DEFAULT '',
+                lifestyle TEXT DEFAULT '',
+                seeking TEXT DEFAULT '',
+                overwhelmed TEXT DEFAULT '',
+                regulate TEXT DEFAULT '',
+                other_emotions TEXT DEFAULT '',
+                conflict_style TEXT DEFAULT '',
+                repair TEXT DEFAULT '',
+                boundaries TEXT DEFAULT '',
+                trust TEXT DEFAULT '',
+                affection TEXT DEFAULT '',
+                communication TEXT DEFAULT '',
+                values_text TEXT DEFAULT '',
+                business_style TEXT DEFAULT '',
+                retreat_style TEXT DEFAULT '',
+                about_me TEXT DEFAULT '',
+                opted_in INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT DEFAULT '',
+                photo_name TEXT DEFAULT '',
+                preferred_state TEXT DEFAULT '',
+                preferred_city TEXT DEFAULT '',
+                distance_preference TEXT DEFAULT '',
+                display_business_app INTEGER NOT NULL DEFAULT 0
+            )''')
+        except Exception:
+            app.logger.exception('Could not create or verify connection_profiles table')
+
+        specs = {
+            'users': [
+                ('dob',"TEXT DEFAULT ''"),('adult_confirmed','INTEGER NOT NULL DEFAULT 0'),
+                ('city',"TEXT DEFAULT ''"),('headline',"TEXT DEFAULT ''"),('about',"TEXT DEFAULT ''"),
+                ('birth_time',"TEXT DEFAULT ''"),('birth_city',"TEXT DEFAULT ''"),('birth_region',"TEXT DEFAULT ''"),
+                ('birth_country',"TEXT DEFAULT ''"),('exact_time','INTEGER DEFAULT 0'),
+                ('birth_time_unknown','INTEGER NOT NULL DEFAULT 0'),('is_admin','INTEGER NOT NULL DEFAULT 0'),
+                ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0')
+            ],
+            'connection_profiles': [
+                ('coordination_types',"TEXT DEFAULT ''"),('meet_preferences',"TEXT DEFAULT ''"),
+                ('age_range',"TEXT DEFAULT ''"),('location_preference',"TEXT DEFAULT ''"),
+                ('occupation',"TEXT DEFAULT ''"),('family',"TEXT DEFAULT ''"),('lifestyle',"TEXT DEFAULT ''"),
+                ('seeking',"TEXT DEFAULT ''"),('overwhelmed',"TEXT DEFAULT ''"),('regulate',"TEXT DEFAULT ''"),
+                ('other_emotions',"TEXT DEFAULT ''"),('conflict_style',"TEXT DEFAULT ''"),('repair',"TEXT DEFAULT ''"),
+                ('boundaries',"TEXT DEFAULT ''"),('trust',"TEXT DEFAULT ''"),('affection',"TEXT DEFAULT ''"),
+                ('communication',"TEXT DEFAULT ''"),('values_text',"TEXT DEFAULT ''"),('business_style',"TEXT DEFAULT ''"),
+                ('retreat_style',"TEXT DEFAULT ''"),('about_me',"TEXT DEFAULT ''"),('opted_in','INTEGER NOT NULL DEFAULT 0'),
+                ('updated_at',"TEXT DEFAULT ''"),('photo_name',"TEXT DEFAULT ''"),('preferred_state',"TEXT DEFAULT ''"),
+                ('preferred_city',"TEXT DEFAULT ''"),('distance_preference',"TEXT DEFAULT ''"),
+                ('display_business_app','INTEGER NOT NULL DEFAULT 0')
+            ],
+            'businesses': [
+                ('active','INTEGER NOT NULL DEFAULT 0'),('owner_title',"TEXT DEFAULT ''"),
+                ('category',"TEXT DEFAULT ''"),('location',"TEXT DEFAULT ''"),('tagline',"TEXT DEFAULT ''"),
+                ('logo_name',"TEXT DEFAULT ''"),('cover_name',"TEXT DEFAULT ''"),('cover_type',"TEXT DEFAULT ''")
+            ],
+            'journal_entries': [
+                ('category',"TEXT DEFAULT 'Private Journal Entries'"),('shared_copy','INTEGER NOT NULL DEFAULT 0'),
+                ('source_post_id','INTEGER'),('updated_at',"TEXT DEFAULT ''")
+            ],
+            'community_posts': [
+                ('title',"TEXT DEFAULT 'Morning Reflection'"),('category',"TEXT DEFAULT 'Reflection'"),
+                ('media_name',"TEXT DEFAULT ''"),('media_type',"TEXT DEFAULT ''")
+            ]
+        }
+
+        for table, columns in specs.items():
+            try:
+                existing={r['name'] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+            except Exception:
+                existing=set()
+            if not existing:
+                continue
+            for column, ddl in columns:
+                if column in existing:
+                    continue
+                try:
+                    conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
+                    existing.add(column)
+                except Exception:
+                    app.logger.exception('Compatibility migration failed for %s.%s',table,column)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def safe_connection_profile(user_id):
+    if not user_id:
+        return None
+    try:
+        conn=db()
+        try:
+            return conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        app.logger.exception('Could not read Conscious Coordination profile for user %s',user_id)
+        return None
+
 @app.before_request
+
 def ensure_db():
-    if not getattr(app, '_db_ready', False):
+    if getattr(app, '_db_ready', False):
+        return
+    try:
         init_db()
+    except Exception:
+        app.logger.exception('Full database migration failed; applying compatibility repair')
+        try:
+            _ensure_runtime_compat_schema()
+        except Exception:
+            app.logger.exception('Compatibility database repair also failed')
+    finally:
+        # Do not take every request down just because a legacy migration is imperfect.
         app._db_ready = True
 
 
@@ -874,7 +995,8 @@ def logout():
 
 
 def community():
-    u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
+    u=current_user()
+    cp=safe_connection_profile(u['id'])
     if not conscious_coordination_ready(u,cp):
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your Conscious Coordination Profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Join the Community</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Conscious Coordination</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
         return page('Join the Community',content,'community')
@@ -948,7 +1070,19 @@ def community_post_delete(post_id):
 
 
 def profile():
-    u=current_user(); conn=db(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close(); ready=conscious_coordination_ready(u,cp); business_html=member_business_card(business) if business else ''
+    u=current_user()
+    cp=safe_connection_profile(u['id'])
+    ready=conscious_coordination_ready(u,cp)
+    business=None
+    try:
+        conn=db()
+        try:
+            business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        app.logger.exception('Could not load member business on My Profile')
+    business_html=member_business_card(business) if business else ''
     if ready:
         public_html=public_journal_cards(u['id'],u['id']); community_section=f'''<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>{public_html}'''
     else:
@@ -1225,15 +1359,19 @@ def astrology_reflections():
 
 
 def connections():
-    u=current_user(); conn=db()
-    own_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
-    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone()
-    host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-    members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
-    posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
-    conn.close()
+    u=current_user()
+    own_row=safe_connection_profile(u['id'])
     participating=conscious_coordination_ready(u,own_row)
     own=dict(own_row) if own_row else {}
+    business=None
+    try:
+        conn=db()
+        try:
+            business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        app.logger.exception('Could not load member business before Conscious Coordination join gate')
 
     if not participating:
         business_note=''
@@ -1242,6 +1380,17 @@ def connections():
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your Conscious Coordination Profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Join the Community</a><a class="out" href="{url_for('profile')}">View My Profile</a></div></div>
         <article class="card"><span class="badge heart">STRENGTHEN YOUR CONSCIOUS COORDINATION PROFILE</span><h2>Complete Your Profile</h2><p class="muted">Your required birth information and connection answers are completed together in this setup. Once saved, Community access opens automatically.</p><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p></article>{business_note}'''
         return page('Conscious Coordination',content,'more')
+
+    # Only load member-directory/feed data after the member has completed setup.
+    try:
+        conn=db()
+        host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
+        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
+        posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
+        conn.close()
+    except Exception:
+        app.logger.exception('Could not load Conscious Coordination directory/feed')
+        host=None; members=[]; posts=[]
 
     ensure_free_coordination_notifications(u['id'])
 
