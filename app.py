@@ -4,6 +4,7 @@ import sqlite3
 import smtplib
 import urllib.request
 import urllib.error
+import urllib.parse
 import textwrap
 import html
 import subprocess
@@ -66,7 +67,7 @@ def init_db():
         dob TEXT,
         adult_confirmed INTEGER NOT NULL DEFAULT 0,
         city TEXT DEFAULT '', headline TEXT DEFAULT '', about TEXT DEFAULT '',
-        birth_time TEXT DEFAULT '', birth_city TEXT DEFAULT '', birth_region TEXT DEFAULT '', birth_country TEXT DEFAULT '', exact_time INTEGER DEFAULT 0, birth_time_unknown INTEGER NOT NULL DEFAULT 0,
+        birth_time TEXT DEFAULT '', birth_city TEXT DEFAULT '', birth_region TEXT DEFAULT '', birth_country TEXT DEFAULT '', birth_timezone TEXT DEFAULT '', exact_time INTEGER DEFAULT 0, birth_time_unknown INTEGER NOT NULL DEFAULT 0,
         is_admin INTEGER NOT NULL DEFAULT 0,
         conscious_paid INTEGER NOT NULL DEFAULT 0,
         business_dev_paid INTEGER NOT NULL DEFAULT 0,
@@ -203,6 +204,7 @@ def init_db():
         ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
         ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
         ("users","birth_time_unknown","ALTER TABLE users ADD COLUMN birth_time_unknown INTEGER NOT NULL DEFAULT 0"),
+        ("users","birth_timezone","ALTER TABLE users ADD COLUMN birth_timezone TEXT DEFAULT ''"),
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
@@ -343,7 +345,7 @@ def _ensure_runtime_compat_schema():
                 ('dob',"TEXT DEFAULT ''"),('adult_confirmed','INTEGER NOT NULL DEFAULT 0'),
                 ('city',"TEXT DEFAULT ''"),('headline',"TEXT DEFAULT ''"),('about',"TEXT DEFAULT ''"),
                 ('birth_time',"TEXT DEFAULT ''"),('birth_city',"TEXT DEFAULT ''"),('birth_region',"TEXT DEFAULT ''"),
-                ('birth_country',"TEXT DEFAULT ''"),('exact_time','INTEGER DEFAULT 0'),
+                ('birth_country',"TEXT DEFAULT ''"),('birth_timezone',"TEXT DEFAULT ''"),('exact_time','INTEGER DEFAULT 0'),
                 ('birth_time_unknown','INTEGER NOT NULL DEFAULT 0'),('is_admin','INTEGER NOT NULL DEFAULT 0'),
                 ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0')
             ],
@@ -730,30 +732,248 @@ def member_chart_data(member):
     return {'ready':False,'reason':'Planetary calculation is waiting for a supported time-zone calculation.','birth':birth}
 
 
-def _birth_timezone(member):
-    country=(member['birth_country'] or '').strip().lower(); region=(member['birth_region'] or '').strip().lower(); city=(member['birth_city'] or '').strip().lower()
-    city_map={'detroit':'America/Detroit','ann arbor':'America/Detroit','dearborn':'America/Detroit','southfield':'America/Detroit','royal oak':'America/Detroit','ferndale':'America/Detroit','birmingham':'America/Detroit','troy':'America/Detroit','novi':'America/Detroit','livonia':'America/Detroit','farmington hills':'America/Detroit','pontiac':'America/Detroit','flint':'America/Detroit','lansing':'America/Detroit','east lansing':'America/Detroit','grand rapids':'America/Detroit','kalamazoo':'America/Detroit','battle creek':'America/Detroit','saginaw':'America/Detroit','bay city':'America/Detroit','midland':'America/Detroit','traverse city':'America/Detroit','muskegon':'America/Detroit','holland':'America/Detroit','jackson':'America/Detroit','ypsilanti':'America/Detroit','sterling heights':'America/Detroit','warren':'America/Detroit','rochester hills':'America/Detroit','westland':'America/Detroit','new york':'America/New_York','los angeles':'America/Los_Angeles','chicago':'America/Chicago','denver':'America/Denver','phoenix':'America/Phoenix','honolulu':'Pacific/Honolulu','anchorage':'America/Anchorage','toronto':'America/Toronto','windsor':'America/Toronto','vancouver':'America/Vancouver'}
-    if city in city_map: return city_map[city]
-    if country in {'united states','usa','us','u.s.','u.s.a.'}:
-        state_map={'connecticut':'America/New_York','delaware':'America/New_York','district of columbia':'America/New_York','georgia':'America/New_York','maine':'America/New_York','maryland':'America/New_York','massachusetts':'America/New_York','new hampshire':'America/New_York','new jersey':'America/New_York','new york':'America/New_York','north carolina':'America/New_York','ohio':'America/New_York','pennsylvania':'America/New_York','rhode island':'America/New_York','south carolina':'America/New_York','vermont':'America/New_York','virginia':'America/New_York','west virginia':'America/New_York','illinois':'America/Chicago','iowa':'America/Chicago','louisiana':'America/Chicago','minnesota':'America/Chicago','mississippi':'America/Chicago','missouri':'America/Chicago','wisconsin':'America/Chicago','colorado':'America/Denver','montana':'America/Denver','new mexico':'America/Denver','utah':'America/Denver','california':'America/Los_Angeles','washington':'America/Los_Angeles','arizona':'America/Phoenix','hawaii':'Pacific/Honolulu','alaska':'America/Anchorage'}
-        return state_map.get(region)
-    if country in {'canada','ca'}:
-        prov={'ontario':'America/Toronto','quebec':'America/Toronto','nova scotia':'America/Halifax','new brunswick':'America/Halifax','manitoba':'America/Winnipeg','saskatchewan':'America/Regina','alberta':'America/Edmonton','british columbia':'America/Vancouver'}
-        return prov.get(region)
+
+def _valid_timezone_name(name):
+    if not name:
+        return ''
+    try:
+        ZoneInfo(str(name))
+        return str(name)
+    except Exception:
+        return ''
+
+
+def _cache_birth_timezone(member, tzname):
+    tzname=_valid_timezone_name(tzname)
+    if not tzname or not member:
+        return tzname
+    try:
+        uid=member['id']
+    except Exception:
+        return tzname
+    try:
+        conn=db()
+        conn.execute("UPDATE users SET birth_timezone=? WHERE id=?",(tzname,uid))
+        conn.commit(); conn.close()
+    except Exception:
+        app.logger.exception('Could not cache resolved birth timezone')
+    return tzname
+
+
+def _birth_place_coordinates(member):
+    city=(member['birth_city'] or '').strip()
+    region=(member['birth_region'] or '').strip()
+    country=(member['birth_country'] or '').strip()
+    if not city or not country:
+        return None
+    query=', '.join(x for x in [city,region,country] if x)
+    try:
+        params=urllib.parse.urlencode({'q':query,'format':'jsonv2','limit':1,'addressdetails':1})
+        req=urllib.request.Request(
+            'https://nominatim.openstreetmap.org/search?'+params,
+            headers={'User-Agent':'TheSeasonsWithin/1.0 (contact: e.reed81@gmail.com)','Accept':'application/json'}
+        )
+        with urllib.request.urlopen(req,timeout=8) as resp:
+            data=json.loads(resp.read().decode('utf-8'))
+        if data:
+            return float(data[0]['lat']),float(data[0]['lon'])
+    except Exception:
+        app.logger.info('Birth-place geocoding was unavailable for %s',query)
     return None
 
+
+def _timezone_from_coordinates(lat,lon):
+    # TimeAPI returns an IANA timezone for a latitude/longitude. We validate
+    # the returned name with ZoneInfo before using it.
+    endpoints=[
+        'https://timeapi.io/api/TimeZone/coordinate',
+        'https://www.timeapi.io/api/TimeZone/coordinate',
+    ]
+    params=urllib.parse.urlencode({'latitude':lat,'longitude':lon})
+    for base in endpoints:
+        try:
+            req=urllib.request.Request(base+'?'+params,headers={'User-Agent':'TheSeasonsWithin/1.0','Accept':'application/json'})
+            with urllib.request.urlopen(req,timeout=8) as resp:
+                data=json.loads(resp.read().decode('utf-8'))
+            for key in ('timeZone','timezone','timeZoneId','timezoneId','id'):
+                tz=_valid_timezone_name(data.get(key) if isinstance(data,dict) else '')
+                if tz:
+                    return tz
+        except Exception:
+            continue
+    return ''
+
+
+def _regional_timezone_fallback(country,region,city,coords=None):
+    country=(country or '').strip().lower()
+    region=(region or '').strip().lower()
+    city=(city or '').strip().lower()
+    lon=coords[1] if coords else None
+
+    city_map={
+        'detroit':'America/Detroit','ann arbor':'America/Detroit','dearborn':'America/Detroit',
+        'southfield':'America/Detroit','royal oak':'America/Detroit','ferndale':'America/Detroit',
+        'birmingham':'America/Detroit','troy':'America/Detroit','novi':'America/Detroit',
+        'livonia':'America/Detroit','farmington hills':'America/Detroit','pontiac':'America/Detroit',
+        'flint':'America/Detroit','lansing':'America/Detroit','east lansing':'America/Detroit',
+        'grand rapids':'America/Detroit','kalamazoo':'America/Detroit','battle creek':'America/Detroit',
+        'saginaw':'America/Detroit','bay city':'America/Detroit','midland':'America/Detroit',
+        'traverse city':'America/Detroit','muskegon':'America/Detroit','holland':'America/Detroit',
+        'jackson':'America/Detroit','ypsilanti':'America/Detroit','sterling heights':'America/Detroit',
+        'warren':'America/Detroit','rochester hills':'America/Detroit','westland':'America/Detroit',
+        'new york':'America/New_York','chicago':'America/Chicago','denver':'America/Denver',
+        'los angeles':'America/Los_Angeles','san francisco':'America/Los_Angeles',
+        'seattle':'America/Los_Angeles','phoenix':'America/Phoenix','honolulu':'Pacific/Honolulu',
+        'anchorage':'America/Anchorage','toronto':'America/Toronto','windsor':'America/Toronto',
+        'vancouver':'America/Vancouver','montreal':'America/Toronto','london':'Europe/London',
+        'paris':'Europe/Paris','berlin':'Europe/Berlin','rome':'Europe/Rome','madrid':'Europe/Madrid',
+        'tokyo':'Asia/Tokyo','seoul':'Asia/Seoul','mumbai':'Asia/Kolkata','delhi':'Asia/Kolkata',
+    }
+    if city in city_map:
+        return city_map[city]
+
+    if country in {'united states','usa','us','u.s.','u.s.a.','united states of america'}:
+        eastern={'connecticut','delaware','district of columbia','georgia','maine','maryland','massachusetts',
+                 'new hampshire','new jersey','new york','north carolina','ohio','pennsylvania','rhode island',
+                 'south carolina','vermont','virginia','west virginia','michigan'}
+        central={'alabama','arkansas','illinois','iowa','louisiana','minnesota','mississippi','missouri','wisconsin',
+                 'oklahoma'}
+        mountain={'colorado','montana','new mexico','utah','wyoming'}
+        pacific={'california','washington','nevada'}
+        if region in eastern: return 'America/Detroit' if region=='michigan' else 'America/New_York'
+        if region in central: return 'America/Chicago'
+        if region in mountain: return 'America/Denver'
+        if region in pacific: return 'America/Los_Angeles'
+        if region=='arizona': return 'America/Phoenix'
+        if region=='hawaii': return 'Pacific/Honolulu'
+        if region=='alaska': return 'America/Anchorage'
+        if region=='indiana': return 'America/Indiana/Indianapolis' if lon is None or lon>-86.7 else 'America/Chicago'
+        if region=='florida': return 'America/Chicago' if lon is not None and lon<-85.0 else 'America/New_York'
+        if region=='kentucky': return 'America/Chicago' if lon is not None and lon<-85.75 else 'America/New_York'
+        if region=='tennessee': return 'America/Chicago' if lon is None or lon<-85.5 else 'America/New_York'
+        if region=='texas': return 'America/Denver' if lon is not None and lon<-104.0 else 'America/Chicago'
+        if region=='kansas': return 'America/Denver' if lon is not None and lon<-101.5 else 'America/Chicago'
+        if region=='nebraska': return 'America/Denver' if lon is not None and lon<-101.0 else 'America/Chicago'
+        if region in {'north dakota','south dakota'}: return 'America/Denver' if lon is not None and lon<-101.0 else 'America/Chicago'
+        if region=='idaho': return 'America/Los_Angeles' if lon is not None and lon<-116.5 else 'America/Denver'
+        if region=='oregon': return 'America/Denver' if lon is not None and lon>-117.0 else 'America/Los_Angeles'
+
+    if country in {'canada','ca'}:
+        prov={
+            'ontario':'America/Toronto','quebec':'America/Toronto','nova scotia':'America/Halifax',
+            'new brunswick':'America/Halifax','prince edward island':'America/Halifax',
+            'newfoundland and labrador':'America/St_Johns','manitoba':'America/Winnipeg',
+            'saskatchewan':'America/Regina','alberta':'America/Edmonton',
+            'british columbia':'America/Vancouver','yukon':'America/Whitehorse'
+        }
+        if region in prov: return prov[region]
+
+    single_zone={
+        'united kingdom':'Europe/London','uk':'Europe/London','england':'Europe/London',
+        'ireland':'Europe/Dublin','france':'Europe/Paris','germany':'Europe/Berlin',
+        'italy':'Europe/Rome','spain':'Europe/Madrid','netherlands':'Europe/Amsterdam',
+        'belgium':'Europe/Brussels','switzerland':'Europe/Zurich','austria':'Europe/Vienna',
+        'poland':'Europe/Warsaw','portugal':'Europe/Lisbon','japan':'Asia/Tokyo',
+        'south korea':'Asia/Seoul','republic of korea':'Asia/Seoul','india':'Asia/Kolkata',
+        'china':'Asia/Shanghai','singapore':'Asia/Singapore','new zealand':'Pacific/Auckland',
+        'south africa':'Africa/Johannesburg','kenya':'Africa/Nairobi','nigeria':'Africa/Lagos',
+        'ghana':'Africa/Accra','egypt':'Africa/Cairo','israel':'Asia/Jerusalem',
+        'turkey':'Europe/Istanbul','greece':'Europe/Athens','sweden':'Europe/Stockholm',
+        'norway':'Europe/Oslo','denmark':'Europe/Copenhagen','finland':'Europe/Helsinki'
+    }
+    return single_zone.get(country,'')
+
+
+def _birth_timezone(member):
+    if not member:
+        return None
+    try:
+        cached=member['birth_timezone'] if 'birth_timezone' in member.keys() else ''
+    except Exception:
+        cached=''
+    cached=_valid_timezone_name(cached)
+    if cached:
+        return cached
+
+    country=(member['birth_country'] or '').strip()
+    region=(member['birth_region'] or '').strip()
+    city=(member['birth_city'] or '').strip()
+
+    # Fast local fallback first for known cities/regions.
+    tz=_valid_timezone_name(_regional_timezone_fallback(country,region,city))
+    if tz:
+        return _cache_birth_timezone(member,tz)
+
+    coords=_birth_place_coordinates(member)
+    if coords:
+        tz=_valid_timezone_name(_timezone_from_coordinates(*coords))
+        if not tz:
+            tz=_valid_timezone_name(_regional_timezone_fallback(country,region,city,coords))
+        if tz:
+            return _cache_birth_timezone(member,tz)
+
+    return None
+
+
 def _local_natal_planets(member):
-    if not member['birth_time']: return None
     tzname=_birth_timezone(member)
-    if not tzname: return None
+    if not tzname:
+        return None
     try:
         import swisseph as swe
-        local=datetime.strptime(member['dob']+' '+member['birth_time'],'%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo(tzname)); utc=local.astimezone(timezone.utc); jd=swe.julday(utc.year,utc.month,utc.day,utc.hour+utc.minute/60+utc.second/3600)
-        ids={'Sun':swe.SUN,'Moon':swe.MOON,'Mercury':swe.MERCURY,'Venus':swe.VENUS,'Mars':swe.MARS,'Jupiter':swe.JUPITER,'Saturn':swe.SATURN}; planets={}
+
+        # If birth time is unknown, calculate the core planets at local noon.
+        # Rising/houses are deliberately withheld. This keeps the core
+        # Conscious Coordination layer available without inventing a birth time.
+        time_unknown=not bool(member['birth_time'])
+        local_time=member['birth_time'] or '12:00'
+        local=datetime.strptime(member['dob']+' '+local_time,'%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo(tzname))
+        utc=local.astimezone(timezone.utc)
+        jd=swe.julday(utc.year,utc.month,utc.day,utc.hour+utc.minute/60+utc.second/3600)
+
+        ids={'Sun':swe.SUN,'Moon':swe.MOON,'Mercury':swe.MERCURY,'Venus':swe.VENUS,
+             'Mars':swe.MARS,'Jupiter':swe.JUPITER,'Saturn':swe.SATURN}
+        planets={}
         for name,pid in ids.items():
-            lon=float(swe.calc_ut(jd,pid)[0][0])%360; sign,degree=_sign_from_longitude(lon); planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
-        return {'ready':True,'planets':planets,'source':'Swiss Ephemeris local calculation','birth':{'date':member['dob'],'time':member['birth_time'],'exact_time':bool(member['exact_time']),'city':member['birth_city'],'region':member['birth_region'],'country':member['birth_country']}}
+            lon=float(swe.calc_ut(jd,pid)[0][0])%360
+            sign,degree=_sign_from_longitude(lon)
+            planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
+
+        # When time is unknown, identify whether the Moon changes sign during
+        # the local calendar day. If so, show the noon calculation but flag it
+        # as time-sensitive rather than pretending the sign is certain.
+        moon_time_sensitive=False
+        if time_unknown:
+            start_local=datetime.strptime(member['dob']+' 00:00','%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo(tzname))
+            end_local=datetime.strptime(member['dob']+' 23:59','%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo(tzname))
+            signs=[]
+            for dt in (start_local,end_local):
+                z=dt.astimezone(timezone.utc)
+                j=swe.julday(z.year,z.month,z.day,z.hour+z.minute/60)
+                mlon=float(swe.calc_ut(j,swe.MOON)[0][0])%360
+                signs.append(_sign_from_longitude(mlon)[0])
+            moon_time_sensitive=(signs[0]!=signs[1])
+            if moon_time_sensitive:
+                planets['Moon']['time_sensitive']=True
+
+        return {
+            'ready':True,
+            'planets':planets,
+            'source':'Swiss Ephemeris local calculation',
+            'timezone':tzname,
+            'time_approximate':time_unknown,
+            'moon_time_sensitive':moon_time_sensitive,
+            'birth':{
+                'date':member['dob'],
+                'time':member['birth_time'] or '',
+                'exact_time':bool(member['exact_time']),
+                'city':member['birth_city'],
+                'region':member['birth_region'],
+                'country':member['birth_country']
+            }
+        }
     except Exception:
+        app.logger.exception('Local natal planetary calculation failed')
         return None
 
 def _split_choices(v):
@@ -1099,6 +1319,7 @@ def community_post_delete(post_id):
 
 
 
+
 def profile():
     u=current_user()
     if not u:
@@ -1130,7 +1351,7 @@ def profile():
         except Exception:
             app.logger.exception('Could not sync Conscious Coordination city to My Profile')
 
-    access_badge='FULL ACCESS TESTING' if FULL_ACCESS_TESTING else ('★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER')
+    member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'
 
     if ready:
         cpd=dict(cp) if cp else {}
@@ -1174,52 +1395,46 @@ def profile():
         </article>'''
 
         chart=member_chart_data(u)
-        planet_cards=[]
+        planetary_section=''
         if chart.get('ready'):
+            planet_cards=[]
             for name in PLANET_NAMES:
                 p=(chart.get('planets') or {}).get(name)
                 if not p:
                     continue
+                sensitive=' • birth-time sensitive' if p.get('time_sensitive') else ''
                 planet_cards.append(
                     f'''<a class="moreitem" href="{url_for('planet_interpretation',user_id=u['id'],planet=name.lower())}">
                     <small>{html.escape(name.upper())}</small><br>
                     {html.escape(str(p.get('sign','')))} {html.escape(str(p.get('degree','')))}°
-                    <br><span class="small">Open deeper interpretation</span></a>'''
+                    <br><span class="small">Open deeper interpretation{html.escape(sensitive)}</span></a>'''
                 )
+
             rising=chart.get('rising') or chart.get('ascendant')
             if isinstance(rising,dict) and u['exact_time']:
                 planet_cards.append(
                     f'''<div class="moreitem"><small>RISING</small><br>
                     {html.escape(str(rising.get('sign','')))} {html.escape(str(rising.get('degree','')))}°</div>'''
                 )
-            planetary_body=f'''<div class="moregrid">{''.join(planet_cards)}</div>
+
+            time_note=''
+            if chart.get('time_approximate'):
+                time_note='<p class="muted small">Birth time is unknown, so core planetary positions use the birth date with a local-noon calculation. Rising and houses are withheld; a time-sensitive Moon is identified rather than treated as certain.</p>'
+
+            planetary_section=f'''<article class="card">
+            <span class="badge heart">CONSCIOUS COORDINATION</span>
+            <h2>Your Planetary Coordination</h2>
+            <p class="muted">Your calculated Sun, Moon, Mercury, Venus, Mars, Jupiter and Saturn work together with the Conscious Coordination profile you created. Open a placement for a whole-pattern interpretation rather than a generic definition.</p>
+            <div class="moregrid">{''.join(planet_cards)}</div>
+            {time_note}
             <div class="actions">
                 <a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">Open My Full Conscious Coordination</a>
                 <a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a>
-            </div>'''
-        else:
-            reason=chart.get('reason') or 'The planetary calculation did not return placements.'
-            planetary_body=f'''<div class="fact"><small>TEST STATUS</small><b>{html.escape(reason)}</b></div>
-            <p class="muted small">Your saved birth information remains attached to this profile. This test status is shown so the calculation layer cannot fail silently while we verify the full profile.</p>
-            <div class="actions"><a class="out" href="{url_for('edit_profile')}">Review My Profile Information</a></div>'''
-
-        planetary_section=f'''<article class="card">
-        <span class="badge heart">CONSCIOUS COORDINATION</span>
-        <h2>Your Planetary Coordination</h2>
-        <p class="muted">These calculated placements work together with your complete Conscious Coordination profile. Open a placement for a whole-pattern interpretation rather than a generic definition.</p>
-        {planetary_body}
-        </article>'''
-
-        testing_section=''
-        if FULL_ACCESS_TESTING:
-            testing_section=f'''<article class="card paid">
-            <span class="badge gold">FULL ACCESS TESTING</span>
-            <h2>Full Reports Are Open</h2>
-            <p class="muted">This test build leaves the upgraded Conscious Coordination paths open so you can review full compatibility reports, deeper member planetary interpretation and private-video initiation.</p>
+            </div>
             </article>'''
 
         public_html=public_journal_cards(u['id'],u['id'])
-        community_section=f'''{coordination_profile}{planetary_section}{testing_section}
+        community_section=f'''{coordination_profile}{planetary_section}
         <div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2>
         <p class="muted">Only writing you published to Community appears here. Your private Journal and Inbox remain private.</p></div>
         {public_html}'''
@@ -1233,7 +1448,7 @@ def profile():
 
     content=f'''<article class="card">
     <div class="profilehero"><div>
-        <span class="badge">{access_badge}</span>
+        <span class="badge">{member_badge}</span>
         <h1>{html.escape(u['name'])}</h1>
         <p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p>
         <p>{html.escape(u['about'] or '')}</p>
@@ -1267,7 +1482,7 @@ def edit_profile():
         elif not birth_time and not time_unknown:
             flash('Enter your birth time, or choose “I do not know my birth time.”','error')
         else:
-            conn=db(); conn.execute('''UPDATE users SET name=?,city=?,headline=?,about=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,exact_time=?,birth_time_unknown=? WHERE id=?''',(name,city,headline,about,dob,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,u['id'])); conn.commit(); conn.close(); flash('Profile saved. Conscious Coordination now uses this information automatically.','success'); return redirect(url_for('profile'))
+            conn=db(); conn.execute('''UPDATE users SET name=?,city=?,headline=?,about=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone='',exact_time=?,birth_time_unknown=? WHERE id=?''',(name,city,headline,about,dob,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,u['id'])); conn.commit(); conn.close(); flash('Profile saved. Conscious Coordination now uses this information automatically.','success'); return redirect(url_for('profile'))
     unknown=bool('birth_time_unknown' in u.keys() and u['birth_time_unknown'])
     content=f'''<div class="hero"><h1>Edit My Profile</h1></div><form class="card" method="post"><label><b>Name</b></label><input class="input" name="name" value="{html.escape(u['name'] or '',quote=True)}" required><label><b>City</b></label><input class="input" name="city" value="{html.escape(u['city'] or '',quote=True)}"><label><b>Headline</b></label><input class="input" name="headline" value="{html.escape(u['headline'] or '',quote=True)}"><label><b>About</b></label><textarea class="input" name="about">{html.escape(u['about'] or '')}</textarea><h2>Birth Information</h2><p class="muted">This information is part of Conscious Coordination and is reused automatically.</p><label><b>Birth Date</b></label><input class="input" type="date" name="dob" value="{html.escape(u['dob'] or '',quote=True)}" required><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time" value="{html.escape(u['birth_time'] or '',quote=True)}"><div class="fact"><label><input type="checkbox" name="exact_time" {'checked' if u['exact_time'] else ''}> Exact birth time is known</label><br><label><input type="checkbox" name="birth_time_unknown" {'checked' if unknown else ''}> I do not know my birth time</label></div><label><b>Birth City</b></label><input class="input" name="birth_city" value="{html.escape(u['birth_city'] or '',quote=True)}" required><label><b>State / Province</b></label><input class="input" name="birth_region" value="{html.escape(u['birth_region'] or '',quote=True)}"><label><b>Country</b></label><input class="input" name="birth_country" value="{html.escape(u['birth_country'] or '',quote=True)}" required><button class="btn">Save Profile</button></form>'''
     return page('Edit Profile',content,'profile')
@@ -1661,7 +1876,7 @@ def connection_edit():
             flash('Birth date, birth city and country are required before you can join the Community.','error'); return redirect(url_for('connection_edit'))
         if not birth_time and not time_unknown:
             flash('Enter your birth time, or choose “I do not know my birth time.”','error'); return redirect(url_for('connection_edit'))
-        conn=db(); conn.execute('UPDATE users SET dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,exact_time=?,birth_time_unknown=? WHERE id=?',(dob,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,u['id'])); conn.commit(); conn.close()
+        conn=db(); conn.execute("""UPDATE users SET dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone='',exact_time=?,birth_time_unknown=? WHERE id=?""",(dob,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,u['id'])); conn.commit(); conn.close()
         multi_fields=['coordination_types','meet_preferences','age_range','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style']
         data={k:', '.join(request.form.getlist(k)) for k in multi_fields}
         data.update({'location_preference':'','preferred_state':request.form.get('preferred_state','').strip(),'preferred_city':request.form.get('preferred_city','').strip(),'distance_preference':request.form.get('distance_preference','').strip(),'occupation':request.form.get('occupation','').strip(),'family':request.form.get('family','').strip(),'about_me':request.form.get('about_me','').strip(),'display_business_app':1 if request.form.get('display_business_app')=='1' and business else 0})
