@@ -2728,8 +2728,167 @@ Write a psychologically coherent report with: Interaction Pattern, Strength to U
         conn.commit(); conn.close()
     return page('Full Compatibility Report',f'''<div class="hero paid"><span class="badge gold">★ FULL PAID COMPATIBILITY</span><h1>{html.escape(label)}</h1><p class="muted">{html.escape(report_type.title())} report with {html.escape(b['name'])}</p></div><article class="card"><div style="line-height:1.75">{html.escape(text).replace(chr(10),'<br>')}</div></article><article class="card"><p class="muted small"><b>Psychology disclaimer:</b> Results are based on self-reported behavior. They are not a mental-health diagnosis or a prediction that a relationship will or will not succeed.</p></article>''','more')
 
+PLANET_BEHAVIORAL_LENSES = {
+    'Sun': {
+        'question':'How do I develop direction, confidence, identity and make choices that feel like mine?',
+        'focus':['identity','self-direction','confidence','purpose','decision ownership'],
+        'profile_keys':['values_text','communication','boundaries','business_style','seeking'],
+        'watch':'over-accommodating, performing for approval, or losing your own position while considering everyone else',
+    },
+    'Moon': {
+        'question':'What happens emotionally under stress, what creates safety, and what helps me regulate and recover?',
+        'focus':['emotional regulation','safety','stress response','recovery','attachment'],
+        'profile_keys':['overwhelmed','regulate','other_emotions','trust','boundaries','affection'],
+        'watch':'escaping discomfort too quickly, acting for relief, or confusing temporary intensity with a lasting need',
+    },
+    'Mercury': {
+        'question':'How do I process information, communicate, interpret people and reach decisions?',
+        'focus':['thinking','communication','interpretation','assumptions','decision process'],
+        'profile_keys':['communication','conflict_style','repair','trust','boundaries'],
+        'watch':'filling in missing information, overthinking motives, or responding to an interpretation before checking the facts',
+    },
+    'Venus': {
+        'question':'How do I experience affection, reciprocity, values, pleasure, closeness and what I am willing to invest in?',
+        'focus':['affection','reciprocity','values','attraction','investment of time/energy/resources'],
+        'profile_keys':['affection','values_text','trust','boundaries','family','seeking'],
+        'watch':'confusing comfort, chemistry or approval with genuine reciprocity and value alignment',
+    },
+    'Mars': {
+        'question':'How do I act, pursue, assert myself, handle frustration and defend boundaries?',
+        'focus':['action','assertion','anger','frustration','boundaries','pursuit'],
+        'profile_keys':['conflict_style','boundaries','regulate','communication','business_style'],
+        'watch':'acting at the peak of activation, becoming overly forceful, or suppressing frustration until it leaks out indirectly',
+    },
+    'Jupiter': {
+        'question':'Where do I expand, take chances, form beliefs, seek opportunity and risk overextending?',
+        'focus':['growth','opportunity','beliefs','risk','expansion','overextension'],
+        'profile_keys':['values_text','business_style','retreat_style','seeking','lifestyle'],
+        'watch':'letting enthusiasm outrun evidence, resources, timing or sustainable follow-through',
+    },
+    'Saturn': {
+        'question':'Where do responsibility, fear, limits, patience, discipline and long-term consequences matter most?',
+        'focus':['responsibility','limits','discipline','fear','commitment','long-term structure'],
+        'profile_keys':['repair','boundaries','trust','business_style','values_text','conflict_style'],
+        'watch':'turning caution into avoidance, carrying too much alone, or mistaking control for safety',
+    },
+}
+
+def _planet_profile_slice(profile,pname):
+    p=profile or {}
+    cfg=PLANET_BEHAVIORAL_LENSES.get(pname,{})
+    return {k:p.get(k,'') for k in cfg.get('profile_keys',[]) if p.get(k,'')}
+
+def _normalize_report_text(value):
+    value=re.sub(r'[^a-z0-9\s]',' ',(value or '').lower())
+    value=re.sub(r'\s+',' ',value).strip()
+    return value
+
+def _report_similarity(a,b):
+    aa=set(_normalize_report_text(a).split())
+    bb=set(_normalize_report_text(b).split())
+    if not aa or not bb:
+        return 0.0
+    return len(aa & bb)/max(1,len(aa | bb))
+
+def _planet_specific_practice(pname, practices):
+    practice=(practices or [''])[0]
+    if pname=='Sun':
+        if practice=='meditation':
+            return "Meditate before a choice that involves other people's expectations. Ask: If nobody approved or disapproved, what would I choose because it actually feels like mine?"
+        if practice=='nature':
+            return "Take a short walk alone before an important choice. Use the distance from other people's reactions to identify what you actually think and want."
+        return "Before agreeing, name the choice that is actually yours to make and the part that belongs to other people."
+    if pname=='Moon':
+        if practice=='meditation':
+            return "Use meditation to let the feeling exist without immediately turning it into action. Notice what the emotion is asking for—space, reassurance, rest, movement, or clarity—before deciding what to do."
+        if practice=='nature':
+            return "Use time outside to settle the body before changing plans, ending a conversation, spending money, or making a large decision for emotional relief."
+        return "Regulate first, decide second. Give the emotional wave enough time to change before making a lasting choice."
+    if pname=='Mercury':
+        if practice=='meditation':
+            return "Before a charged conversation, meditate for a few minutes and separate three things: what was actually said, what you observed, and what you are concluding from it."
+        return "Write down: What do I know? What am I assuming? What question would give me the missing information?"
+    if pname=='Venus':
+        if practice=='meditation':
+            return "Meditate on the difference between wanting comfort, wanting closeness, and wanting something that genuinely matches your values. Do not make them the same question."
+        return "Before investing more time, money, affection or energy, ask whether the exchange feels mutual and whether it still fits your values."
+    if pname=='Mars':
+        if practice=='meditation':
+            return "Use meditation to create a gap between activation and action. Notice the urge to push, defend or shut down, then choose the smallest clear action that protects the boundary without escalating the situation."
+        if practice=='movement':
+            return "Use movement to discharge activation before confrontation. Return to the issue once you can state the boundary without needing the other person to feel your intensity."
+        return "Pause at the first sign of activation and decide whether the situation needs action, a boundary, a question, or simply more time."
+    if pname=='Jupiter':
+        if practice=='meditation':
+            return "Use meditation to slow enthusiasm long enough to test the idea. Ask what evidence supports it, what resources it requires, and what would make the opportunity sustainable."
+        return "Before saying yes to an opportunity, check capacity, cost, timing and follow-through—not just possibility."
+    if pname=='Saturn':
+        if practice=='meditation':
+            return "Use meditation to sit with uncertainty without immediately trying to eliminate it. Ask whether the hesitation is useful caution or fear asking for perfect certainty."
+        return "Break the responsibility into the next concrete step. Long-term structure is built more reliably through repeatable action than pressure."
+    return "Use a short regulation pause before responding."
+
+def _planet_fallback_guidance(pname, profile, practices, sky, relevant_aspects):
+    cfg=PLANET_BEHAVIORAL_LENSES.get(pname,{})
+    insights=_behavioral_insights(profile or {})
+    moon_sign=(((sky or {}).get('planets') or {}).get('Moon') or {}).get('sign','')
+    practice=_planet_specific_practice(pname,practices)
+
+    if pname=='Sun':
+        main="You may be good at considering more than one perspective, but that strength can become costly when managing everyone else's reaction makes your own position harder to hear."
+        real="In relationships or collaboration, take other people's input seriously without handing them ownership of your decision. Before agreeing, ask whether you would still choose the same thing if no one were disappointed or impressed."
+        watch="Watch for peacekeeping that quietly turns into self-abandonment. Being considerate and being clear about your own position do not have to compete."
+        reflection="Where am I trying to earn agreement when what I really need is to make a decision I can stand behind?"
+    elif pname=='Moon':
+        main="Emotional pressure may become harder to tolerate when you feel boxed in, over-managed or unable to see a way forward. Relief can become tempting before the feeling has actually been understood."
+        real="Before changing plans, withdrawing, spending, booking something, or making a large decision mainly to feel better, give the emotion time to settle and identify what kind of safety or freedom you actually need."
+        watch="Watch for turning movement, distraction or a new option into an escape hatch before the original feeling has been processed."
+        reflection="What feeling am I trying to get away from, and what would help me stay with it long enough to understand what it needs?"
+    elif pname=='Mercury':
+        main="You may naturally look beneath the surface and try to understand what people really mean. That can make you perceptive, but it can also make an interpretation feel like a fact before it has been checked."
+        real="When something feels suspicious, emotionally loaded or inconsistent, separate what was actually said, what you observed, and what you concluded. Then ask the direct question before responding to the conclusion."
+        watch="Watch for reading silence, tone or incomplete information as proof of motive. Curiosity is more useful than certainty when the evidence is incomplete."
+        reflection="What do I know for certain, what am I inferring, and what question would reduce the guesswork?"
+    elif pname=='Venus':
+        main="Closeness is most useful when affection, reciprocity and values are moving in the same direction. Strong chemistry or comfort can feel meaningful without necessarily answering whether the exchange is balanced."
+        real="Before giving more time, money, attention or emotional labor, notice whether the other person is also showing consistent investment in a form you can actually receive."
+        watch="Watch for treating intensity, attraction or being needed as evidence that the connection is reciprocal."
+        reflection="What am I investing here, what am I receiving, and does the exchange still match what I say matters to me?"
+    elif pname=='Mars':
+        main="Your strongest action is not always your fastest action. Frustration can clarify what boundary or goal matters, but it becomes less useful when the need to discharge intensity starts deciding the method."
+        real="When activated, identify whether you need to say no, ask for clarity, make a decision, or leave the situation temporarily. Choose the smallest direct action that addresses the real issue."
+        watch="Watch for either pushing too hard or waiting so long that resentment ends up speaking for you."
+        reflection="What action would protect what matters without making the emotional intensity the leader?"
+    elif pname=='Jupiter':
+        main="Opportunity can feel energizing enough that possibility starts to sound like evidence. Growth works better when enthusiasm and capacity are checked together."
+        real="Before expanding a project, relationship, trip, purchase or commitment, test the idea against time, money, energy and what you would have to stop doing to support it."
+        watch="Watch for saying yes because the future feels exciting while leaving the practical cost for later."
+        reflection="What part of this opportunity is genuinely promising, and what would make it sustainable rather than merely exciting?"
+    else:  # Saturn
+        main="Responsibility can make you stronger, but too much pressure can turn caution into paralysis or make you feel you have to carry everything alone."
+        real="When something matters long-term, define the next repeatable step instead of demanding certainty or perfection before you begin."
+        watch="Watch for using preparation as a way to postpone exposure, vulnerability or the possibility of getting something wrong."
+        reflection="What is the next responsible step I can actually repeat, rather than the perfect plan I wish I could guarantee?"
+
+    sky_note=''
+    if pname in {'Moon','Venus','Jupiter'} and moon_sign=='Taurus':
+        sky_note=(" Today's broader pattern adds extra emphasis to comfort, security and resources. "
+                  "If money, spending, investment or commitment is involved, separate the desire for emotional relief from the question of whether the choice is sustainable.")
+    elif relevant_aspects:
+        sky_note=" The current sky is emphasizing this area, so it is especially useful to observe the behavior in real time rather than treating it as a fixed trait."
+
+    return (
+        f"What This May Look Like\n\n{main}{sky_note}\n\n"
+        f"Use It in Real Life\n\n{real}\n\n"
+        f"What May Help\n\n{practice}\n\n"
+        f"Watch For\n\n{watch}\n\n"
+        f"Reflection\n\n{reflection}"
+    )
+
 @app.route('/astrology/member/<int:user_id>/planet/<planet>')
 @login_required
+
+
 
 
 
@@ -2760,43 +2919,58 @@ def planet_interpretation(user_id,planet):
         a for a in _chart_sky_aspects(chart,sky)
         if a.get('natal_planet')==pname or a.get('current_planet')==pname
     ][:5]
+
     placement=(chart.get('planets') or {}).get(pname,{})
     profile=dict(cp) if cp else {}
     wellness=_member_wellness_practices(profile)
-    insights=_behavioral_insights(profile)
+    lens=PLANET_BEHAVIORAL_LENSES.get(pname,{})
+    profile_slice=_planet_profile_slice(profile,pname)
 
     data={
         'member':{'name':member['name'],'city':member['city']},
-        'behavioral_insights':insights,
-        'wellness_practices':wellness,
-        'full_chart':chart,
-        'current_sky':sky,
-        'relevant_current_to_natal_aspects':relevant_aspects,
         'focus_planet':pname,
-        'placement':placement
+        'focus_question':lens.get('question',''),
+        'behavioral_focus':lens.get('focus',[]),
+        'watch_for':lens.get('watch',''),
+        'relevant_profile_only':profile_slice,
+        'wellness_practices':wellness,
+        'full_chart_internal':chart,
+        'current_sky_internal':sky,
+        'relevant_current_to_natal_aspects_internal':relevant_aspects,
+        'placement_internal':placement
     }
 
     instruction=f'''
-Write a useful Conscious Coordination interpretation for a member who opened their {pname} placement.
+Write a Conscious Coordination interpretation for the member's {pname} placement.
 
-The chart details and questionnaire answers are INTERNAL EVIDENCE. Do not show your work.
+IMPORTANT: Each planet must produce a DIFFERENT kind of report. This report's behavioral question is:
+"{lens.get('question','')}"
+
+Behavioral focus for this planet:
+{', '.join(lens.get('focus',[]))}
+
+The chart, technical aspects and questionnaire selections are INTERNAL EVIDENCE. Do not show your work.
 
 Do NOT:
-- list the member's other planets and degrees;
+- recycle the Sun/Moon/Mercury/Venus/Mars/Jupiter/Saturn wording;
+- list other planets or degrees;
 - explain technical aspect names or orbs;
-- recite their questionnaire answers;
-- give a textbook "{pname} means..." explanation;
-- write a generic zodiac personality reading.
+- recite questionnaire selections;
+- write a textbook zodiac description;
+- use the same meditation paragraph that another planet would use.
 
-Use the whole chart, current sky and behavioral profile to infer a practical pattern. The member should finish the report understanding something useful about how they make decisions, communicate, protect themselves, connect, work with others or regulate emotion.
+Translate the evidence into this planet's specific human problem:
+Sun = self-direction, identity, confidence and owning choices.
+Moon = emotional safety, stress, regulation and recovery.
+Mercury = thinking, interpretation, communication and assumptions.
+Venus = affection, reciprocity, values, attraction and investment.
+Mars = action, assertion, frustration, anger and boundaries.
+Jupiter = growth, opportunity, beliefs, risk and overextension.
+Saturn = responsibility, fear, limits, patience, discipline and long-term structure.
 
-The astrology should be mostly invisible in the prose. At most, use one short sentence such as:
-"This part of your current pattern puts extra emphasis on communication and follow-through."
-Do not mention degrees or technical aspect language in the body.
+Use current sky only when it directly strengthens THIS planet's behavioral theme. If there is no relevant current connection, omit it.
 
-If the member uses meditation, yoga, nature, movement, quiet time, music/sound or another supplied practice, explain how to use that actual practice for the pattern you identified.
-
-If a Taurus Moon/current security theme is relevant, it is appropriate to suggest pausing before emotionally driven spending, investments, commitments or comfort-seeking choices—without predicting outcomes or giving financial advice.
+If the member uses meditation or another wellness practice, adapt that practice specifically to this planet's function rather than repeating a universal exercise.
 
 Use these headings:
 - What This May Look Like
@@ -2805,10 +2979,26 @@ Use these headings:
 - Watch For
 - Reflection
 
-Make the writing specific, practical and psychologically thoughtful. Never diagnose. Never invent chart facts. Never predict relationship, business or financial outcomes.
+Make the report practical, psychologically thoughtful, non-diagnostic and non-deterministic.
 '''
     generated=_openai_text(instruction+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(data,default=str))
-    body=generated or _fallback_planet_interpretation(member,pname,placement,cp,chart,sky,relevant_aspects)
+    fallback=_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects)
+
+    body=(generated or '').strip()
+    # Guard against generic or collapsed outputs. If AI returns something too short
+    # or fails to address this planet's distinct theme, use the planet-specific fallback.
+    required_terms={
+        'Sun':['choice','direction','own'],
+        'Moon':['emotion','regulat','safety'],
+        'Mercury':['communicat','assum','interpret'],
+        'Venus':['reciproc','affection','invest'],
+        'Mars':['action','boundar','frustrat'],
+        'Jupiter':['opportun','expand','risk'],
+        'Saturn':['responsib','limit','disciplin'],
+    }.get(pname,[])
+    low=body.lower()
+    if (not body or len(body)<350 or not any(term in low for term in required_terms)):
+        body=fallback
 
     heading=f'{pname} — {placement.get("sign","")} {placement.get("degree","")}°'
     return page('Conscious Coordination',f'''<div class="hero">
