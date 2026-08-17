@@ -1,6 +1,11 @@
 import os
 import json
 import sqlite3
+try:
+    import psycopg2
+    import psycopg2.extras
+except Exception:
+    psycopg2 = None
 import smtplib
 import urllib.request
 import urllib.error
@@ -40,14 +45,22 @@ PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 _default_app_db = Path(__file__).with_name('seasons_within.db')
 _default_persistent_db = PERSISTENT_DATA_DIR / 'seasons_within.db'
 DB_PATH = os.environ.get('DATABASE_PATH', str(_default_persistent_db))
+
+DATABASE_URL = os.environ.get('DATABASE_URL','').strip()
+USING_POSTGRES = DATABASE_URL.startswith('postgres://') or DATABASE_URL.startswith('postgresql://')
+DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+if psycopg2 is not None:
+    DB_INTEGRITY_ERRORS = DB_INTEGRITY_ERRORS + (psycopg2.IntegrityError,)
+
 DB_PATH = str(Path(DB_PATH).expanduser())
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-try:
-    _target_db = Path(DB_PATH)
-    if _default_app_db.resolve() != _target_db.resolve() and _default_app_db.exists() and (not _target_db.exists() or _target_db.stat().st_size == 0):
-        shutil.copy2(_default_app_db, _target_db)
-except Exception:
-    pass
+if not USING_POSTGRES:
+    try:
+        _target_db = Path(DB_PATH)
+        if _default_app_db.resolve() != _target_db.resolve() and _default_app_db.exists() and (not _target_db.exists() or _target_db.stat().st_size == 0):
+            shutil.copy2(_default_app_db, _target_db)
+    except Exception:
+        pass
 UPLOAD_DIR = PERSISTENT_DATA_DIR / 'uploads'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
@@ -71,9 +84,108 @@ JOURNAL_CATEGORIES = ('Reflection','Business','Retreat','Conscious Coordination'
 # Data layer
 # -----------------------------------------------------------------------------
 
+PG_ID_TABLES = {
+    'users','journal_entries','community_posts','messages','notifications','businesses',
+    'business_media','business_calendar','business_plans','retreats','business_bookings',
+    'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
+    'password_reset_tokens','astrology_reflections','compatibility_reports','coordination_video_requests'
+}
+
+def _pg_qmarks(sql):
+    return sql.replace('?', '%s')
+
+def _pg_rewrite_sql(sql):
+    stripped=sql.strip()
+    pragma=re.match(r'PRAGMA\s+table_info\(([^)]+)\)',stripped,re.I)
+    if pragma:
+        table=pragma.group(1).strip().strip('"').strip("'")
+        return ("SELECT column_name AS name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position"), (table,)
+
+    sql=re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b','SERIAL PRIMARY KEY',sql,flags=re.I)
+    sql=re.sub(r'\bAUTOINCREMENT\b','',sql,flags=re.I)
+
+    if re.match(r'^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+',sql,re.I):
+        sql=re.sub(r'^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+','INSERT INTO ',sql,flags=re.I)
+        sql=sql.rstrip().rstrip(';')+' ON CONFLICT DO NOTHING'
+
+    replace_match=re.match(
+        r'^\s*INSERT\s+OR\s+REPLACE\s+INTO\s+([A-Za-z_]+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)',
+        sql,re.I|re.S
+    )
+    if replace_match:
+        table=replace_match.group(1)
+        cols=[c.strip() for c in replace_match.group(2).split(',')]
+        vals=replace_match.group(3)
+        conflict_map={
+            'astrology_reflections':['user_id','reflection_type','period_key'],
+            'coordination_alert_runs':['user_id','run_type','period_key'],
+            'compatibility_reports':['viewer_id','other_id','report_type','category'],
+        }
+        keys=conflict_map.get(table)
+        if keys:
+            updates=[c for c in cols if c not in keys and c!='id']
+            assignment=', '.join(f'{c}=EXCLUDED.{c}' for c in updates)
+            sql=f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({vals}) ON CONFLICT ({', '.join(keys)}) DO UPDATE SET {assignment}"
+
+    return _pg_qmarks(sql), None
+
+class _PGCursor:
+    def __init__(self,cursor,lastrowid=None):
+        self._cursor=cursor
+        self.lastrowid=lastrowid
+    def fetchone(self):
+        return self._cursor.fetchone()
+    def fetchall(self):
+        return self._cursor.fetchall()
+    def __iter__(self):
+        return iter(self._cursor)
+
+class _PGConnection:
+    def __init__(self,raw):
+        self.raw=raw
+    def execute(self,sql,params=()):
+        rewritten,special_params=_pg_rewrite_sql(sql)
+        use_params=special_params if special_params is not None else params
+        cur=self.raw.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        insert_match=re.match(r'^\s*INSERT\s+INTO\s+([A-Za-z_]+)\b',rewritten,re.I)
+        wants_id=bool(insert_match and insert_match.group(1) in PG_ID_TABLES and 'RETURNING ' not in rewritten.upper())
+        if wants_id:
+            rewritten=rewritten.rstrip().rstrip(';')+' RETURNING id'
+        try:
+            cur.execute(rewritten,tuple(use_params or ()))
+            lastrowid=None
+            if wants_id:
+                row=cur.fetchone()
+                lastrowid=row['id'] if row else None
+            return _PGCursor(cur,lastrowid)
+        except Exception:
+            try:
+                self.raw.rollback()
+            except Exception:
+                pass
+            raise
+    def executescript(self,script):
+        statements=[x.strip() for x in script.split(';') if x.strip()]
+        for statement in statements:
+            self.execute(statement)
+        return self
+    def commit(self):
+        self.raw.commit()
+    def rollback(self):
+        self.raw.rollback()
+    def close(self):
+        self.raw.close()
+
 def db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+    if USING_POSTGRES:
+        if psycopg2 is None:
+            raise RuntimeError("DATABASE_URL is configured but psycopg2 is not installed. Add psycopg2-binary to requirements.txt.")
+        raw=psycopg2.connect(DATABASE_URL,connect_timeout=15)
+        return _PGConnection(raw)
+
+    conn=sqlite3.connect(DB_PATH,timeout=30)
+    conn.row_factory=sqlite3.Row
     conn.execute('PRAGMA foreign_keys=ON')
     conn.execute('PRAGMA busy_timeout=30000')
     try:
@@ -657,12 +769,19 @@ def account_storage_status():
     if not u or not u['is_admin']:
         abort(403)
     counts=_member_data_counts(u['id'])
-    disk_hint='Render persistent disk path' if str(Path(DB_PATH)).startswith('/var/data/') else 'Configured application data path'
+    if USING_POSTGRES:
+        backend='PostgreSQL'
+        location='DATABASE_URL'
+        note='Member records are stored outside the web-service filesystem and survive web-service restarts and deploys.'
+    else:
+        backend='SQLite'
+        location=str(DB_PATH)
+        note='SQLite is local-file storage. On an ephemeral host, member records can disappear after a restart or deploy.'
     rows=''.join(f'<div class="fact"><small>{html.escape(label)}</small><b>{count}</b></div>' for label,count in counts.items())
     content=f'''<div class="hero"><span class="badge">ADMIN ACCOUNT STORAGE</span><h1>Profile Persistence Check</h1>
     <p class="muted">Logged in as <b>{html.escape(u['email'])}</b> - Permanent user ID <b>{u['id']}</b>.</p></div>
-    <article class="card"><h2>Database</h2><p><b>{html.escape(disk_hint)}</b></p><p class="muted small">{html.escape(str(DB_PATH))}</p>
-    <p>All profile, Journal, Community, business, Retreat, Inbox and Conscious Coordination records are loaded by this permanent user ID.</p></article>
+    <article class="card"><h2>Database Backend</h2><p><b>{backend}</b></p><p class="muted small">{html.escape(location)}</p>
+    <p>{note}</p></article>
     <article class="card"><h2>Saved records attached to this account</h2><div class="grid">{rows}</div></article>
     <div class="actions"><a class="out" href="{url_for('profile')}">My Profile</a><a class="out" href="{url_for('settings')}">Settings</a></div>'''
     return page('Account Storage Status',content,'more')
@@ -1662,7 +1781,10 @@ Keep it practical, psychologically thoughtful, non-diagnostic and non-determinis
         'wellness_practices':ctx.get('wellness_practices',[])
     }
     conn=db()
-    conn.execute('INSERT OR REPLACE INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at) VALUES(?,?,?,?,?)',
+    conn.execute('''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at)
+                 VALUES(?,?,?,?,?)
+                 ON CONFLICT(user_id,reflection_type,period_key)
+                 DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',
                  (user_id,kind,period,json.dumps(payload),now()))
     conn.commit(); conn.close()
     return payload
@@ -1672,7 +1794,9 @@ def ensure_free_coordination_notifications(user_id):
     conn=db(); monthly=conn.execute('SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',(user_id,'monthly',month)).fetchone(); matchrun=conn.execute('SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',(user_id,'matches',day)).fetchone(); me=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); others=conn.execute('SELECT user_id FROM connection_profiles WHERE opted_in=1 AND user_id<>?',(user_id,)).fetchall(); conn.close()
     if not monthly:
         notify(user_id,'Monthly Conscious Coordination Reflection','Your monthly Conscious Coordination reflection is ready.',url_for('monthly_coordination_reflection'))
-        conn=db(); conn.execute('INSERT OR REPLACE INTO coordination_alert_runs VALUES(?,?,?,?)',(user_id,'monthly',month,now())); conn.commit(); conn.close()
+        conn=db(); conn.execute('''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
+        VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
+        DO UPDATE SET created_at=excluded.created_at''',(user_id,'monthly',month,now())); conn.commit(); conn.close()
     if not matchrun and me:
         mytypes=_split_choices(me['coordination_types'])
         candidates=[]
@@ -1683,7 +1807,9 @@ def ensure_free_coordination_notifications(user_id):
                 if c.get('score') is not None: candidates.append((c['score'],r['user_id'],name['name']))
         for score,oid,name in sorted(candidates,reverse=True)[:3]:
             if score>=45: notify(user_id,'New Conscious Coordination Match',name+' shares compatible intentions with you. Open their profile to explore the connection.',url_for('connection_profile',user_id=oid))
-        conn=db(); conn.execute('INSERT OR REPLACE INTO coordination_alert_runs VALUES(?,?,?,?)',(user_id,'matches',day,now())); conn.commit(); conn.close()
+        conn=db(); conn.execute('''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
+        VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
+        DO UPDATE SET created_at=excluded.created_at''',(user_id,'matches',day,now())); conn.commit(); conn.close()
 
 def reflection_card(payload,title):
     body=html.escape(payload.get('text','')).replace('\n\n','</p><p>').replace('\n','<br>')
@@ -1724,7 +1850,7 @@ def _affiliate_code_for(user_id, create=False):
                 conn.execute('INSERT INTO affiliate_profiles(user_id,referral_code,created_at) VALUES(?,?,?)',(user_id,code,now()))
                 conn.commit()
                 return code
-            except sqlite3.IntegrityError:
+            except DB_INTEGRITY_ERRORS:
                 continue
         return ''
     finally:
@@ -1967,8 +2093,8 @@ def join():
                                  (name,email,generate_password_hash(password),dob,adult,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,now()))
                 new_user_id=cur.lastrowid
                 if referrer and referrer['id']!=new_user_id:
-                    conn.execute('''INSERT OR IGNORE INTO affiliate_referrals(referrer_id,referred_user_id,created_at)
-                                    VALUES(?,?,?)''',(referrer['id'],new_user_id,now()))
+                    conn.execute('''INSERT INTO affiliate_referrals(referrer_id,referred_user_id,created_at)
+                                    VALUES(?,?,?) ON CONFLICT DO NOTHING''',(referrer['id'],new_user_id,now()))
                 conn.commit()
                 session['user_id']=new_user_id
                 if referrer:
@@ -1976,7 +2102,7 @@ def join():
                 else:
                     flash('Your account is ready. Complete your Conscious Coordination Profile to join the Community.','success')
                 return redirect(url_for('connection_edit'))
-            except sqlite3.IntegrityError:
+            except DB_INTEGRITY_ERRORS:
                 flash('An account with that email already exists. Use Login or Forgot Password.','error')
             finally:
                 conn.close()
@@ -3334,7 +3460,10 @@ Write a psychologically coherent report with: Interaction Pattern, Strength to U
         if not text:
             text=_fallback_full_compatibility_report(label,report_type,a,b,acp,bcp)
         conn=db()
-        conn.execute('INSERT OR REPLACE INTO compatibility_reports(viewer_id,other_id,report_type,category,payload,created_at) VALUES(?,?,?,?,?,?)',
+        conn.execute('''INSERT INTO compatibility_reports(viewer_id,other_id,report_type,category,payload,created_at)
+                     VALUES(?,?,?,?,?,?)
+                     ON CONFLICT(viewer_id,other_id,report_type,category)
+                     DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',
                      (me['id'],user_id,report_type,category,json.dumps({'text':text,'report_version':2}),now()))
         conn.commit(); conn.close()
     return page('Full Compatibility Report',f'''<div class="hero paid"><span class="badge gold">★ FULL PAID COMPATIBILITY</span><h1>{html.escape(label)}</h1><p class="muted">{html.escape(report_type.title())} report with {html.escape(b['name'])}</p></div><article class="card"><div style="line-height:1.75">{html.escape(text).replace(chr(10),'<br>')}</div></article><article class="card"><p class="muted small"><b>Psychology disclaimer:</b> Results are based on self-reported behavior. They are not a mental-health diagnosis or a prediction that a relationship will or will not succeed.</p></article>''','more')
