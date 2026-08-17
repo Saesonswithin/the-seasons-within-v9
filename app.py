@@ -30,11 +30,24 @@ app.permanent_session_lifetime = timedelta(days=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE','true').lower() not in {'0','false','no'}
-PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR', '/var/data' if Path('/var/data').exists() else str(Path(__file__).with_name('data'))))
+# Persistent account storage -------------------------------------------------
+# Always use the selected persistent data directory unless DATABASE_PATH
+# explicitly overrides it. This keeps the same user/profile database after
+# logout, restart, and Render deploys when /var/data is mounted as a disk.
+_render_disk = Path('/var/data')
+PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR') or (_render_disk if _render_disk.exists() else Path(__file__).with_name('data')))
 PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 _default_app_db = Path(__file__).with_name('seasons_within.db')
 _default_persistent_db = PERSISTENT_DATA_DIR / 'seasons_within.db'
-DB_PATH = os.environ.get('DATABASE_PATH', str(_default_persistent_db if os.environ.get('PERSISTENT_DATA_DIR') else _default_app_db))
+DB_PATH = os.environ.get('DATABASE_PATH', str(_default_persistent_db))
+DB_PATH = str(Path(DB_PATH).expanduser())
+Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+try:
+    _target_db = Path(DB_PATH)
+    if _default_app_db.resolve() != _target_db.resolve() and _default_app_db.exists() and (not _target_db.exists() or _target_db.stat().st_size == 0):
+        shutil.copy2(_default_app_db, _target_db)
+except Exception:
+    pass
 UPLOAD_DIR = PERSISTENT_DATA_DIR / 'uploads'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
@@ -59,9 +72,14 @@ JOURNAL_CATEGORIES = ('Reflection','Business','Retreat','Conscious Coordination'
 # -----------------------------------------------------------------------------
 
 def db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys=ON')
+    conn.execute('PRAGMA busy_timeout=30000')
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+    except Exception:
+        pass
     return conn
 
 
@@ -510,6 +528,48 @@ def _safe_next_url(value):
 def _reset_link(raw_token):
     path=url_for('reset_password',token=raw_token)
     return (APP_BASE_URL+path) if APP_BASE_URL else request.url_root.rstrip('/')+path
+
+
+
+def _member_data_counts(user_id):
+    conn=db()
+    try:
+        counts={}
+        checks={
+            'Conscious Coordination Profile':('connection_profiles','user_id'),
+            'Journal Entries':('journal_entries','user_id'),
+            'Community Posts':('community_posts','user_id'),
+            'Businesses':('businesses','owner_id'),
+            'Business Plans':('business_plans','user_id'),
+            'Retreats':('retreats','user_id'),
+            'Messages Sent':('messages','sender_id'),
+            'Messages Received':('messages','recipient_id'),
+        }
+        for label,(table,column) in checks.items():
+            try:
+                counts[label]=conn.execute(f'SELECT COUNT(*) c FROM {table} WHERE {column}=?',(user_id,)).fetchone()['c']
+            except Exception:
+                counts[label]=0
+        return counts
+    finally:
+        conn.close()
+
+@app.route('/admin/account-storage-status')
+@login_required
+def account_storage_status():
+    u=current_user()
+    if not u or not u['is_admin']:
+        abort(403)
+    counts=_member_data_counts(u['id'])
+    disk_hint='Render persistent disk path' if str(Path(DB_PATH)).startswith('/var/data/') else 'Configured application data path'
+    rows=''.join(f'<div class="fact"><small>{html.escape(label)}</small><b>{count}</b></div>' for label,count in counts.items())
+    content=f'''<div class="hero"><span class="badge">ADMIN ACCOUNT STORAGE</span><h1>Profile Persistence Check</h1>
+    <p class="muted">Logged in as <b>{html.escape(u['email'])}</b> - Permanent user ID <b>{u['id']}</b>.</p></div>
+    <article class="card"><h2>Database</h2><p><b>{html.escape(disk_hint)}</b></p><p class="muted small">{html.escape(str(DB_PATH))}</p>
+    <p>All profile, Journal, Community, business, Retreat, Inbox and Conscious Coordination records are loaded by this permanent user ID.</p></article>
+    <article class="card"><h2>Saved records attached to this account</h2><div class="grid">{rows}</div></article>
+    <div class="actions"><a class="out" href="{url_for('profile')}">My Profile</a><a class="out" href="{url_for('settings')}">Settings</a></div>'''
+    return page('Account Storage Status',content,'more')
 
 def safe_connection_profile(user_id):
     if not user_id:
@@ -4132,9 +4192,13 @@ def more():
 
 @app.route('/settings')
 @login_required
+
 def settings():
     u=current_user()
-    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b> is the email currently saved on this account. Forgot Password links are sent only when the entered email matches an account in the records.</p><div class="actions"><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article><article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+    admin_storage=''
+    if u and u['is_admin']:
+        admin_storage=f'''<article class="card"><h3>Admin Storage Check</h3><p class="muted">Verify the permanent user ID and saved-record counts attached to this account.</p><a class="out" href="{url_for('account_storage_status')}">Profile Persistence Check</a></article>'''
+    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b> is the email currently saved on this account. Forgot Password links are sent only when the entered email matches an account in the records.</p><div class="actions"><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article>{admin_storage}<article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
 
 @app.route('/payment/<product>')
 
