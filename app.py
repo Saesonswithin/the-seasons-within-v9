@@ -1138,7 +1138,7 @@ def _openai_text(prompt):
     except Exception: return None
 
 
-REFLECTION_ENGINE_VERSION = 3
+REFLECTION_ENGINE_VERSION = 4
 
 def _angle_distance(a,b):
     try:
@@ -1237,6 +1237,89 @@ def _profile_psychology_context(profile):
     ]
     return {k:p.get(k,'') for k in keys if p.get(k,'')}
 
+
+def _behavioral_insights(profile):
+    """Turn questionnaire selections into concise behavioral inferences.
+    These are reflective summaries of self-report, not diagnoses.
+    """
+    p=profile or {}
+    def vals(key):
+        return {x.strip().lower() for x in (p.get(key) or '').split(',') if x.strip()}
+
+    comm=vals('communication')
+    overwhelmed=vals('overwhelmed')
+    repair=vals('repair')
+    boundaries=vals('boundaries')
+    trust=vals('trust')
+    affection=vals('affection')
+    business=vals('business_style')
+    regulate=vals('regulate')
+
+    insights={}
+
+    if 'need time to process first' in comm or 'need quiet time before talking' in overwhelmed:
+        insights['communication']="You tend to communicate more clearly after you have had a little time to organize what you actually feel and need."
+    elif 'direct but gentle' in comm or 'thoughtful and measured' in comm:
+        insights['communication']="You are likely to do best with communication that is clear without becoming unnecessarily harsh."
+    elif 'warm and expressive' in comm:
+        insights['communication']="You tend to connect through emotional presence and visible responsiveness, so silence or vagueness can carry more weight for you."
+    else:
+        insights['communication']="You may communicate best when expectations are made explicit instead of left to assumption."
+
+    if 'value privacy and alone time' in boundaries and ('prefer frequent check-ins' in boundaries or 'flexible with communication' in boundaries):
+        insights['boundaries']="You may need both closeness and room to process. The useful skill is telling people when you need space and when you plan to reconnect."
+    elif 'clear verbal boundaries' in boundaries:
+        insights['boundaries']="Clear expectations tend to protect your relationships better than hoping another person will infer what you need."
+    else:
+        insights['boundaries']="Your boundaries work best when they are communicated early enough that they do not have to become emergency limits."
+
+    if 'apologize directly' in repair or 'need actions to match words' in repair:
+        insights['repair']="Repair matters most when words and follow-through agree. An apology is more useful when it is paired with a visible change in behavior."
+    elif repair:
+        insights['repair']="You appear to value active repair rather than pretending tension disappeared on its own."
+    else:
+        insights['repair']="After conflict, clarity about what changes next is likely to matter as much as the conversation itself."
+
+    if 'consistency' in trust or 'reliability' in trust:
+        insights['trust']="Trust is likely to grow through consistency more than intensity. Repeated small follow-through may matter more than a dramatic reassurance."
+    elif 'honesty' in trust:
+        insights['trust']="Trust is likely to depend on whether difficult information can be spoken plainly without damaging respect."
+    else:
+        insights['trust']="Trust is easier to build when expectations and actions remain understandable over time."
+
+    if 'quality time' in affection or 'emotional presence' in affection:
+        insights['connection']="Feeling connected may depend less on constant contact and more on whether the time together feels attentive and emotionally present."
+    elif affection:
+        insights['connection']="Care is most useful when it is expressed in a form the other person can actually recognize and receive."
+    else:
+        insights['connection']="Connection improves when care is made concrete rather than assumed."
+
+    if 'big-picture visionary' in business and 'flexible collaborator' in business:
+        insights['business']="In collaboration, you may be strongest at seeing possibilities and adapting, but important decisions benefit from a deliberate check on details, resources and follow-through."
+    elif 'structured planner' in business or 'detail-oriented' in business:
+        insights['business']="In collaboration, structure can be a strength, but it helps to distinguish useful planning from trying to remove every uncertainty before acting."
+    elif business:
+        insights['business']="Your working style benefits from making pace, ownership and decision rules explicit before enthusiasm turns into commitment."
+    else:
+        insights['business']="For collaboration, clarify pace, ownership and resources before commitment."
+
+    if 'breathing / meditation' in regulate:
+        insights['practice']="Meditation can be useful when it helps you observe urgency before acting, not when it becomes a way to postpone a necessary decision or conversation."
+    elif 'nature' in regulate:
+        insights['practice']="Time in nature may help widen your attention so the immediate problem does not feel like the only thing that exists."
+    elif 'movement / exercise' in regulate:
+        insights['practice']="Movement may help discharge activation before you communicate or decide, making it easier to tell urgency from importance."
+    elif 'quiet time' in regulate:
+        insights['practice']="Quiet time can help you sort feeling from interpretation before you respond."
+    elif 'music / creative activity' in regulate:
+        insights['practice']="Music or creative activity may help shift emotional intensity enough for you to see what still matters afterward."
+    elif 'rest' in regulate:
+        insights['practice']="Rest may improve judgment when depletion is making everything feel more urgent or personal."
+    else:
+        insights['practice']="A short regulation pause can help you respond from intention instead of from the peak of activation."
+
+    return insights
+
 def _reflection_context(user_id):
     conn=db()
     u=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
@@ -1264,90 +1347,61 @@ def _reflection_context(user_id):
 
 
 
+
 def _fallback_coordination_reflection(ctx,kind):
-    p=ctx.get('profile') or {}
+    profile=ctx.get('profile') or {}
     sky=ctx.get('current_sky') or {}
-    planets=sky.get('planets') or {}
-    chart=ctx.get('chart') or {}
-    aspects=ctx.get('current_to_natal_aspects') or []
-    practices=ctx.get('wellness_practices') or []
-    moon=planets.get('Moon') or {}
+    moon=((sky.get('planets') or {}).get('Moon') or {})
     moon_sign=moon.get('sign','')
-    moon_theme=ctx.get('moon_reflection_theme') or ''
     intentions=(ctx.get('intentions') or '').lower()
+    insights=_behavioral_insights(profile)
+    practices=ctx.get('wellness_practices') or []
 
-    def selected(field):
-        return [x.strip() for x in (p.get(field) or '').split(',') if x.strip()]
+    focus=insights.get('communication') or "Give yourself enough space to respond deliberately instead of reacting at the peak of emotion."
+    real_life=insights.get('boundaries') or insights.get('repair') or insights.get('connection') or "Make expectations explicit instead of assuming another person already understands what you need."
+    practice=insights.get('practice') or "Use a short regulation pause before an important response."
+    notice=insights.get('trust') or "Watch whether urgency is asking you to act before you have enough information."
 
-    communication=', '.join(selected('communication')[:2]) or 'your usual communication style'
-    overwhelmed=', '.join(selected('overwhelmed')[:2]) or 'your usual response under stress'
-    regulate=', '.join(selected('regulate')[:2]) or 'a grounding pause'
-    values=', '.join(selected('values_text')[:3]) or 'your stated values'
-    repair=', '.join(selected('repair')[:2]) or 'your preferred repair process'
-    boundaries=', '.join(selected('boundaries')[:2]) or 'your stated boundaries'
-    business=', '.join(selected('business_style')[:2]) or 'your working style'
-    affection=', '.join(selected('affection')[:2]) or 'the way you prefer to give and receive care'
+    if 'business' in intentions:
+        real_life=insights.get('business') or real_life
+    elif 'love' in intentions or 'dating' in intentions or 'relationship' in intentions:
+        real_life=insights.get('connection') or real_life
 
-    aspect_text=''
-    if aspects:
-        a=aspects[0]
-        aspect_text=(f"The strongest current chart interaction supplied today is current {a['current_planet']} "
-                     f"{a['aspect']} your natal {a['natal_planet']} (about {a['orb']}° from exact). ")
-    elif moon_sign:
-        aspect_text=f"The Moon is currently in {moon_sign}. "
-
-    practice=practices[0] if practices else ''
-    if practice=='meditation':
-        practice_text=("Practice for Today: Use 8-10 minutes of meditation before acting on a strong urge. "
-                       "Name the feeling, then ask whether the choice is reducing discomfort for the moment or expressing a value you want to live by.")
-    elif practice=='yoga':
-        practice_text=("Practice for Today: Use a slow, grounding yoga sequence before an important conversation or decision. "
-                       "Let the body settle first, then notice whether your next step still feels aligned with your values.")
-    elif practice=='movement':
-        practice_text=("Practice for Today: Take a short walk or movement break before responding to something emotionally activating. "
-                       "Revisit the choice after your body has discharged some urgency.")
-    elif practice=='nature':
-        practice_text=("Practice for Today: Spend a short period outside without solving anything. "
-                       "Notice what becomes clearer once your attention is no longer locked on the immediate problem.")
-    elif practice=='music or sound':
-        practice_text=("Practice for Today: Use music or sound as a regulation practice before an important conversation or commitment. "
-                       "Afterward, write down what still feels important once the emotional intensity changes.")
-    elif practice=='quiet time':
-        practice_text=("Practice for Today: Give yourself deliberate quiet time before responding. "
-                       "Use the pause to separate what you feel from what you actually want to communicate or choose.")
-    else:
-        practice_text=f"Practice for Today: Use {regulate} before an important response so your next step comes from reflection rather than urgency."
-
-    taurus_application=''
+    sky_sentence=''
     if moon_sign=='Taurus':
-        taurus_application=(" With Taurus emphasized in the current Moon, pay special attention to comfort, security, money/resources and attachment. "
-                            "If you feel pulled toward a purchase, investment, financial commitment or other comfort-seeking decision, pause long enough to ask whether the choice is regulating an emotion or supporting a durable value. "
-                            "That is a reflection prompt, not a prediction or financial recommendation.")
-
-    if 'business' in intentions or selected('business_style'):
-        application=(f"In business or collaboration, your profile points to {business}. Before committing resources or agreeing to a direction, "
-                     f"check whether the pace and terms fit {values} rather than only relieving immediate pressure.")
-    elif 'love' in intentions or 'dating' in intentions or selected('affection'):
-        application=(f"In relationships, you describe care through {affection}. Pair that with {communication} and {repair}; "
-                     "before assuming what another person means, ask one direct question and leave room for the answer.")
-    else:
-        application=(f"In connection, use {communication} together with {boundaries}. "
-                     "The goal is not to suppress emotion, but to give it enough structure that your response matches what matters to you.")
+        sky_sentence=("Today's planetary pattern puts extra emphasis on security, comfort and value-based choices. "
+                      "If a purchase, investment, commitment or comfort-driven decision feels urgent, give yourself enough time to separate emotional relief from a choice that still fits your priorities tomorrow.")
+    elif moon_sign:
+        theme=ctx.get('moon_reflection_theme') or ''
+        if theme:
+            sky_sentence="Today's planetary pattern gives extra weight to one question: "+theme+"."
 
     if kind=='monthly':
-        practice_text=practice_text.replace('Practice for Today','Practice for This Month')
-        intro=(f"This month, the most useful theme is coordination between emotional regulation, values and follow-through. "
-               f"{aspect_text}Your profile shows that when activated you may lean toward {overwhelmed}, while your stated values include {values}. "
-               f"Rather than treating the sky as a prediction, use it as a timing cue to observe whether your choices become more reactive when security, closeness, resources or control feel uncertain.")
-        journal="Journal prompt: What repeated choice this month would show that my values—not my temporary emotional state—are setting the direction?"
+        heading_focus="This month, notice the repeated situations where your first emotional response and your longer-term values do not immediately agree."
+        reflection="What repeated choice this month would show that my values—not my temporary emotional state—are setting the direction?"
     else:
-        intro=(f"Today, focus on the gap between the first emotional impulse and the choice you actually want to make. "
-               f"{aspect_text}Your profile shows {overwhelmed} under stress and {values} as important values. "
-               f"{moon_theme.capitalize()+'. ' if moon_theme else ''}"
-               "The useful question is not 'What does this planet mean?' but 'What pattern is this bringing into awareness in the way I decide, communicate and regulate?'")
-        journal="Journal prompt: What am I trying to soothe, protect or secure right now—and what choice would still make sense after the emotion settles?"
+        heading_focus=focus
+        reflection="What am I trying to soothe, protect or secure right now—and what choice would still make sense after the emotion settles?"
 
-    return f"{intro}{taurus_application}\n\n{practice_text}\n\nPractical application: {application}\n\n{journal}"
+    if practices and practices[0]=='meditation':
+        practice=("Use 8-10 minutes of meditation before an important decision or conversation. Do not try to solve the issue while sitting. "
+                  "Notice the strongest feeling, where it shows up in your body, and the urge attached to it. When you finish, ask: What do I know, what am I assuming, and what still matters after the intensity drops?")
+    elif practices and practices[0]=='nature':
+        practice=("Take a short walk outside before deciding or responding. Do not rehearse the problem. Let your attention widen first, then return and ask what still feels important once the immediate emotional loop has loosened.")
+    elif practices and practices[0]=='movement':
+        practice=("Use a short period of movement before acting on something emotionally charged. Revisit the decision after your body is less activated and see whether the same choice still makes sense.")
+    elif practices and practices[0]=='quiet time':
+        practice=("Give yourself deliberate quiet time before responding. Use it to identify the one thing you actually need to communicate, rather than rehearsing every possible outcome.")
+
+    return (
+        f"Your Focus Right Now\n\n{heading_focus} "
+        f"{sky_sentence}\n\n"
+        f"In Real Life\n\n{real_life}\n\n"
+        f"What May Help\n\n{practice}\n\n"
+        f"Something to Notice\n\n{notice}\n\n"
+        f"Reflection\n\n{reflection}"
+    )
+
 
 
 
@@ -1358,50 +1412,71 @@ def get_astrology_reflection(user_id,kind):
     if row:
         cached=json.loads(row['payload'])
         cached_text=(cached.get('text') or '')
-        if (cached.get('engine_version')==REFLECTION_ENGINE_VERSION
+        if (cached.get('engine_version')==4
             and 'Complete your birth date' not in cached_text
-            and 'temporarily unavailable' not in cached_text
-            and 'birth information is available' not in cached_text):
+            and 'temporarily unavailable' not in cached_text):
             conn.close()
             return cached
     conn.close()
 
     ctx=_reflection_context(user_id)
+    ctx['behavioral_insights']=_behavioral_insights(ctx.get('profile') or {})
     mode='DAILY' if kind=='daily' else 'MONTHLY'
+
     instruction=f'''
-Write a personalized {mode} CONSCIOUS COORDINATION REFLECTION for The Seasons Within.
+Write a personalized {mode} CONSCIOUS COORDINATION reflection.
 
-This must NOT read like a horoscope, a list of zodiac meanings, or a paraphrase of the member questionnaire.
+The calculated chart, current sky, aspects and questionnaire answers are INTERNAL EVIDENCE. Do not show your work.
 
-Reason across the supplied factual layers:
-1. the member's actual calculated natal placements;
-2. the current calculated sky;
-3. the strongest supplied current-to-natal aspects;
-4. the member's self-reported communication, emotional regulation, conflict, repair, trust, affection, boundaries, values, business/retreat style and intentions;
-5. the member's actual wellness practices.
+The member-facing response must NOT:
+- list planetary degrees;
+- list several natal placements;
+- explain aspect names/orbs;
+- repeat long lists of questionnaire selections;
+- read like a horoscope;
+- say "your profile says..." more than once;
+- turn every paragraph into astrology terminology.
 
-Choose only the 1-2 patterns that are most psychologically relevant today/month. Explain how those patterns may interact in real behavior. Do not explain every planet. Do not merely repeat profile answers.
+Use the astrology and self-report together to decide what is most useful, then translate that into plain behavioral guidance.
 
-If the member uses meditation, yoga, movement, nature, Reiki, sound/music, journaling, quiet time or another supplied practice, tailor the practical exercise to THAT practice. Example: if meditation is a real selected practice and the current Moon is in Taurus, a grounded reflection may ask the member to notice whether a purchase, investment, commitment or comfort-seeking choice is being made to regulate an emotion versus serving a durable value. This is reflective guidance only, not financial advice or prediction.
+The response should primarily answer:
+1. What pattern deserves attention now?
+2. How might it show up in a real conversation, relationship, business decision or wellness choice?
+3. What should the member watch for?
+4. What concrete action or regulation practice would help?
+5. What question should they reflect on?
 
-For relationship themes, connect the chart pattern to the member's actual communication, affection, trust, conflict, repair and boundary style.
-For business themes, connect it to values, collaboration style, pacing, resources and decision-making.
-For retreat/wellness themes, connect it to regulation style, social energy, pace and the member's actual practices.
+Astrology may appear in ONE short sentence only when useful, such as:
+"Today's planetary pattern puts extra emphasis on communication and value-based decisions."
+Do not mention degrees or technical aspect names unless the member explicitly asks for technical detail.
 
-Structure:
-- A concise personalized reflection with one coherent theme.
-- "Practice for Today" or "Practice for This Month" using an actual wellness practice from the member when available.
-- One practical connection/business/wellness application when relevant.
-- One journal prompt.
+If meditation is actually one of the member's practices, make the meditation specific to the psychological pattern the chart/profile combination suggests. If yoga, nature, movement, quiet time, music/sound or another real practice is supplied, use that instead.
 
-Never invent a placement, aspect, house, Rising sign or transit. Never diagnose. Never claim destiny, soulmate status, guaranteed outcomes, or that a financial/relationship/business decision will succeed or fail.
+Example of the desired level of usefulness:
+If today's Moon is in Taurus and the member's pattern suggests security/comfort becomes important under stress, it can be useful to say:
+"Before making a purchase, investment, commitment or comfort-driven decision, give yourself enough time to separate emotional relief from a choice that still fits your priorities tomorrow."
+This is reflective guidance, not financial advice or prediction.
+
+For relationship themes, translate the data into useful communication, trust, affection, conflict, repair or boundary guidance.
+For business themes, translate it into useful guidance about pace, resources, commitments, clarity, collaboration or decision-making.
+For wellness themes, connect the member's real regulation practice to the actual behavioral pattern.
+
+Write with these headings:
+- Your Focus Right Now
+- In Real Life
+- What May Help
+- Something to Notice
+- Reflection
+
+Keep it practical, psychologically thoughtful, non-diagnostic and non-deterministic.
 '''
-    generated=_openai_text(instruction+'\nFACTUAL DATA:\n'+json.dumps(ctx,default=str))
-    text=generated or _fallback_coordination_reflection(ctx,kind)
+    generated=_openai_text(instruction+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(ctx,default=str))
+    output=generated or _fallback_coordination_reflection(ctx,kind)
+
     payload={
-        'text':text,
+        'text':output,
         'ai_generated':bool(generated),
-        'engine_version':REFLECTION_ENGINE_VERSION,
+        'engine_version':4,
         'chart_ready':bool(ctx.get('chart',{}).get('ready')),
         'current_sky':ctx.get('current_sky',{}),
         'aspects_used':ctx.get('current_to_natal_aspects',[])[:4],
@@ -2548,78 +2623,48 @@ def _fallback_full_compatibility_report(label,report_type,a,b,acp,bcp):
     return f"{label} — {report_type.title()} Coordination\n\n{focus}{score_text}\n\nStrength to use: Start with the places where your stated preferences overlap, and make those habits visible rather than assumed.\n\nDifference worth discussing: Where your styles differ, treat the difference as information. Ask what each person needs before deciding that one style is right or wrong.\n\nPractical coordination: Agree on one specific behavior that would help both people feel respected in this area, then revisit it after you have real experience together.\n\nConversation starter: What does support look like to you in this area, and how would I know I was giving it in a way you can actually receive?"
 
 
+
 def _fallback_planet_interpretation(member,pname,placement,cp,chart=None,sky=None,relevant_aspects=None):
-    d=dict(cp) if cp else {}
-    chart=chart or {}
+    profile=dict(cp) if cp else {}
+    insights=_behavioral_insights(profile)
+    practices=_member_wellness_practices(profile)
     sky=sky or {}
-    relevant_aspects=relevant_aspects or []
-    practices=_member_wellness_practices(d)
-
-    sign=placement.get('sign','')
-    degree=placement.get('degree','')
-    communication=(d.get('communication') or 'your stated communication style')
-    values=(d.get('values_text') or 'your stated values')
-    conflict=(d.get('conflict_style') or 'your conflict style')
-    repair=(d.get('repair') or 'your repair style')
-    boundaries=(d.get('boundaries') or 'your boundaries')
-    regulate=(d.get('regulate') or 'the ways you regulate')
-    affection=(d.get('affection') or 'the way you prefer to give and receive care')
-
-    other=[]
-    for name in PLANET_NAMES:
-        if name==pname:
-            continue
-        p=(chart.get('planets') or {}).get(name)
-        if p:
-            other.append(f"{name} in {p.get('sign','')} {p.get('degree','')}°")
-    pattern=', '.join(other[:4])
-
-    aspect_sentence=''
-    if relevant_aspects:
-        a=relevant_aspects[0]
-        aspect_sentence=(f"Right now, current {a['current_planet']} forms a {a['aspect']} to your natal {a['natal_planet']} "
-                         f"with an orb of about {a['orb']}°. That factual interaction makes this part of your pattern especially useful to observe rather than treating the placement as a static label.")
-
-    if practices:
-        practice=practices[0]
-    else:
-        practice='a deliberate regulation pause'
-
-    if practice=='meditation':
-        practice_text=("Use meditation as observation rather than escape: sit long enough to notice the first urge, the body sensation underneath it, "
-                       "and the story that follows. Then ask whether your next action reflects your values or simply reduces immediate discomfort.")
-    elif practice=='yoga':
-        practice_text=("Use a slow yoga sequence before acting on an emotionally charged impulse. Let the body settle first, then revisit what you want to say or choose.")
-    elif practice=='movement':
-        practice_text=("Use movement to discharge activation before making the decision or having the conversation. Reassess once the body is less urgent.")
-    elif practice=='nature':
-        practice_text=("Use time in nature to widen attention before deciding. Notice whether the problem feels different once you are not locked into the immediate emotional loop.")
-    elif practice=='music or sound':
-        practice_text=("Use music or sound to shift state before deciding or communicating. Afterward, name what still feels important once the intensity changes.")
-    elif practice=='quiet time':
-        practice_text=("Use quiet time intentionally: do not rehearse the conflict. Let the nervous system settle, then identify the one need or value you actually want to communicate.")
-    else:
-        practice_text=f"Use {practice} before important responses so the choice is not made at the peak of emotional activation."
-
     moon=((sky.get('planets') or {}).get('Moon') or {})
-    taurus=''
-    if moon.get('sign')=='Taurus':
-        taurus=(" The current Moon in Taurus adds a useful reflective emphasis on security, comfort, attachment and resources. "
-                "If a purchase, investment, commitment or comfort-seeking choice feels urgent, pause and ask whether it is expressing a durable value or regulating a temporary emotion. "
-                "That is reflective guidance, not financial advice.")
+    moon_sign=moon.get('sign','')
+
+    what=insights.get('communication') or "You may do best when you give yourself enough time to understand what you actually want before you respond."
+    use=insights.get('business') or insights.get('connection') or "Make the next step concrete: clarify what you need, what the other person needs, and what decision actually has to be made now."
+    watch=insights.get('boundaries') or insights.get('trust') or "Watch for the point where protecting yourself turns into making assumptions instead of asking for clarity."
+    help_text=insights.get('practice') or "Use a short regulation pause before an important decision or conversation."
+
+    if practices and practices[0]=='meditation':
+        help_text=("Use meditation before the decision, not after it. Sit for 8-10 minutes and notice the strongest urge without acting on it. "
+                   "Ask what feeling you are trying to change, what outcome you are trying to control, and what choice would still fit your priorities if the feeling were less intense.")
+    elif practices and practices[0]=='nature':
+        help_text=("Take a short walk outside without rehearsing the problem. Let your attention widen, then return and ask what you actually know, what you are assuming, and what still needs a decision.")
+    elif practices and practices[0]=='movement':
+        help_text=("Move your body before responding to something emotionally charged. Revisit the decision after the physical urgency drops and see whether the same response still feels necessary.")
+    elif practices and practices[0]=='quiet time':
+        help_text=("Take deliberate quiet time before responding. Use the pause to identify the one thing you really need to say instead of trying to solve every part of the situation at once.")
+
+    sky_note=''
+    if moon_sign=='Taurus':
+        sky_note=("Today's pattern puts extra emphasis on security, comfort and value-based choices. "
+                  "If you feel pulled toward a purchase, investment, commitment or comfort-driven decision, pause long enough to separate emotional relief from a choice that still makes sense tomorrow. ")
+    elif relevant_aspects:
+        sky_note="The current planetary pattern is putting extra emphasis on this part of your decision-making and communication right now. "
 
     return (
-        f"How this works within you\n\n"
-        f"Your {pname} is calculated at {degree}° {sign}. Its meaning here comes from how it operates inside the rest of your pattern—not from {sign} by itself. "
-        f"Other available placements include {pattern or 'the rest of your calculated chart'}. In your self-reported profile, communication includes {communication}; "
-        f"your values include {values}; conflict and repair include {conflict} and {repair}; and your boundaries include {boundaries}. "
-        f"The useful psychological question is how this {pname} function behaves when those needs pull in different directions.{taurus}\n\n"
-        f"When this pattern is activated\n\n"
-        f"{aspect_sentence or 'There is no supplied current aspect to this placement that should be invented, so focus on the recurring behavioral pattern rather than forcing a transit story.'} "
-        f"Watch for moments when your preferred way of showing care ({affection}) and your preferred way of protecting yourself or regulating ({regulate}) do not line up. "
-        f"That tension is often more informative than a generic sign description.\n\n"
-        f"Conscious Coordination practice\n\n{practice_text}\n\n"
-        f"Reflection question: When this part of me feels activated, what am I actually trying to protect, receive or express—and what response would still match my values after the intensity settles?"
+        f"What This May Look Like\n\n"
+        f"{what} {sky_note}\n\n"
+        f"Use It in Real Life\n\n"
+        f"{use}\n\n"
+        f"What May Help\n\n"
+        f"{help_text}\n\n"
+        f"Watch For\n\n"
+        f"{watch}\n\n"
+        f"Reflection\n\n"
+        f"What am I trying to protect, receive or control in this situation—and what response would still make sense after the emotional intensity settles?"
     )
 
 @app.route('/conscious-coordination/profile/<int:user_id>/compatibility/full/<category>')
@@ -2649,8 +2694,9 @@ def compatibility_detail(user_id,category):
                         (me['id'],user_id,report_type,category)).fetchone()
     conn.close()
     if not b: abort(404)
-    if cached:
-        text=json.loads(cached['payload']).get('text','')
+    cached_payload=json.loads(cached['payload']) if cached else {}
+    if cached and cached_payload.get('report_version')==2:
+        text=cached_payload.get('text','')
     else:
         data={'report_type':report_type,'category':label,
               'member_a':{'name':a['name'],'profile':dict(acp) if acp else {},'chart':member_chart_data(a)},
@@ -2670,7 +2716,7 @@ For Friendship, emphasize social rhythm, communication, trust, interests, bounda
 For Business, emphasize communication, accountability, decision-making, values, working pace, resources and collaboration style.
 For Retreat, emphasize regulation, social energy, pace, personal space, wellness practices and activity style.
 
-Use calculated planetary data only when actually supplied. Never invent aspects, houses, Rising signs or transits. Do not diagnose either member or predict relationship/business success or failure. If chart data is incomplete, say what cannot be evaluated.
+Use calculated planetary data only when actually supplied, but keep the technical astrology mostly behind the scenes. Do not list degrees, aspect names/orbs or a chain of zodiac meanings unless that technical detail is necessary to explain a practical point. Translate the combined evidence into plain-language interaction guidance. Never invent aspects, houses, Rising signs or transits. Do not diagnose either member or predict relationship/business success or failure. If chart data is incomplete, say what cannot be evaluated.
 
 Write a psychologically coherent report with: Interaction Pattern, Strength to Use, Difference Worth Discussing, Practical Coordination, and Conversation Starter.'''
         text=_openai_text(instruction+'\nDATA:\n'+json.dumps(data,default=str))
@@ -2678,12 +2724,13 @@ Write a psychologically coherent report with: Interaction Pattern, Strength to U
             text=_fallback_full_compatibility_report(label,report_type,a,b,acp,bcp)
         conn=db()
         conn.execute('INSERT OR REPLACE INTO compatibility_reports(viewer_id,other_id,report_type,category,payload,created_at) VALUES(?,?,?,?,?,?)',
-                     (me['id'],user_id,report_type,category,json.dumps({'text':text}),now()))
+                     (me['id'],user_id,report_type,category,json.dumps({'text':text,'report_version':2}),now()))
         conn.commit(); conn.close()
     return page('Full Compatibility Report',f'''<div class="hero paid"><span class="badge gold">★ FULL PAID COMPATIBILITY</span><h1>{html.escape(label)}</h1><p class="muted">{html.escape(report_type.title())} report with {html.escape(b['name'])}</p></div><article class="card"><div style="line-height:1.75">{html.escape(text).replace(chr(10),'<br>')}</div></article><article class="card"><p class="muted small"><b>Psychology disclaimer:</b> Results are based on self-reported behavior. They are not a mental-health diagnosis or a prediction that a relationship will or will not succeed.</p></article>''','more')
 
 @app.route('/astrology/member/<int:user_id>/planet/<planet>')
 @login_required
+
 
 
 def planet_interpretation(user_id,planet):
@@ -2709,24 +2756,18 @@ def planet_interpretation(user_id,planet):
         return redirect(url_for('birth_chart',user_id=user_id))
 
     sky=current_sky_data()
-    all_aspects=_chart_sky_aspects(chart,sky)
     relevant_aspects=[
-        a for a in all_aspects
+        a for a in _chart_sky_aspects(chart,sky)
         if a.get('natal_planet')==pname or a.get('current_planet')==pname
     ][:5]
-
     placement=(chart.get('planets') or {}).get(pname,{})
     profile=dict(cp) if cp else {}
     wellness=_member_wellness_practices(profile)
+    insights=_behavioral_insights(profile)
 
     data={
-        'member':{
-            'name':member['name'],
-            'city':member['city'],
-            'headline':member['headline'],
-            'about':member['about']
-        },
-        'coordination_profile':_profile_psychology_context(profile),
+        'member':{'name':member['name'],'city':member['city']},
+        'behavioral_insights':insights,
         'wellness_practices':wellness,
         'full_chart':chart,
         'current_sky':sky,
@@ -2736,41 +2777,46 @@ def planet_interpretation(user_id,planet):
     }
 
     instruction=f'''
-Write a personalized The Seasons Within interpretation focused on the member's actual {pname} placement.
+Write a useful Conscious Coordination interpretation for a member who opened their {pname} placement.
 
-Do NOT begin with a textbook definition of {pname}. Do NOT write a generic "{placement.get('sign','')} means..." reading. Do NOT concatenate profile answers with zodiac keywords.
+The chart details and questionnaire answers are INTERNAL EVIDENCE. Do not show your work.
 
-Instead, reason across:
-- this exact {pname} placement and degree;
-- the member's other calculated natal placements and supplied aspects;
-- any supplied current-to-natal aspects involving {pname};
-- the member's real communication, regulation, conflict, repair, trust, boundaries, affection, values, business/retreat style and intentions;
-- the member's actual wellness practices.
+Do NOT:
+- list the member's other planets and degrees;
+- explain technical aspect names or orbs;
+- recite their questionnaire answers;
+- give a textbook "{pname} means..." explanation;
+- write a generic zodiac personality reading.
 
-Explain the psychological pattern as a dynamic: what tends to happen internally, what may trigger it, how it may show up in relationships/business/wellness, and what helps the member coordinate it consciously.
+Use the whole chart, current sky and behavioral profile to infer a practical pattern. The member should finish the report understanding something useful about how they make decisions, communicate, protect themselves, connect, work with others or regulate emotion.
 
-If meditation, yoga, movement, nature, Reiki, sound/music, journaling or another wellness practice is actually supplied, use that practice specifically and explain WHY it fits the chart/profile pattern. Do not recommend a practice merely because it sounds spiritual.
+The astrology should be mostly invisible in the prose. At most, use one short sentence such as:
+"This part of your current pattern puts extra emphasis on communication and follow-through."
+Do not mention degrees or technical aspect language in the body.
 
-Use current sky only when there is a supplied factual connection. If current Moon in Taurus is relevant, it may be used to reflect on security, comfort, attachment, spending/resources or value-based choices; frame this as a pause before emotionally driven decisions, never as financial prediction or advice.
+If the member uses meditation, yoga, nature, movement, quiet time, music/sound or another supplied practice, explain how to use that actual practice for the pattern you identified.
 
-Include:
-1. "How this works within you"
-2. "When this pattern is activated"
-3. "Conscious Coordination practice"
-4. One reflection question
+If a Taurus Moon/current security theme is relevant, it is appropriate to suggest pausing before emotionally driven spending, investments, commitments or comfort-seeking choices—without predicting outcomes or giving financial advice.
 
-Never invent missing aspects, Rising, houses or transits. Never diagnose, predict success/failure, or make deterministic claims.
+Use these headings:
+- What This May Look Like
+- Use It in Real Life
+- What May Help
+- Watch For
+- Reflection
+
+Make the writing specific, practical and psychologically thoughtful. Never diagnose. Never invent chart facts. Never predict relationship, business or financial outcomes.
 '''
-    generated=_openai_text(instruction+'\nFACTUAL DATA:\n'+json.dumps(data,default=str))
-    text=generated or _fallback_planet_interpretation(member,pname,placement,cp,chart,sky,relevant_aspects)
+    generated=_openai_text(instruction+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(data,default=str))
+    body=generated or _fallback_planet_interpretation(member,pname,placement,cp,chart,sky,relevant_aspects)
 
     heading=f'{pname} — {placement.get("sign","")} {placement.get("degree","")}°'
     return page('Conscious Coordination',f'''<div class="hero">
     <span class="badge">THE SEASONS WITHIN • CONSCIOUS COORDINATION</span>
     <h1>{html.escape(heading)}</h1>
-    <p class="muted">A deeper interpretation connected to {html.escape(member['name'])}’s complete planetary pattern and Conscious Coordination profile.</p>
+    <p class="muted">A practical interpretation of how this part of your pattern may show up in everyday life.</p>
     </div>
-    <article class="card"><div style="line-height:1.75">{html.escape(text).replace(chr(10),'<br>')}</div></article>
+    <article class="card"><div style="line-height:1.75">{html.escape(body).replace(chr(10),'<br>')}</div></article>
     <a class="out" href="{url_for('birth_chart',user_id=user_id)}">Back to Conscious Coordination</a>''','more')
 
 @app.route('/conscious-coordination/profile/<int:user_id>/video/request',methods=['POST'])
