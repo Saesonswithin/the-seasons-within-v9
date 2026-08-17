@@ -554,22 +554,6 @@ def _member_data_counts(user_id):
     finally:
         conn.close()
 
-@app.route('/admin/account-storage-status')
-@login_required
-def account_storage_status():
-    u=current_user()
-    if not u or not u['is_admin']:
-        abort(403)
-    counts=_member_data_counts(u['id'])
-    disk_hint='Render persistent disk path' if str(Path(DB_PATH)).startswith('/var/data/') else 'Configured application data path'
-    rows=''.join(f'<div class="fact"><small>{html.escape(label)}</small><b>{count}</b></div>' for label,count in counts.items())
-    content=f'''<div class="hero"><span class="badge">ADMIN ACCOUNT STORAGE</span><h1>Profile Persistence Check</h1>
-    <p class="muted">Logged in as <b>{html.escape(u['email'])}</b> - Permanent user ID <b>{u['id']}</b>.</p></div>
-    <article class="card"><h2>Database</h2><p><b>{html.escape(disk_hint)}</b></p><p class="muted small">{html.escape(str(DB_PATH))}</p>
-    <p>All profile, Journal, Community, business, Retreat, Inbox and Conscious Coordination records are loaded by this permanent user ID.</p></article>
-    <article class="card"><h2>Saved records attached to this account</h2><div class="grid">{rows}</div></article>
-    <div class="actions"><a class="out" href="{url_for('profile')}">My Profile</a><a class="out" href="{url_for('settings')}">Settings</a></div>'''
-    return page('Account Storage Status',content,'more')
 
 def safe_connection_profile(user_id):
     if not user_id:
@@ -664,6 +648,24 @@ def login_required(fn):
             return redirect(url_for('login',next=request.path))
         return fn(*args,**kwargs)
     return wrapper
+
+
+@app.route('/admin/account-storage-status')
+@login_required
+def account_storage_status():
+    u=current_user()
+    if not u or not u['is_admin']:
+        abort(403)
+    counts=_member_data_counts(u['id'])
+    disk_hint='Render persistent disk path' if str(Path(DB_PATH)).startswith('/var/data/') else 'Configured application data path'
+    rows=''.join(f'<div class="fact"><small>{html.escape(label)}</small><b>{count}</b></div>' for label,count in counts.items())
+    content=f'''<div class="hero"><span class="badge">ADMIN ACCOUNT STORAGE</span><h1>Profile Persistence Check</h1>
+    <p class="muted">Logged in as <b>{html.escape(u['email'])}</b> - Permanent user ID <b>{u['id']}</b>.</p></div>
+    <article class="card"><h2>Database</h2><p><b>{html.escape(disk_hint)}</b></p><p class="muted small">{html.escape(str(DB_PATH))}</p>
+    <p>All profile, Journal, Community, business, Retreat, Inbox and Conscious Coordination records are loaded by this permanent user ID.</p></article>
+    <article class="card"><h2>Saved records attached to this account</h2><div class="grid">{rows}</div></article>
+    <div class="actions"><a class="out" href="{url_for('profile')}">My Profile</a><a class="out" href="{url_for('settings')}">Settings</a></div>'''
+    return page('Account Storage Status',content,'more')
 
 
 def notify(user_id, title, body='', link=''):
