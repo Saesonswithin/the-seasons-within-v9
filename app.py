@@ -21,6 +21,7 @@ from werkzeug.utils import secure_filename
 import re
 import secrets
 import string
+import math
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
@@ -2619,8 +2620,137 @@ def connection_edit():
     return page('Edit Coordination Profile',content,'more')
 
 
+
+ZODIAC_WHEEL_SIGNS = [
+    ('♈','Aries'),('♉','Taurus'),('♊','Gemini'),('♋','Cancer'),
+    ('♌','Leo'),('♍','Virgo'),('♎','Libra'),('♏','Scorpio'),
+    ('♐','Sagittarius'),('♑','Capricorn'),('♒','Aquarius'),('♓','Pisces')
+]
+PLANET_GLYPHS = {'Sun':'☉','Moon':'☽','Mercury':'☿','Venus':'♀','Mars':'♂','Jupiter':'♃','Saturn':'♄'}
+
+def _zodiac_wheel_html(chart, member_name='Member'):
+    planets=(chart or {}).get('planets') or {}
+    if not (chart or {}).get('ready') or not planets:
+        return '<div class="empty"><h3>Planetary wheel unavailable</h3><p class="muted">Complete birth information is needed for the calculated planetary wheel.</p></div>'
+    cx=210; cy=210
+    outer=184; sign_r=162; tick_inner=145; planet_r=118
+    svg=[]
+    svg.append(f'<svg viewBox="0 0 420 420" role="img" aria-label="{html.escape(member_name,quote=True)} planetary zodiac wheel" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">')
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/>')
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="{tick_inner}" fill="none" stroke="currentColor" stroke-width="1" opacity=".22"/>')
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="72" fill="none" stroke="currentColor" stroke-width="1" opacity=".14"/>')
+    for i,(glyph,name) in enumerate(ZODIAC_WHEEL_SIGNS):
+        boundary=math.radians(i*30-90)
+        x1=cx+tick_inner*math.cos(boundary); y1=cy+tick_inner*math.sin(boundary)
+        x2=cx+outer*math.cos(boundary); y2=cy+outer*math.sin(boundary)
+        svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="1" opacity=".35"/>')
+        a=math.radians(i*30+15-90)
+        sx=cx+sign_r*math.cos(a); sy=cy+sign_r*math.sin(a)
+        svg.append(f'<text x="{sx:.1f}" y="{sy:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="23" aria-label="{name}">{glyph}</text>')
+    order=[p for p in PLANET_NAMES if planets.get(p)]
+    for index,pname in enumerate(order):
+        p=planets[pname]
+        try:
+            lon=float(p.get('longitude'))
+        except (TypeError,ValueError):
+            continue
+        angle=math.radians(lon-90)
+        radius=planet_r-(index%3)*17
+        px=cx+radius*math.cos(angle); py=cy+radius*math.sin(angle)
+        glyph=PLANET_GLYPHS.get(pname,pname[:1])
+        svg.append(f'<line x1="{cx}" y1="{cy}" x2="{px:.1f}" y2="{py:.1f}" stroke="currentColor" stroke-width=".8" opacity=".11"/>')
+        svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="15" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".96"/>')
+        svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(pname,quote=True)}">{glyph}</text>')
+    svg.append('</svg>')
+    return ''.join(svg)
+
+COORDINATION_INDICATOR_LABELS = {
+    'overall':'Overall Coordination',
+    'social-emotional':'Social & Emotional Intelligence',
+    'communication':'Communication',
+    'conflict':'Conflict',
+    'repair-accountability':'Repair & Accountability',
+    'emotional-rhythm':'Emotional Rhythm',
+    'love-affection':'Love Languages / Affection',
+    'lifestyle-values':'Lifestyle & Values',
+    'boundaries':'Boundaries',
+    'business-collaboration':'Business Collaboration',
+    'planetary':'Planetary Coordination',
+}
+
+def _coordination_indicator_slug(label):
+    reverse={
+        'Social & Emotional Intelligence':'social-emotional',
+        'Communication':'communication',
+        'Conflict':'conflict',
+        'Repair & Accountability':'repair-accountability',
+        'Emotional Rhythm':'emotional-rhythm',
+        'Love Languages / Affection':'love-affection',
+        'Lifestyle & Values':'lifestyle-values',
+        'Boundaries':'boundaries',
+        'Business Collaboration':'business-collaboration',
+        'Planetary Coordination':'planetary',
+    }
+    return reverse.get(label,'')
+
+def _coordination_indicator_description(label, user, cp_row):
+    cp=dict(cp_row) if cp_row else {}
+    insights=_behavioral_insights(cp)
+    descriptions={
+        'Overall Coordination':("This score is a whole-profile summary of how developed and internally supported your current Conscious Coordination patterns are. It is not a grade and it does not measure your worth or predict whether a relationship will succeed. It gives you a practical place to notice where your communication, regulation, repair, boundaries, values and collaboration habits are working together—and where one area may need more conscious attention."),
+        'Social & Emotional Intelligence':(f"{insights.get('trust','Your social and emotional coordination grows through awareness of both your own state and the other person’s experience.')} A strong use of this area is noticing emotion without immediately assuming what it means, listening before fixing, and recognizing when another person needs presence, information, space or reassurance. The growth edge is staying responsive without becoming responsible for managing everyone else’s feelings."),
+        'Communication':(f"{insights.get('communication','Clear communication improves when expectations are explicit instead of assumed.')} This area looks at how you organize your thoughts, how directly you express needs, and whether you can keep clarity when emotion rises. The goal is not constant talking; it is saying enough of the right thing that the other person does not have to guess what you mean."),
+        'Conflict':("Conflict coordination is about what happens when two needs, interpretations or priorities no longer match. Useful conflict behavior separates the issue from the person, slows escalation, and identifies what actually needs a decision, boundary or clarification. A lower score here does not mean you are bad at conflict; it points to an area where stress can make your preferred communication style harder to access."),
+        'Repair & Accountability':(f"{insights.get('repair','Repair becomes stronger when words and follow-through agree.')} This area reflects what happens after tension: whether responsibility can be named, whether impact can be heard without defensiveness, and whether the next behavior changes enough to rebuild trust. Repair is more than ending an argument; it is creating evidence that the same injury is less likely to repeat in the same way."),
+        'Emotional Rhythm':(f"Emotional Rhythm describes the pace of activation, processing and recovery that feels most natural to you. Some people need conversation quickly; others need quiet, movement, sleep or time before they can speak clearly. {insights.get('practice','A deliberate regulation pause can help you respond from intention rather than urgency.')} Knowing your rhythm is useful because it lets you ask for space without disappearing and reconnect without forcing yourself to process on someone else’s timetable."),
+        'Love Languages / Affection':(f"{insights.get('connection','Care is most useful when it is expressed in a form the other person can actually recognize and receive.')} This indicator is about how affection is shown, how closeness is recognized, and whether giving and receiving care feel reciprocal. The practical question is not only how you show love, but whether you can recognize care when it arrives differently than you would naturally express it."),
+        'Lifestyle & Values':("Lifestyle & Values looks at whether the way you actually spend time, energy and resources supports what you say matters to you. Shared values do not require identical routines, but major differences around family, freedom, wellness, money, social life, spirituality, work or growth usually need explicit conversation. This area becomes stronger when values are translated into observable choices rather than remaining ideals."),
+        'Boundaries':(f"{insights.get('boundaries','Boundaries work best when they are communicated before they have to become emergency limits.')} This area includes privacy, access, communication expectations, emotional responsibility and the ability to say yes or no without turning every limit into rejection. Healthy coordination allows closeness and autonomy to exist at the same time."),
+        'Business Collaboration':(f"{insights.get('business','Collaboration improves when pace, ownership and decision rules are explicit before enthusiasm turns into commitment.')} This score focuses on how you work with another person around ideas, deadlines, responsibility, resources and follow-through. Good collaboration is not simply liking the same idea; it is knowing who owns what, how decisions are made, how disagreement is handled and what happens when circumstances change."),
+        'Planetary Coordination':("Planetary Coordination uses your calculated planetary pattern as one reflective layer inside Conscious Coordination. The wheel shows the factual placements; the interpretation layer looks for useful patterns involving identity, emotion, communication, affection, action, growth and responsibility. It is used as reflective context—not as a diagnosis, prediction or substitute for the behavior you actually report and demonstrate."),
+    }
+    return descriptions.get(label,"This Conscious Coordination indicator is a reflective summary of the member’s current profile. It is not a diagnosis or prediction.")
+
+@app.route('/conscious-coordination/profile/<int:user_id>/indicator/<category>')
+@login_required
+def coordination_indicator_detail(user_id,category):
+    me=current_user()
+    conn=db()
+    user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
+    cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+    conn.close()
+    if not user:
+        abort(404)
+    is_self=(me['id']==user_id)
+    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
+        flash('Upgrade to open the full Conscious Coordination descriptions for another member.','info')
+        return redirect(url_for('connection_profile',user_id=user_id))
+    label=COORDINATION_INDICATOR_LABELS.get(category)
+    if not label:
+        abort(404)
+    scores=member_coordination_scores(user,cp)
+    if category=='overall':
+        score=scores['overall']
+    else:
+        score=next((s for l,s in scores['metrics'] if l==label),None)
+    if score is None:
+        abort(404)
+    description=_coordination_indicator_description(label,user,cp)
+    owner='Your' if is_self else f'{html.escape(user["name"])}’s'
+    content=f'''<div class="hero">
+    <span class="badge heart">CONSCIOUS COORDINATION</span>
+    <h1>{html.escape(label)} — {score}%</h1>
+    <p class="muted">{owner} full Conscious Coordination description.</p>
+    </div>
+    <article class="card"><div class="meter"><i style="width:{score}%"></i></div>
+    <div style="line-height:1.8;margin-top:18px">{html.escape(description)}</div></article>
+    <div class="actions"><a class="out" href="{url_for('connection_profile',user_id=user_id)}">Back to Conscious Coordination Profile</a></div>'''
+    return page('Conscious Coordination',content,'more')
+
+
 @app.route('/conscious-coordination/profile/<int:user_id>')
 @login_required
+
 
 
 
@@ -2654,56 +2784,94 @@ def connection_profile(user_id):
         abort(404)
 
     cp=dict(cp_row) if cp_row else {}
+    is_self=(me['id']==user_id)
     location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),
                                      (cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
     coordination_types=cp.get('coordination_types','')
     about=cp.get('about_me') or user['about'] or ''
 
-    scores=member_coordination_scores(user,cp_row)
-    metric_cards=''.join(
-        f'''<article class="card"><h3>{html.escape(label)} — {score}%</h3>
-        <div class="meter"><i style="width:{score}%"></i></div></article>'''
-        for label,score in scores['metrics']
-    )
-
-    if me['id']==user_id:
-        actions=f'''<a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a>
-        <a class="out" href="{url_for('profile')}">View My Public Journal</a>
-        <a class="out" href="{url_for('community')}">Enter Community</a>'''
+    photo=''
+    if cp.get('photo_name'):
+        photo=f'<img src="{url_for("community_media",filename=cp["photo_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%" alt="{html.escape(user["name"],quote=True)}">'
     else:
-        actions=f'''<a class="btn" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>
-        <a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a>
-        <a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
+        photo=f'<div class="portrait">{initials(user["name"])}</div>'
+
+    # Factual planetary wheel only. No written planet descriptions appear here.
+    chart=member_chart_data(user)
+    wheel=_zodiac_wheel_html(chart,user['name'])
+
+    scores=member_coordination_scores(user,cp_row)
+    can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
+
+    def metric_card(label,score):
+        slug=_coordination_indicator_slug(label)
+        inner=f'''<h3>{html.escape(label)} — {score}%</h3>
+        <div class="meter"><i style="width:{score}%"></i></div>'''
+        if can_open_details and slug:
+            return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Open full description</p></a>'''
+        return f'''<article class="card">{inner}<p class="muted small">Upgrade to open this member’s full description.</p></article>'''
+
+    metric_cards=''.join(metric_card(label,score) for label,score in scores['metrics'])
+
+    overall_inner=f'''<h2>Overall Coordination — {scores['overall']}%</h2>
+    <div class="meter"><i style="width:{scores['overall']}%"></i></div>'''
+    if can_open_details:
+        overall_html=f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}<p class="muted small">Open full description</p></a>'''
+    else:
+        overall_html=overall_inner+'<p class="muted small">Upgrade to open this member’s full description.</p>'
+
+    if is_self:
+        top_actions=f'''<a class="btn" href="{url_for('connection_edit')}">Edit My Conscious Coordination Profile</a>
+        <a class="out" href="{url_for('community')}">Enter Community</a>'''
+        journal_actions=f'''<a class="btn" href="{url_for('journal')}">View My Journal</a>
+        <a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
+    else:
+        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
         if has_full_access(me):
-            actions+=f'''<a class="out" href="{url_for('birth_chart',user_id=user_id)}">View Full Conscious Coordination</a>
-            <a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
-        actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline">
+            top_actions+=f'''<a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
+        top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline">
         <button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
+        journal_actions=f'''<a class="btn" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a>
+        <a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
 
     business_html=''
     if business and cp.get('display_business_app'):
         business_html=member_business_card(business)
 
-    title='My Conscious Coordination Profile' if me['id']==user_id else f'{html.escape(user["name"])} — Conscious Coordination Profile'
+    title='My Conscious Coordination Profile' if is_self else f'{html.escape(user["name"])} — Conscious Coordination Profile'
+
+    access_note=''
+    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
+        access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span>
+        <p class="muted">You can see this member’s Conscious Coordination percentages. Upgrade to the $10.99/month membership to open the full descriptions for another member.</p>
+        <a class="out" href="{url_for('membership')}">View Upgrade</a></article>'''
 
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}">
     <div class="profilehero"><div>
-        <span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if me['id']==user_id else 'CONSCIOUS COORDINATION PROFILE'}</span>
+        <span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span>
         <h1>{title}</h1>
         <p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>
         {f'<p>{html.escape(about)}</p>' if about else ''}
-        <div class="actions">{actions}</div>
-    </div><div class="portrait">{initials(user['name'])}</div></div>
+        <div class="actions">{top_actions}</div>
+    </div>{photo}</div>
+    </article>
+
+    <article class="card">
+        <span class="badge heart">PLANETARY COORDINATION</span>
+        <h2>{'My Planetary Wheel' if is_self else html.escape(user['name'])+'’s Planetary Wheel'}</h2>
+        <p class="muted">Calculated planetary placements shown visually in the zodiac wheel.</p>
+        {wheel}
+        <div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div>
     </article>
 
     <article class="card">
         <span class="badge">COORDINATION PROFILE</span>
-        <h2>Overall Coordination — {scores['overall']}%</h2>
-        <div class="meter"><i style="width:{scores['overall']}%"></i></div>
+        {overall_html}
         <div class="grid">{metric_cards}</div>
         <p class="muted small">These are self-reported Conscious Coordination indicators, not a mental-health diagnosis. Two-person compatibility is calculated separately when members compare profiles.</p>
     </article>
 
+    {access_note}
     {business_html}'''
     return page('Conscious Coordination Profile',content,'more')
 
