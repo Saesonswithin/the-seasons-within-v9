@@ -22,10 +22,15 @@ import re
 import secrets
 import string
 import math
+import hashlib
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
-PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR', Path(__file__).with_name('data')))
+app.permanent_session_lifetime = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE','true').lower() not in {'0','false','no'}
+PERSISTENT_DATA_DIR = Path(os.environ.get('PERSISTENT_DATA_DIR', '/var/data' if Path('/var/data').exists() else str(Path(__file__).with_name('data'))))
 PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 _default_app_db = Path(__file__).with_name('seasons_within.db')
 _default_persistent_db = PERSISTENT_DATA_DIR / 'seasons_within.db'
@@ -40,6 +45,7 @@ SMTP_USER = os.environ.get('SMTP_USER', '').strip()
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER or RETREAT_ADMIN_EMAIL).strip()
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() not in {'0','false','no'}
+APP_BASE_URL = os.environ.get('APP_BASE_URL','').strip().rstrip('/')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY','').strip()
 BUSINESS_PLAN_AI_MODEL = os.environ.get('BUSINESS_PLAN_AI_MODEL','gpt-5.6').strip()
 ASTROLOGY_AI_MODEL = os.environ.get('ASTROLOGY_AI_MODEL','gpt-5.6').strip()
@@ -306,6 +312,15 @@ def init_db():
         FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(referred_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     ''')
     conn.execute("UPDATE journal_entries SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE community_posts SET category='Journal Entry' WHERE category='Saved Items'")
@@ -424,12 +439,77 @@ def _ensure_runtime_compat_schema():
                 FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(referred_user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
         except Exception:
             app.logger.exception('Could not create affiliate compatibility tables')
         conn.commit()
     finally:
         conn.close()
 
+
+ADMIN_ACCOUNT_SEEDS = (
+    ('The Seasons Within','e.reed81@gmail.com','pbkdf2:sha256:600000$b3024e9f089d49e9$3f1545d667878e1178af20f951baf2368ad0f84706a3ffa6a9c4be72d8d5393f'),
+    ('Galaxy Eve','phreespacebuz@gmail.com','pbkdf2:sha256:600000$9ba4cf1e5d927c54$5ad0cbc30553c7a881fb6e0b7d520abb9a98ed8422a67c3f5e0ec78d20afd727'),
+)
+
+def _seed_permanent_admin_accounts():
+    conn=db()
+    try:
+        for name,email,password_hash in ADMIN_ACCOUNT_SEEDS:
+            row=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone()
+            if row:
+                conn.execute('UPDATE users SET is_admin=1 WHERE id=?',(row['id'],))
+                continue
+            sql=('INSERT INTO users(name,email,password_hash,dob,adult_confirmed,city,headline,about,birth_time,birth_city,birth_region,birth_country,birth_timezone,exact_time,birth_time_unknown,is_admin,conscious_paid,business_dev_paid,created_at) '
+                 'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+            conn.execute(sql,(name,email,password_hash,'',1,'','','','','','','','',0,1,1,0,0,datetime.utcnow().replace(microsecond=0).isoformat()+'Z'))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _send_account_email(to_address,subject,body):
+    if not to_address or not SMTP_HOST:
+        return False
+    msg=EmailMessage(); msg['Subject']=subject; msg['From']=SMTP_FROM; msg['To']=to_address; msg.set_content(body)
+    try:
+        with smtplib.SMTP(SMTP_HOST,SMTP_PORT,timeout=20) as server:
+            if SMTP_USE_TLS: server.starttls()
+            if SMTP_USER: server.login(SMTP_USER,SMTP_PASSWORD)
+            server.send_message(msg)
+        return True
+    except Exception:
+        app.logger.exception('Account email delivery failed')
+        return False
+
+def _new_password_reset(user_id):
+    raw=secrets.token_urlsafe(32)
+    digest=hashlib.sha256(raw.encode()).hexdigest()
+    created=datetime.utcnow().replace(microsecond=0)
+    expires=created+timedelta(minutes=60)
+    conn=db()
+    try:
+        conn.execute('UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL',(created.isoformat()+'Z',user_id))
+        conn.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)',(user_id,digest,expires.isoformat()+'Z',created.isoformat()+'Z'))
+        conn.commit()
+    finally:
+        conn.close()
+    return raw
+
+def _safe_next_url(value):
+    value=(value or '').strip()
+    return value if value.startswith('/') and not value.startswith('//') else url_for('home')
+
+def _reset_link(raw_token):
+    path=url_for('reset_password',token=raw_token)
+    return (APP_BASE_URL+path) if APP_BASE_URL else request.url_root.rstrip('/')+path
 
 def safe_connection_profile(user_id):
     if not user_id:
@@ -457,8 +537,11 @@ def ensure_db():
             _ensure_runtime_compat_schema()
         except Exception:
             app.logger.exception('Compatibility database repair also failed')
+    try:
+        _seed_permanent_admin_accounts()
+    except Exception:
+        app.logger.exception('Permanent admin account seed failed')
     finally:
-        # Do not take every request down just because a legacy migration is imperfect.
         app._db_ready = True
 
 
@@ -1865,16 +1948,61 @@ def join():
 @app.route('/login', methods=['GET','POST'])
 def login():
     if request.method=='POST':
-        email=request.form.get('email','').strip().lower(); password=request.form.get('password',''); conn=db(); u=conn.execute('SELECT * FROM users WHERE email=?',(email,)).fetchone(); conn.close()
-        if u and check_password_hash(u['password_hash'],password): session['user_id']=u['id']; flash('Welcome back.','success'); return redirect(request.args.get('next') or url_for('home'))
-        flash('Email or password did not match.','error')
-    return page('Login',f'''<div class="hero"><span class="badge">MEMBER LOGIN</span><h1>Welcome Back</h1></div><form class="card" method="post"><label><b>Email</b></label><input class="input" type="email" name="email" required><label><b>Password</b></label><input class="input" type="password" name="password" required><label><input type="checkbox" name="remember"> Remember Me</label><div class="actions"><button class="btn">Login</button><a class="out" href="{url_for('forgot_password')}">Forgot Password</a><a class="out" href="{url_for('join')}">Create Free Account</a></div></form>''')
+        email=request.form.get('email','').strip().lower()
+        password=request.form.get('password','')
+        remember=bool(request.form.get('remember'))
+        conn=db(); u=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone(); conn.close()
+        if u and check_password_hash(u['password_hash'],password):
+            session.clear(); session['user_id']=u['id']; session.permanent=remember
+            flash('Welcome back. Your existing account and saved information are loaded.','success')
+            return redirect(_safe_next_url(request.args.get('next')))
+        flash('Email or password did not match. Use the email already on your account, or choose Forgot Password.','error')
+    content=f'''<div class="hero"><span class="badge">MEMBER LOGIN</span><h1>Welcome Back</h1><p class="muted">Log back into the same account to keep your profile, Journal, posts, business information and Conscious Coordination history.</p></div><form class="card" method="post"><label><b>Email on your account</b></label><input class="input" type="email" name="email" required autocomplete="email"><label><b>Password</b></label><input class="input" type="password" name="password" required autocomplete="current-password"><label><input type="checkbox" name="remember" value="1"> Remember Me on this browser for 30 days</label><div class="actions"><button class="btn">Login</button><a class="out" href="{url_for('forgot_password')}">Forgot Password</a><a class="out" href="{url_for('join')}">Create Free Account</a></div></form>'''
+    return page('Login',content)
 
 @app.route('/forgot-password', methods=['GET','POST'])
 def forgot_password():
     if request.method=='POST':
-        flash('Password reset email delivery requires an email provider/API. No duplicate account was created.','info')
-    return page('Forgot Password','''<div class="hero"><span class="badge">ACCOUNT RECOVERY</span><h1>Recover Your Existing Account</h1><p class="muted">Enter your email. Production reset delivery can be connected to your email provider without creating a second account.</p></div><form method="post" class="card"><label><b>Email</b></label><input class="input" type="email" name="email" required><button class="btn">Request Password Reset</button></form>''')
+        email=request.form.get('email','').strip().lower()
+        conn=db(); u=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone(); conn.close()
+        if u:
+            token=_new_password_reset(u['id']); link=_reset_link(token)
+            body=f"Hello {u['name']},\n\nA password reset was requested for your The Seasons Within account.\n\nReset your password here:\n{link}\n\nThis link expires in 60 minutes and can be used once. If you did not request this, you can ignore this email.\n\nYour existing profile, Journal, posts and account information are not deleted when you reset your password."
+            _send_account_email(u['email'],'Reset your The Seasons Within password',body)
+        flash('If that email matches an account in our records, a password reset link has been sent. Check your inbox and spam folder.','info')
+        return redirect(url_for('login'))
+    return page('Forgot Password','''<div class="hero"><span class="badge">ACCOUNT RECOVERY</span><h1>Reset Your Existing Account Password</h1><p class="muted">Enter the exact email already saved on your member account. A reset link can only be sent to an email that matches our records.</p></div><form method="post" class="card"><label><b>Email on your account</b></label><input class="input" type="email" name="email" required autocomplete="email"><button class="btn">Send Password Reset Link</button></form>''')
+
+@app.route('/reset-password/<token>',methods=['GET','POST'])
+def reset_password(token):
+    digest=hashlib.sha256((token or '').encode()).hexdigest()
+    conn=db(); row=conn.execute('SELECT prt.*,u.email,u.name FROM password_reset_tokens prt JOIN users u ON u.id=prt.user_id WHERE prt.token_hash=?',(digest,)).fetchone(); conn.close()
+    valid=False
+    if row and not row['used_at']:
+        try: valid=datetime.utcnow() <= datetime.fromisoformat(row['expires_at'].replace('Z',''))
+        except Exception: valid=False
+    if not valid:
+        return page('Reset Password',f'''<div class="hero"><h1>This reset link is no longer valid</h1><p class="muted">Request a new password reset link using the email saved on your account.</p><a class="btn" href="{url_for('forgot_password')}">Request New Reset Link</a></div>'''),400
+    if request.method=='POST':
+        password=request.form.get('password',''); confirm=request.form.get('confirm_password','')
+        if len(password)<8: flash('Your new password must be at least 8 characters.','error')
+        elif password!=confirm: flash('The two password entries do not match.','error')
+        else:
+            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(password),row['user_id'])); conn.execute('UPDATE password_reset_tokens SET used_at=? WHERE id=?',(now(),row['id'])); conn.commit(); conn.close(); session.clear(); flash('Your password has been changed. Log in with your existing email and new password.','success'); return redirect(url_for('login'))
+    return page('Reset Password',f'''<div class="hero"><span class="badge">SECURE PASSWORD RESET</span><h1>Create a New Password</h1><p class="muted">Account: {html.escape(row['email'])}</p></div><form method="post" class="card"><label><b>New Password</b></label><input class="input" type="password" name="password" minlength="8" required autocomplete="new-password"><label><b>Confirm New Password</b></label><input class="input" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button class="btn">Save New Password</button></form>''')
+
+@app.route('/change-password',methods=['GET','POST'])
+@login_required
+def change_password():
+    u=current_user()
+    if request.method=='POST':
+        current=request.form.get('current_password',''); new=request.form.get('new_password',''); confirm=request.form.get('confirm_password','')
+        if not check_password_hash(u['password_hash'],current): flash('Current password did not match.','error')
+        elif len(new)<8: flash('New password must be at least 8 characters.','error')
+        elif new!=confirm: flash('The new password entries do not match.','error')
+        else:
+            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(new),u['id'])); conn.commit(); conn.close(); flash('Your password has been changed.','success'); return redirect(url_for('settings'))
+    return page('Change Password',f'''<div class="hero"><span class="badge">ACCOUNT SECURITY</span><h1>Change Password</h1><p class="muted">Your profile and saved data remain attached to {html.escape(u['email'])}.</p></div><form method="post" class="card"><label><b>Current Password</b></label><input class="input" type="password" name="current_password" required autocomplete="current-password"><label><b>New Password</b></label><input class="input" type="password" name="new_password" minlength="8" required autocomplete="new-password"><label><b>Confirm New Password</b></label><input class="input" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button class="btn">Change Password</button></form>''','more')
 
 @app.route('/logout')
 def logout():
@@ -4005,7 +4133,8 @@ def more():
 @app.route('/settings')
 @login_required
 def settings():
-    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted">Password-reset delivery requires the production email integration.</p></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article><article class="card"><h3>Log Out</h3><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+    u=current_user()
+    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b> is the email currently saved on this account. Forgot Password links are sent only when the entered email matches an account in the records.</p><div class="actions"><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article><article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
 
 @app.route('/payment/<product>')
 
@@ -4029,7 +4158,7 @@ def payment_info(product):
 
 @app.route('/health')
 def health():
-    return {'ok': True, 'app': 'The Seasons Within'}
+    return {'ok': True, 'app': 'The Seasons Within', 'database_path': str(DB_PATH), 'persistent_data_dir': str(PERSISTENT_DATA_DIR), 'smtp_configured': bool(SMTP_HOST)}
 
 @app.errorhandler(404)
 def not_found(e):
@@ -4037,4 +4166,5 @@ def not_found(e):
 
 if __name__ == '__main__':
     init_db()
+    _seed_permanent_admin_accounts()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT','5000')), debug=os.environ.get('FLASK_DEBUG')=='1')
