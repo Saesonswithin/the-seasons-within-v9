@@ -19,6 +19,8 @@ from flask import Flask, request, redirect, url_for, session, flash, abort, rend
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import re
+import secrets
+import string
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
@@ -289,6 +291,20 @@ def init_db():
         FOREIGN KEY(from_user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(to_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS affiliate_profiles (
+        user_id INTEGER PRIMARY KEY,
+        referral_code TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS affiliate_referrals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referrer_id INTEGER NOT NULL,
+        referred_user_id INTEGER NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(referred_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     ''')
     conn.execute("UPDATE journal_entries SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE community_posts SET category='Journal Entry' WHERE category='Saved Items'")
@@ -392,6 +408,23 @@ def _ensure_runtime_compat_schema():
                     existing.add(column)
                 except Exception:
                     app.logger.exception('Compatibility migration failed for %s.%s',table,column)
+        try:
+            conn.execute('''CREATE TABLE IF NOT EXISTS affiliate_profiles (
+                user_id INTEGER PRIMARY KEY,
+                referral_code TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS affiliate_referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                referred_user_id INTEGER NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(referred_user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+        except Exception:
+            app.logger.exception('Could not create affiliate compatibility tables')
         conn.commit()
     finally:
         conn.close()
@@ -1529,6 +1562,170 @@ def regular_business_cards(rows):
     return ''.join(cards)
 
 
+
+def _affiliate_code_for(user_id, create=False):
+    conn=db()
+    try:
+        row=conn.execute('SELECT referral_code FROM affiliate_profiles WHERE user_id=?',(user_id,)).fetchone()
+        if row:
+            return row['referral_code']
+        if not create:
+            return ''
+        alphabet=string.ascii_uppercase+string.digits
+        for _ in range(20):
+            code=''.join(secrets.choice(alphabet) for _ in range(8))
+            try:
+                conn.execute('INSERT INTO affiliate_profiles(user_id,referral_code,created_at) VALUES(?,?,?)',(user_id,code,now()))
+                conn.commit()
+                return code
+            except sqlite3.IntegrityError:
+                continue
+        return ''
+    finally:
+        conn.close()
+
+def _affiliate_summary(user):
+    conn=db()
+    rows=conn.execute('''SELECT ar.created_at referral_date,u.id,u.name,u.email,u.conscious_paid,u.business_dev_paid
+                         FROM affiliate_referrals ar
+                         JOIN users u ON u.id=ar.referred_user_id
+                         WHERE ar.referrer_id=?
+                         ORDER BY ar.id''',(user['id'],)).fetchall()
+    conn.close()
+
+    referrer_active=bool(user['conscious_paid'] or user['is_admin'])
+    active=[r for r in rows if bool(r['conscious_paid'])] if referrer_active else []
+    inactive=[r for r in rows if not bool(r['conscious_paid']) or not referrer_active]
+    active_count=len(active)
+    recurring=(2+(active_count-1)) if active_count else 0
+    qualifying_plan=[r for r in active if bool(r['business_dev_paid'])]
+    plan_bonus=len(qualifying_plan)*10
+    return {
+        'rows':rows,
+        'active':active,
+        'inactive':inactive,
+        'active_count':active_count,
+        'inactive_count':len(inactive),
+        'recurring':recurring,
+        'qualifying_plan_count':len(qualifying_plan),
+        'plan_bonus':plan_bonus,
+        'current_total':recurring+plan_bonus,
+        'referrer_active':referrer_active,
+    }
+
+@app.route('/earn-while-you-grow',methods=['GET','POST'])
+@login_required
+def earn_while_you_grow():
+    u=current_user()
+    if not u:
+        session.pop('user_id',None)
+        return redirect(url_for('login',next=request.path))
+
+    preview_access=bool(u['conscious_paid'] or u['is_admin'] or FULL_ACCESS_TESTING)
+    code=_affiliate_code_for(u['id'],False)
+
+    if request.method=='POST':
+        action=request.form.get('action','')
+        if action=='create_link':
+            if not preview_access:
+                flash('Earn While You Grow is included with the $10.99/month upgraded membership.','info')
+                return redirect(url_for('membership'))
+            code=_affiliate_code_for(u['id'],True)
+            if code:
+                flash('Your personal Earn While You Grow referral link is ready.','success')
+            else:
+                flash('Your referral link could not be created. Please try again.','error')
+            return redirect(url_for('earn_while_you_grow'))
+
+    summary=_affiliate_summary(u)
+    referral_url=(request.url_root.rstrip('/')+url_for('join')+'?ref='+code) if code else ''
+
+    if preview_access:
+        if code:
+            link_area=f'''<article class="card paid"><span class="badge gold">MY AFFILIATE LINK</span>
+            <h2>My Earn While You Grow Link</h2>
+            <p class="muted">Anyone who creates a new Seasons Within account through this link is recorded as your direct referral.</p>
+            <input class="input" id="affiliateLink" readonly value="{html.escape(referral_url,quote=True)}">
+            <div class="actions"><button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById('affiliateLink').value)">Copy My Link</button>
+            <a class="out" href="mailto:?subject=The%20Seasons%20Within&body={urllib.parse.quote(referral_url)}">Share by Email</a></div></article>'''
+        else:
+            link_area='''<article class="card paid"><span class="badge gold">CREATE MY AFFILIATE LINK</span>
+            <h2>Your personal link is ready to be created.</h2><p class="muted">Your link stays connected to your member account. You do not need a business account.</p>
+            <form method="post"><input type="hidden" name="action" value="create_link"><button class="btn">Create My Affiliate Link</button></form></article>'''
+    else:
+        link_area=f'''<article class="card paid"><span class="badge gold">EARN WHILE YOU GROW • $10.99/MONTH</span>
+        <h2>Create Your Personal Affiliate Link</h2>
+        <p class="muted">Upgrade your member account to create a referral link, build your Earn While You Grow Community, and become eligible for direct-referral commissions. A business account is not required.</p>
+        <a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade to Earn While You Grow</a></article>'''
+
+    referral_rows=[]
+    for r in summary['rows']:
+        active=summary['referrer_active'] and bool(r['conscious_paid'])
+        plan=active and bool(r['business_dev_paid'])
+        status='Active Upgraded Member' if active else 'Inactive for Commission'
+        amount='$2 or $1/month based on active count' if active else '$0/month'
+        referral_rows.append(f'''<article class="card"><h3>{html.escape(r['name'])}</h3>
+        <p class="muted">{status}</p><div class="grid">
+        <div class="fact"><small>Recurring Status</small><b>{amount}</b></div>
+        <div class="fact"><small>Professional Business Plan Bonus</small><b>{'$10 qualifying bonus' if plan else '$0 currently qualifying'}</b></div>
+        </div></article>''')
+    community_html=''.join(referral_rows) or '<div class="empty"><h3>Your direct-referral community will appear here</h3><p class="muted">Only people who personally join through your referral link are connected to your Earn While You Grow Community.</p></div>'
+
+    active_n=summary['active_count']
+    if active_n:
+        recurring_breakdown=f'''<p><b>First active direct referral:</b> $2.00/month<br>
+        <b>{max(0,active_n-1)} additional active direct referrals × $1:</b> ${max(0,active_n-1):.2f}/month<br>
+        <b>Current recurring commission:</b> ${summary['recurring']:.2f}/month</p>'''
+    else:
+        recurring_breakdown='<p><b>Current recurring commission:</b> $0.00/month</p>'
+
+    content=f'''<div class="hero paid"><span class="badge gold">🌱 EARN WHILE YOU GROW</span>
+    <h1>Share The Seasons Within. Grow Your Community.</h1>
+    <p class="muted">Earn While You Grow is part of the $10.99/month upgraded membership. You do not need a business account.</p>
+    <div class="actions"><a class="out" href="{url_for('membership')}">View Upgrade Details</a><a class="out" href="{url_for('connections')}">Back to Conscious Coordination</a></div></div>
+
+    {link_area}
+
+    <article class="card"><span class="badge">HOW IT WORKS</span><h2>Your Direct-Referral Community</h2>
+    <p>When someone creates their Seasons Within account through your personal link, they become part of your <b>Earn While You Grow Community</b>.</p>
+    <p>Recurring commissions count only while <b>both you and your directly referred member have an active $10.99/month upgraded membership</b>.</p>
+    <p><b>First active direct referral = $2/month.</b><br><b>Each additional active direct referral = $1/month.</b></p>
+    <p>If a referred member stops their qualifying upgrade, the recurring commission connected to that member stops. If your own qualifying upgrade becomes inactive, recurring commission eligibility stops until you are eligible again.</p>
+    <p><b>You earn only from members you personally refer.</b> There are no downlines and no commissions from people your referrals later invite.</p></article>
+
+    <div class="grid">
+      <article class="card paid"><small>ACTIVE DIRECT REFERRALS</small><h1>{summary['active_count']}</h1><p class="muted">Currently qualifying for recurring commission.</p></article>
+      <article class="card paid"><small>CURRENT RECURRING COMMISSION</small><h1>${summary['recurring']:.2f}/mo</h1><p class="muted">Based on current active qualifying memberships.</p></article>
+      <article class="card paid"><small>QUALIFYING BUSINESS PLAN BONUSES</small><h1>${summary['plan_bonus']:.2f}</h1><p class="muted">{summary['qualifying_plan_count']} qualifying direct referral(s) currently show a Professional Business Plan purchase.</p></article>
+      <article class="card"><small>INACTIVE FOR COMMISSION</small><h1>{summary['inactive_count']}</h1><p class="muted">Still part of your referral history, but not currently generating recurring commission.</p></article>
+    </div>
+
+    <article class="card"><span class="badge">YOUR COMMISSION BREAKDOWN</span><h2>How the current amount is calculated</h2>
+    {recurring_breakdown}
+    <p><b>Professional Business Plan:</b> qualifying direct-referral purchase = $10 one-time bonus.</p>
+    <p class="muted small">Amounts shown here are program calculations based on current qualifying account status. They are not guaranteed earnings or a promise of future income. Payout processing must be connected to an approved payment system before funds are distributed.</p></article>
+
+    <article class="card"><span class="badge">COMMISSION EXAMPLES</span><h2>How the formula scales</h2>
+    <div class="grid">
+      <div class="fact"><small>1 active referral</small><b>$2/month</b></div>
+      <div class="fact"><small>5 active referrals</small><b>$6/month</b></div>
+      <div class="fact"><small>10 active referrals</small><b>$11/month</b></div>
+      <div class="fact"><small>25 active referrals</small><b>$26/month</b></div>
+      <div class="fact"><small>50 active referrals</small><b>$51/month</b></div>
+      <div class="fact"><small>100 active referrals</small><b>$101/month</b></div>
+    </div>
+    <p class="muted small">These examples only demonstrate the commission formula. Actual earnings depend on qualifying active direct referrals and are not guaranteed.</p></article>
+
+    <div class="topspace"><span class="badge heart">MY EARN WHILE YOU GROW COMMUNITY</span><h2>My Direct Referrals</h2></div>
+    {community_html}
+
+    <article class="card"><span class="badge">UPGRADED MEMBER WORKSPACE</span><h2>Your business plan is only the beginning.</h2>
+    <p class="muted">The $79.99 Professional Business Plan gives you a roadmap. The $10.99/month upgraded membership keeps The Seasons Within working with you as you grow.</p>
+    <p>Use <b>My Business Journal</b> to continue developing goals, services, pricing, target customers, marketing strategies, milestones, monthly revenue goals, expenses, ideas and action steps. You do not need to own a business to use Earn While You Grow.</p>
+    <div class="actions"><a class="out" href="{url_for('journal',category='Business')}">Open My Business Journal</a><a class="out" href="{url_for('business_dashboard')}">My Business Dashboard</a></div></article>'''
+    return page('Earn While You Grow',content,'membership')
+
+
 @app.route('/')
 
 def home():
@@ -1578,7 +1775,7 @@ def home():
     else:
         sky_reflection="Use today as a conscious check-in: notice what deserves your attention, where communication could be clearer, and what kind of connection or rest would support you."
 
-    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, retreats, conscious connection, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
+    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, retreats, conscious connection, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
@@ -1588,11 +1785,30 @@ def home():
 
 @app.route('/join', methods=['GET','POST'])
 
+
 def join():
+    referral_code=(request.form.get('referral_code') or request.args.get('ref') or '').strip().upper()
+    referrer=None
+    if referral_code:
+        conn=db()
+        referrer=conn.execute('''SELECT u.id,u.name FROM affiliate_profiles ap
+                                 JOIN users u ON u.id=ap.user_id
+                                 WHERE upper(ap.referral_code)=?''',(referral_code,)).fetchone()
+        conn.close()
+
     if request.method=='POST':
-        name=request.form.get('name','').strip(); email=request.form.get('email','').strip().lower(); password=request.form.get('password','')
-        dob=request.form.get('dob','').strip(); birth_time=request.form.get('birth_time','').strip(); birth_city=request.form.get('birth_city','').strip(); birth_region=request.form.get('birth_region','').strip(); birth_country=request.form.get('birth_country','').strip()
-        time_unknown=1 if request.form.get('birth_time_unknown') and not birth_time else 0; exact=1 if request.form.get('exact_time') and birth_time else 0; adult=1 if request.form.get('adult') else 0
+        name=request.form.get('name','').strip()
+        email=request.form.get('email','').strip().lower()
+        password=request.form.get('password','')
+        dob=request.form.get('dob','').strip()
+        birth_time=request.form.get('birth_time','').strip()
+        birth_city=request.form.get('birth_city','').strip()
+        birth_region=request.form.get('birth_region','').strip()
+        birth_country=request.form.get('birth_country','').strip()
+        time_unknown=1 if request.form.get('birth_time_unknown') and not birth_time else 0
+        exact=1 if request.form.get('exact_time') and birth_time else 0
+        adult=1 if request.form.get('adult') else 0
+
         if not name or not email or len(password)<8 or not dob or not birth_city or not birth_country or not adult:
             flash('Name, email, birth date, birth city, country, 18+ confirmation, and a password of at least 8 characters are required.','error')
         elif not birth_time and not time_unknown:
@@ -1600,13 +1816,50 @@ def join():
         else:
             conn=db()
             try:
-                cur=conn.execute('''INSERT INTO users(name,email,password_hash,dob,adult_confirmed,birth_time,birth_city,birth_region,birth_country,exact_time,birth_time_unknown,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(name,email,generate_password_hash(password),dob,adult,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,now()))
-                conn.commit(); session['user_id']=cur.lastrowid; flash('Your account is ready. Complete your Conscious Coordination Profile to join the Community.','success'); return redirect(url_for('connection_edit'))
+                cur=conn.execute('''INSERT INTO users(name,email,password_hash,dob,adult_confirmed,birth_time,birth_city,birth_region,birth_country,exact_time,birth_time_unknown,created_at)
+                                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                 (name,email,generate_password_hash(password),dob,adult,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,now()))
+                new_user_id=cur.lastrowid
+                if referrer and referrer['id']!=new_user_id:
+                    conn.execute('''INSERT OR IGNORE INTO affiliate_referrals(referrer_id,referred_user_id,created_at)
+                                    VALUES(?,?,?)''',(referrer['id'],new_user_id,now()))
+                conn.commit()
+                session['user_id']=new_user_id
+                if referrer:
+                    flash(f'Your account is ready. You joined through {referrer["name"]}’s Earn While You Grow link. Complete your Conscious Coordination Profile to join the Community.','success')
+                else:
+                    flash('Your account is ready. Complete your Conscious Coordination Profile to join the Community.','success')
+                return redirect(url_for('connection_edit'))
             except sqlite3.IntegrityError:
                 flash('An account with that email already exists. Use Login or Forgot Password.','error')
             finally:
                 conn.close()
-    return page('Join Free',f'''<div class="hero"><span class="badge">JOIN FREE</span><h1>Create Your Member Profile</h1><p class="muted">Conscious Coordination begins with your member information and birth information. You will complete your connection preferences next.</p></div><form class="card" method="post"><label><b>Name</b></label><input class="input" name="name" required><label><b>Email</b></label><input class="input" type="email" name="email" required><label><b>Password</b></label><input class="input" type="password" name="password" minlength="8" required><h2>Birth Information</h2><p class="muted">This is a core part of Conscious Coordination and is entered once here.</p><label><b>Birth Date</b></label><input class="input" type="date" name="dob" required><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time"><div class="fact"><label><input type="checkbox" name="exact_time"> Exact birth time is known</label><br><label><input type="checkbox" name="birth_time_unknown"> I do not know my birth time</label></div><label><b>Birth City</b></label><input class="input" name="birth_city" required><label><b>State / Province</b></label><input class="input" name="birth_region"><label><b>Country</b></label><input class="input" name="birth_country" required><label><input type="checkbox" name="adult" required> I confirm I am 18 or older.</label><div class="actions"><button class="btn">Continue to Conscious Coordination</button><a class="out" href="{url_for('login')}">I Already Have an Account</a></div></form>''')
+
+    referral_note=''
+    if referrer:
+        referral_note=f'''<article class="card paid"><span class="badge gold">EARN WHILE YOU GROW COMMUNITY</span>
+        <p>You are joining through <b>{html.escape(referrer['name'])}</b>’s personal Seasons Within referral link.</p>
+        <p class="muted small">This records that member as your direct referrer. Joining does not require you to purchase an upgrade.</p></article>'''
+
+    return page('Join Free',f'''<div class="hero"><span class="badge">JOIN FREE</span><h1>Create Your Member Profile</h1>
+    <p class="muted">Conscious Coordination begins with your member information and birth information. You will complete your connection preferences next.</p></div>
+    {referral_note}
+    <form class="card" method="post">
+    <input type="hidden" name="referral_code" value="{html.escape(referral_code,quote=True)}">
+    <label><b>Name</b></label><input class="input" name="name" required>
+    <label><b>Email</b></label><input class="input" type="email" name="email" required>
+    <label><b>Password</b></label><input class="input" type="password" name="password" minlength="8" required>
+    <h2>Birth Information</h2><p class="muted">This is a core part of Conscious Coordination and is entered once here.</p>
+    <label><b>Birth Date</b></label><input class="input" type="date" name="dob" required>
+    <label><b>Birth Time</b></label><input class="input" type="time" name="birth_time">
+    <div class="fact"><label><input type="checkbox" name="exact_time"> Exact birth time is known</label><br>
+    <label><input type="checkbox" name="birth_time_unknown"> I do not know my birth time</label></div>
+    <label><b>Birth City</b></label><input class="input" name="birth_city" required>
+    <label><b>State / Province</b></label><input class="input" name="birth_region">
+    <label><b>Country</b></label><input class="input" name="birth_country" required>
+    <label><input type="checkbox" name="adult" required> I confirm I am 18 or older.</label>
+    <div class="actions"><button class="btn">Continue to Conscious Coordination</button><a class="out" href="{url_for('login')}">I Already Have an Account</a></div>
+    </form>''')
 
 @app.route('/login', methods=['GET','POST'])
 def login():
@@ -1642,7 +1895,7 @@ def community():
     if not conscious_coordination_ready(u,cp):
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your Conscious Coordination Profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('connection_edit')}">Join the Community</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Conscious Coordination</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
         return page('Join the Community',content,'community')
-    community_switch=f'''<div class="actions"><a class="btn" href="{url_for('community')}">Community</a><a class="out" href="{url_for('business_network')}">Businesses</a></div>'''
+    community_switch=f'''<div class="actions"><a class="btn" href="{url_for('community')}">Community</a><a class="out" href="{url_for('business_network')}">Businesses</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div>'''
     if request.method=='POST':
         title=request.form.get('title','').strip() or 'Morning Reflection'; category=journal_category_for_public(request.form.get('category','Reflection').strip()); body=request.form.get('body','').strip(); media_name,media_type=save_community_media(request.files.get('media'),u['id'])
         if body:
@@ -2238,7 +2491,7 @@ def connections():
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     feed=''.join(feed_cards) or '<div class="empty"><h3>Galaxy Eve posts will appear here</h3></div>'
-    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Conscious Coordination Profile</a><a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a></div></div>
+    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Conscious Coordination Profile</a><a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     {host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2></div>{feed}
     <div class="topspace"><h2>Discover Members</h2></div><div class="chips">{filters}</div><div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
@@ -3549,11 +3802,32 @@ def retreat_builder():
 @app.route('/membership')
 
 
+
 def membership():
-    return page('Membership',f'''<div class="hero"><h1>Membership & Business Packages</h1><p class="muted">Your own Conscious Coordination, daily/monthly reflections and Basic Compatibility Preview are included. Upgrade opens deeper member-to-member reports and private connection tools.</p></div><div class="grid">
-    <article class="card"><span class="badge">FREE</span><h2>Community + Conscious Coordination</h2><h1>$0</h1><p class="muted">Member profile • your own full Conscious Coordination • Daily Conscious Coordination Reflection • Monthly Conscious Coordination Reflection • compatible-member alerts • connection suggestions • Basic Compatibility percentages • Date/Friendship/Business/Retreat ideas • Journal • Inbox • Retreats • one FREE Hosted Business App structure. Community access begins after the Conscious Coordination Profile is completed.</p></article>
-    <article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>Full Conscious Coordination</h2><h1>$10.99/mo</h1><p class="muted">Everything included with basic membership, plus full written compatibility reports, deeper access to another member’s Conscious Coordination, and the ability to initiate eligible private video connections.</p><a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade</a></article>
-    <article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>Professional Business Development</h2><h1>$79.99</h1><p class="muted">One-time deeper planning package: Business Plan • Marketing Strategy • 90-Day Launch Plan • saved versions.</p><a class="btn" href="{url_for('startup')}">Start</a></article></div>''','membership')
+    return page('Membership',f'''<div class="hero"><h1>Membership & Business Packages</h1>
+    <p class="muted">Your own Conscious Coordination, daily/monthly reflections and Basic Compatibility Preview are included. Upgrade opens deeper member-to-member reports, Earn While You Grow, and ongoing member/business-development tools.</p>
+    <div class="actions"><a class="btn" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
+
+    <div class="grid">
+    <article class="card"><span class="badge">FREE</span><h2>Community + Conscious Coordination</h2><h1>$0</h1>
+    <p class="muted">Member profile • your own full Conscious Coordination • Daily Conscious Coordination Reflection • Monthly Conscious Coordination Reflection • compatible-member alerts • connection suggestions • Basic Compatibility percentages • Date/Friendship/Business/Retreat ideas • Journal • Inbox • Retreats • one FREE Hosted Business App structure. Community access begins after the Conscious Coordination Profile is completed.</p></article>
+
+    <article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>Earn While You Grow + Full Conscious Coordination</h2><h1>$10.99/mo</h1>
+    <p class="muted">Everything included with basic membership, plus full written compatibility reports, deeper access to another member’s Conscious Coordination, eligible private video initiation, your personal affiliate link, direct-referral community tracking, recurring direct-referral commission eligibility, and ongoing business-development workspace tools when you want them. You do not need a business account.</p>
+    <div class="actions"><a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade</a><a class="out" href="{url_for('earn_while_you_grow')}">How Earn While You Grow Works</a></div></article>
+
+    <article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>Professional Business Development</h2><h1>$79.99</h1>
+    <p class="muted">One-time professional starting roadmap: Business Plan • Marketing Strategy • 90-Day Launch Plan • saved versions. Your plan remains the foundation; the $10.99/month upgrade gives you the ongoing workspace to keep developing it.</p>
+    <a class="btn" href="{url_for('startup')}">Start</a></article>
+    </div>
+
+    <article class="card"><span class="badge heart">HOW THE EARNING PROGRAM WORKS</span><h2>Direct referrals only</h2>
+    <p>When a member joins through your personal affiliate link, they become part of your Earn While You Grow Community.</p>
+    <p><b>First active qualifying direct referral = $2/month.</b><br><b>Each additional active qualifying direct referral = $1/month.</b></p>
+    <p>Both you and the directly referred member must have an active $10.99/month upgraded membership for recurring commission eligibility. There are no downlines and no commissions from people your referrals later invite.</p>
+    <p><b>Qualifying Professional Business Plan direct-referral purchase = $10 one-time bonus.</b></p>
+    <p class="muted small">Commission examples explain the program formula; earnings are not guaranteed and depend on qualifying active direct referrals.</p>
+    <a class="out" href="{url_for('earn_while_you_grow')}">Open Earn While You Grow</a></article>''','membership')
 
 @app.route('/more')
 @login_required
@@ -3566,10 +3840,24 @@ def settings():
     return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted">Password-reset delivery requires the production email integration.</p></article><article class="card"><h3>Profile</h3><a class="out" href="{url_for('profile')}">Edit Profile</a></article><article class="card"><h3>Conscious Coordination</h3><a class="out" href="{url_for('connection_edit')}">Edit / Opt In</a></article><article class="card"><h3>Log Out</h3><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
 
 @app.route('/payment/<product>')
+
 def payment_info(product):
-    products={'conscious-coordination':('$10.99/month','Conscious Coordination'),'business-development':('$79.99 one time','Professional Business Development'),'video':('$5','Video Add-on')}
+    products={
+        'conscious-coordination':('$10.99/month','Earn While You Grow + Full Conscious Coordination'),
+        'business-development':('$79.99 one time','Professional Business Development'),
+        'video':('$5','Video Add-on')
+    }
     price,name=products.get(product,('','Payment'))
-    return page('Payment Setup',f'''<div class="hero paid"><span class="badge gold">PAYMENT INTEGRATION</span><h1>{name}</h1><h2>{price}</h2><p class="muted">No charge is simulated in this build. Connect Stripe or another approved payment processor and verify successful webhooks before granting paid access.</p></div>''','membership')
+    extra=''
+    if product=='conscious-coordination':
+        extra=f'''<article class="card"><h2>Included with the $10.99 upgrade</h2>
+        <p>Full Conscious Coordination reports • deeper member compatibility • eligible private video initiation • Earn While You Grow affiliate link • direct-referral community tracking • recurring direct-referral commission eligibility • My Business Journal and ongoing business-development workspace tools.</p>
+        <p class="muted">A business account is not required. The free Hosted Business App/listing remains separate from this monthly upgrade.</p>
+        <a class="out" href="{url_for('earn_while_you_grow')}">See How Earn While You Grow Works</a></article>'''
+    return page('Payment Setup',f'''<div class="hero paid"><span class="badge gold">PAYMENT INTEGRATION</span>
+    <h1>{name}</h1><h2>{price}</h2>
+    <p class="muted">No charge is simulated in this build. Connect Stripe or another approved payment processor and verify successful webhooks before granting paid access or issuing commissions.</p>
+    </div>{extra}''','membership')
 
 @app.route('/health')
 def health():
