@@ -28,6 +28,8 @@ import secrets
 import string
 import math
 import hashlib
+import difflib
+from collections import Counter
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-secret-key-in-render')
@@ -1011,7 +1013,7 @@ def current_sky_data():
             lon=float(swe.calc_ut(jd,pid)[0][0])%360; sign,degree=_sign_from_longitude(lon)
             planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
         phase=(planets['Moon']['longitude']-planets['Sun']['longitude'])%360
-        names=('New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent')
+        names=('Lunar Renewal','Waxing Crescent','First Quarter','Waxing Gibbous','Lunar Peak','Waning Gibbous','Last Quarter','Waning Crescent')
         phase_name=names[int(((phase+22.5)%360)//45)]
         return {'utc':n.replace(microsecond=0).isoformat()+'Z','planets':planets,'lunar_phase':phase_name,'source':'Swiss Ephemeris runtime'}
     except Exception:
@@ -1436,7 +1438,7 @@ def _openai_text(prompt):
     except Exception: return None
 
 
-REFLECTION_ENGINE_VERSION = 4
+REFLECTION_ENGINE_VERSION = 6
 
 def _angle_distance(a,b):
     try:
@@ -1618,85 +1620,450 @@ def _behavioral_insights(profile):
 
     return insights
 
+SIGN_BEHAVIORAL_TONES = {
+    'Aries': {'strength':'direct movement, initiative and willingness to act','watch':'urgency can make action arrive before enough information or emotional settling','question':'What deserves a direct move, and what needs one more moment of awareness first?'},
+    'Taurus': {'strength':'steadiness, value awareness and the ability to stay with what matters','watch':'comfort or certainty can become difficult to release even when circumstances have changed','question':'What is genuinely worth preserving, and what am I holding because change feels uncomfortable?'},
+    'Gemini': {'strength':'curiosity, mental flexibility and the ability to see more than one angle','watch':'too many possibilities can scatter attention or delay a clear position','question':'Which information actually changes the decision, and which information is only adding noise?'},
+    'Cancer': {'strength':'emotional memory, care and sensitivity to safety and belonging','watch':'protectiveness can make withdrawal or defensiveness feel safer than naming the need directly','question':'What would create real emotional safety here instead of only temporary protection?'},
+    'Leo': {'strength':'creative ownership, warmth and willingness to be visible','watch':'recognition can become too important when confidence is asking to come from within','question':'What would I still want to express or choose if nobody applauded it?'},
+    'Virgo': {'strength':'discernment, practical improvement and attention to what can actually be changed','watch':'useful refinement can turn into over-correction, self-criticism or waiting for perfect conditions','question':'What improvement is useful now, and what can be allowed to be good enough?'},
+    'Libra': {'strength':'perspective-taking, reciprocity and sensitivity to fairness','watch':'keeping balance can become over-accommodation when a clear personal position is needed','question':'What would fairness include if my own position counted as much as everyone else’s?'},
+    'Scorpio': {'strength':'depth, persistence and sensitivity to trust, motive and emotional truth','watch':'intensity can make control or certainty feel safer than asking a direct question','question':'What is worth protecting, and what could become clearer if I loosened the need to control the outcome?'},
+    'Sagittarius': {'strength':'meaning-making, optimism and willingness to move toward a larger possibility','watch':'enthusiasm or certainty can outrun details, capacity or what is actually known','question':'What possibility is worth pursuing, and what facts would make the direction more grounded?'},
+    'Capricorn': {'strength':'discipline, responsibility and the ability to build toward a long-term result','watch':'pressure can become over-control or make rest and vulnerability feel undeserved','question':'What is the next responsible step without turning responsibility into punishment?'},
+    'Aquarius': {'strength':'independent thinking, pattern recognition and comfort with a wider perspective','watch':'distance can become a substitute for emotional contact when closeness feels complicated','question':'Where is perspective helping, and where would direct participation tell me more?'},
+    'Pisces': {'strength':'imagination, empathy and sensitivity to subtle emotional information','watch':'openness can blur boundaries or make another person’s state feel like a responsibility','question':'What can I care about deeply without carrying as if it belongs entirely to me?'},
+}
+
+JOURNAL_THEME_KEYWORDS = {
+    'communication': ('communicate','communication','conversation','talk','said','heard','listen','message','misunderstand','explain'),
+    'boundaries': ('boundary','boundaries','limit','space','say no','overstep','protect','distance'),
+    'relationships': ('relationship','partner','dating','love','friend','connection','trust','affection','together'),
+    'family': ('family','mother','father','mom','dad','parent','child','children','sister','brother'),
+    'business': ('business','client','work','project','career','customer','launch','market','income','professional'),
+    'money/resources': ('money','budget','spend','spending','cost','price','income','debt','save','saving','resource'),
+    'confidence/direction': ('confidence','purpose','direction','decision','choose','choice','goal','future','identity'),
+    'conflict/repair': ('conflict','argument','fight','repair','apology','apologize','resent','forgive','tension'),
+    'rest/regulation': ('rest','sleep','tired','overwhelmed','stress','calm','meditation','breath','nature','exercise','regulate'),
+    'creativity': ('creative','create','art','music','write','writing','idea','inspiration','design'),
+    'grief/change': ('grief','loss','change','ending','transition','miss','letting go','goodbye'),
+    'health/wellness': ('health','wellness','body','doctor','pain','healing','food','exercise','energy','routine'),
+}
+
+def _planet_positions_at_utc(dt):
+    # Internal factual planetary positions for a supplied UTC moment.
+    try:
+        import swisseph as swe
+        if dt.tzinfo is None:
+            dt=dt.replace(tzinfo=timezone.utc)
+        z=dt.astimezone(timezone.utc)
+        jd=swe.julday(z.year,z.month,z.day,z.hour+z.minute/60+z.second/3600)
+        ids={'Sun':swe.SUN,'Moon':swe.MOON,'Mercury':swe.MERCURY,'Venus':swe.VENUS,
+             'Mars':swe.MARS,'Jupiter':swe.JUPITER,'Saturn':swe.SATURN}
+        planets={}
+        for name,pid in ids.items():
+            lon=float(swe.calc_ut(jd,pid)[0][0])%360
+            sign,degree=_sign_from_longitude(lon)
+            planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
+        return planets
+    except Exception:
+        return {}
+
+def _current_lunar_cycle_chart(current_sky=None):
+    # Locate the most recent Sun/lunar conjunction and calculate its full sky.
+    sky=current_sky or current_sky_data()
+    planets=(sky or {}).get('planets') or {}
+    sun=(planets.get('Sun') or {}).get('longitude')
+    lunar=(planets.get('Moon') or {}).get('longitude')
+    now_utc=datetime.now(timezone.utc)
+    try:
+        phase=(float(lunar)-float(sun))%360
+    except Exception:
+        phase=0.0
+    relative_speed=12.19075
+    guess=now_utc-timedelta(days=phase/relative_speed)
+    refined=False
+    for _ in range(10):
+        at=_planet_positions_at_utc(guess)
+        if not at:
+            break
+        s=(at.get('Sun') or {}).get('longitude')
+        m=(at.get('Moon') or {}).get('longitude')
+        if s is None or m is None:
+            break
+        signed=((float(m)-float(s)+180)%360)-180
+        guess=guess-timedelta(days=signed/relative_speed)
+        refined=True
+        if abs(signed)<0.0005:
+            break
+    cycle_planets=_planet_positions_at_utc(guess) if refined else {}
+    cycle_id=(guess.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%MZ') if cycle_planets else 'approx-'+guess.astimezone(timezone.utc).strftime('%Y-%m-%d'))
+    return {
+        'cycle_id':cycle_id,
+        'started_utc':guess.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+        'planets':cycle_planets,
+        'source':'Swiss Ephemeris lunar-cycle chart' if cycle_planets else 'lunar-cycle estimate from current factual sky',
+        'exact_chart':bool(cycle_planets),
+    }
+
+def _journal_theme_counts(rows):
+    combined=' '.join(
+        f"{r['title'] or ''} {r['category'] or ''} {r['body'] or ''}".lower()
+        for r in rows
+    )
+    counts={}
+    for theme,needles in JOURNAL_THEME_KEYWORDS.items():
+        score=sum(combined.count(n.lower()) for n in needles)
+        if score:
+            counts[theme]=score
+    return dict(sorted(counts.items(),key=lambda kv:(-kv[1],kv[0])))
+
+def _journal_chunk_fallback(chunk_text):
+    low=chunk_text.lower()
+    scored=[]
+    for theme,needles in JOURNAL_THEME_KEYWORDS.items():
+        score=sum(low.count(n.lower()) for n in needles)
+        if score:
+            scored.append((score,theme))
+    scored.sort(reverse=True)
+    themes=', '.join(t for _,t in scored[:5]) or 'personal reflection and ongoing life decisions'
+    return f"This portion of the Journal repeatedly touches {themes}. Treat those as background themes rather than quotations."
+
+def _all_journal_context(user_id):
+    # Every private Journal entry belonging to this member participates.
+    conn=db()
+    rows=conn.execute(
+        '''SELECT id,title,body,category,created_at,updated_at
+           FROM journal_entries WHERE user_id=? ORDER BY id ASC''',
+        (user_id,)
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return {
+            'entry_count':0,
+            'history_fingerprint':hashlib.sha256(b'empty-journal').hexdigest(),
+            'theme_counts':{},
+            'history_for_reflection':'No Journal entries have been created yet.',
+            'privacy':'Use only for this member’s own private personalization; never expose entries to another member.'
+        }
+
+    serialized=[]
+    h=hashlib.sha256()
+    category_counts=Counter()
+    for r in rows:
+        entry=(
+            f"ENTRY {r['id']}\n"
+            f"DATE: {r['created_at'] or ''}\n"
+            f"CATEGORY: {r['category'] or ''}\n"
+            f"TITLE: {r['title'] or ''}\n"
+            f"BODY:\n{r['body'] or ''}\n"
+        )
+        serialized.append(entry)
+        h.update(entry.encode('utf-8','ignore'))
+        category_counts[r['category'] or 'Journal Entry']+=1
+
+    full_history='\n---\n'.join(serialized)
+    theme_counts=_journal_theme_counts(rows)
+
+    if len(full_history)<=70000:
+        history_for_reflection=full_history
+        compression='full Journal history supplied'
+    else:
+        summaries=[]
+        chunk=[]
+        size=0
+        for entry in serialized:
+            if chunk and size+len(entry)>18000:
+                chunk_text='\n---\n'.join(chunk)
+                prompt='''Privately summarize this portion of one member’s Journal for use in that member’s own Conscious Coordination reflection.
+Use every entry in the supplied chunk. Identify recurring themes, meaningful changes, unresolved questions, decisions, relationship/business/wellness patterns and signs of growth.
+Do not diagnose. Do not quote identifying details. Do not address the member directly. Return a compact evidence summary only.
+JOURNAL CHUNK:
+'''+chunk_text
+                summaries.append(_openai_text(prompt) or _journal_chunk_fallback(chunk_text))
+                chunk=[entry]
+                size=len(entry)
+            else:
+                chunk.append(entry)
+                size+=len(entry)
+        if chunk:
+            chunk_text='\n---\n'.join(chunk)
+            prompt='''Privately summarize this portion of one member’s Journal for use in that member’s own Conscious Coordination reflection.
+Use every entry in the supplied chunk. Identify recurring themes, meaningful changes, unresolved questions, decisions, relationship/business/wellness patterns and signs of growth.
+Do not diagnose. Do not quote identifying details. Do not address the member directly. Return a compact evidence summary only.
+JOURNAL CHUNK:
+'''+chunk_text
+            summaries.append(_openai_text(prompt) or _journal_chunk_fallback(chunk_text))
+        history_for_reflection='\n\n'.join(f'Journal history segment {i+1}: {s}' for i,s in enumerate(summaries))
+        compression='all Journal entries processed in chronological chunks'
+
+    return {
+        'entry_count':len(rows),
+        'first_entry_at':rows[0]['created_at'] or '',
+        'latest_entry_at':rows[-1]['created_at'] or '',
+        'category_counts':dict(category_counts),
+        'theme_counts':theme_counts,
+        'history_fingerprint':h.hexdigest(),
+        'history_for_reflection':history_for_reflection,
+        'compression':compression,
+        'privacy':'Use only for this member’s own private personalization; never expose entries to another member.'
+    }
+
+def _normalize_reading_text(value):
+    value=html.unescape(value or '').lower()
+    value=re.sub(r'\s+',' ',value)
+    value=re.sub(r'[^\w\s]','',value)
+    return value.strip()
+
+def _ensure_reading_fingerprint_table():
+    conn=db()
+    try:
+        conn.execute('''CREATE TABLE IF NOT EXISTS generated_reading_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            reading_type TEXT NOT NULL,
+            context_key TEXT NOT NULL,
+            text_hash TEXT NOT NULL UNIQUE,
+            normalized_text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )''')
+        conn.commit()
+    finally:
+        conn.close()
+
+def _reading_similarity_status(candidate):
+    # Exact reuse is blocked globally; strongly duplicated reports are rejected.
+    normalized=_normalize_reading_text(candidate)
+    if not normalized:
+        return True,1.0
+    digest=hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    _ensure_reading_fingerprint_table()
+    conn=db()
+    try:
+        exact=conn.execute(
+            'SELECT id FROM generated_reading_fingerprints WHERE text_hash=? LIMIT 1',
+            (digest,)
+        ).fetchone()
+        if exact:
+            return True,1.0
+        rows=conn.execute(
+            'SELECT normalized_text FROM generated_reading_fingerprints ORDER BY id'
+        ).fetchall()
+    finally:
+        conn.close()
+    highest=0.0
+    for r in rows:
+        prior=r['normalized_text'] or ''
+        if not prior:
+            continue
+        ratio=difflib.SequenceMatcher(None,normalized,prior,autojunk=True).ratio()
+        highest=max(highest,ratio)
+        if ratio>=0.90:
+            return True,ratio
+    return False,highest
+
+def _register_unique_reading(user_id,reading_type,context_key,text):
+    normalized=_normalize_reading_text(text)
+    digest=hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    _ensure_reading_fingerprint_table()
+    conn=db()
+    try:
+        conn.execute(
+            '''INSERT INTO generated_reading_fingerprints
+               (user_id,reading_type,context_key,text_hash,normalized_text,created_at)
+               VALUES(?,?,?,?,?,?)''',
+            (user_id,reading_type,context_key,digest,normalized,now())
+        )
+        conn.commit()
+        return True
+    except DB_INTEGRITY_ERRORS:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
+
+def _unique_generation_seed(user_id,reading_type,context_key,journal_context,attempt=0):
+    raw='|'.join([
+        str(user_id),str(reading_type),str(context_key),
+        str((journal_context or {}).get('history_fingerprint','')),
+        str(attempt)
+    ])
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+def _generate_unique_reflection(user_id,reading_type,context_key,instruction,data,fallback_factory,validator=None):
+    journal_context=(data or {}).get('journal_history') or {}
+    for attempt in range(4):
+        seed=_unique_generation_seed(user_id,reading_type,context_key,journal_context,attempt)
+        uniqueness=f'''
+UNIQUENESS REQUIREMENT:
+This must be a newly composed reading for this exact member and context.
+Do not reuse stock paragraphs, examples, transitions, reflection questions or prior report wording.
+Use this private composition seed only to force a fresh angle; never print it: {seed}
+Attempt: {attempt+1}.
+'''
+        candidate=(_openai_text(instruction+uniqueness+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(data,default=str)) or '').strip()
+        if candidate and (validator is None or validator(candidate)):
+            duplicate,_=_reading_similarity_status(candidate)
+            if not duplicate and _register_unique_reading(user_id,reading_type,context_key,candidate):
+                return candidate,True
+
+    # If AI is unavailable or too repetitive, build from the member-specific
+    # context. Never display a previously registered reading.
+    for attempt in range(256):
+        candidate=(fallback_factory(attempt) or '').strip()
+        if not candidate:
+            continue
+        if validator is not None and not validator(candidate):
+            continue
+        duplicate,_=_reading_similarity_status(candidate)
+        if not duplicate and _register_unique_reading(user_id,reading_type,context_key,candidate):
+            return candidate,False
+
+    # Repeating an older reading is not an acceptable fallback.
+    raise RuntimeError('Unable to create a unique Conscious Coordination reflection without reusing prior text.')
+
 def _reflection_context(user_id):
     conn=db()
     u=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
     cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
-    posts=conn.execute('SELECT title,category,body FROM community_posts WHERE user_id=? ORDER BY id DESC LIMIT 5',(user_id,)).fetchall()
     conn.close()
     chart=member_chart_data(u)
     sky=current_sky_data()
+    lunar_cycle=_current_lunar_cycle_chart(sky)
     profile=dict(cp) if cp else {}
-    aspects=_chart_sky_aspects(chart,sky) if chart.get('ready') else []
+    current_aspects=_chart_sky_aspects(chart,sky) if chart.get('ready') else []
+    cycle_aspects=_chart_sky_aspects(chart,lunar_cycle) if chart.get('ready') and lunar_cycle.get('planets') else []
+    journal_history=_all_journal_context(user_id)
     return {
         'engine_version':REFLECTION_ENGINE_VERSION,
         'member':u['name'],
+        'member_id':user_id,
         'intentions':(cp['coordination_types'] if cp else '') or 'General wellness',
         'profile':profile,
         'psychology_context':_profile_psychology_context(profile),
         'wellness_practices':_member_wellness_practices(profile),
         'chart':chart if chart.get('ready') else {'ready':False},
         'current_sky':sky,
-        'current_to_natal_aspects':aspects,
-        'moon_reflection_theme':_moon_reflection_theme(sky),
-        'public_posts':[{'title':p['title'],'category':p['category'],'body':(p['body'] or '')[:350]} for p in posts]
+        'current_to_natal_aspects':current_aspects,
+        'lunar_cycle_chart':lunar_cycle,
+        'lunar_cycle_to_natal_aspects':cycle_aspects,
+        'lunar_reflection_theme':_moon_reflection_theme(lunar_cycle if lunar_cycle.get('planets') else sky),
+        'journal_history':journal_history,
     }
 
 
 
 
 
-def _fallback_coordination_reflection(ctx,kind):
+def _fallback_coordination_reflection(ctx,kind,variant=0):
     profile=ctx.get('profile') or {}
-    sky=ctx.get('current_sky') or {}
-    moon=((sky.get('planets') or {}).get('Moon') or {})
-    moon_sign=moon.get('sign','')
-    intentions=(ctx.get('intentions') or '').lower()
     insights=_behavioral_insights(profile)
     practices=ctx.get('wellness_practices') or []
+    journal=ctx.get('journal_history') or {}
+    themes=list((journal.get('theme_counts') or {}).keys())
+    lunar_cycle=ctx.get('lunar_cycle_chart') or {}
+    cycle_planets=lunar_cycle.get('planets') or {}
+    cycle_anchor=(cycle_planets.get('Sun') or {}).get('sign','')
+    tone=SIGN_BEHAVIORAL_TONES.get(cycle_anchor,{})
+    lunar_theme=ctx.get('lunar_reflection_theme') or ''
+    intentions=(ctx.get('intentions') or '').lower()
 
-    focus=insights.get('communication') or "Give yourself enough space to respond deliberately instead of reacting at the peak of emotion."
-    real_life=insights.get('boundaries') or insights.get('repair') or insights.get('connection') or "Make expectations explicit instead of assuming another person already understands what you need."
-    practice=insights.get('practice') or "Use a short regulation pause before an important response."
-    notice=insights.get('trust') or "Watch whether urgency is asking you to act before you have enough information."
+    seed_material='|'.join([
+        str(ctx.get('member_id','')),
+        str(kind),
+        str(lunar_cycle.get('cycle_id','')),
+        str(journal.get('history_fingerprint','')),
+        str(variant),
+    ])
+    seed=int(hashlib.sha256(seed_material.encode('utf-8')).hexdigest()[:12],16)
 
-    if 'business' in intentions:
-        real_life=insights.get('business') or real_life
-    elif 'love' in intentions or 'dating' in intentions or 'relationship' in intentions:
-        real_life=insights.get('connection') or real_life
+    candidates=[
+        insights.get('communication'),
+        insights.get('boundaries'),
+        insights.get('repair'),
+        insights.get('trust'),
+        insights.get('connection'),
+        insights.get('business'),
+    ]
+    candidates=[c for c in candidates if c]
+    if not candidates:
+        candidates=["Make the next choice from what remains important after the first emotional reaction has had time to settle."]
+    focus=candidates[seed%len(candidates)]
 
-    sky_sentence=''
-    if moon_sign=='Taurus':
-        sky_sentence=("Today's planetary pattern puts extra emphasis on security, comfort and value-based choices. "
-                      "If a purchase, investment, commitment or comfort-driven decision feels urgent, give yourself enough time to separate emotional relief from a choice that still fits your priorities tomorrow.")
-    elif moon_sign:
-        theme=ctx.get('moon_reflection_theme') or ''
-        if theme:
-            sky_sentence="Today's planetary pattern gives extra weight to one question: "+theme+"."
+    if 'business' in intentions and insights.get('business'):
+        real_life=insights['business']
+    elif any(x in intentions for x in ('love','dating','relationship')) and insights.get('connection'):
+        real_life=insights['connection']
+    else:
+        real_life=candidates[(seed//7)%len(candidates)]
+
+    if themes:
+        primary=themes[seed%len(themes)]
+        secondary=themes[(seed//11)%len(themes)] if len(themes)>1 else ''
+        journal_sentence=f"Across your Journal, {primary} has been a recurring thread"
+        if secondary and secondary!=primary:
+            journal_sentence+=f", with {secondary} also appearing often"
+        journal_sentence+=". Use that history as context for what is changing now rather than as a fixed label."
+    else:
+        journal_sentence="Your Journal does not yet add a long-term pattern, so this reflection leans more heavily on your current coordination profile and present cycle."
+
+    cycle_sentence=''
+    if tone:
+        cycle_sentence=(
+            f"The current lunar reflection cycle emphasizes {tone.get('strength','a different way of meeting the present')}. "
+            f"A useful caution is that {tone.get('watch','the first reaction may not be the whole picture')}."
+        )
+    elif lunar_theme:
+        cycle_sentence=f"The current lunar reflection cycle adds emphasis to this question: {lunar_theme}."
+
+    practice=insights.get('practice') or "Use a brief regulation pause before an important response."
+    if practices:
+        first=practices[seed%len(practices)]
+        practice_options={
+            'meditation':"Use a short meditation before the next important decision. Let the body settle first, then identify what is fact, what is interpretation, and what still matters after the urgency drops.",
+            'nature':"Take time outside without rehearsing the problem. When your attention widens, return to the decision and notice what remains important without the immediate pressure.",
+            'movement':"Use movement to lower activation before deciding or confronting. Revisit the issue when the body is no longer carrying the whole argument.",
+            'quiet time':"Take deliberate quiet time before responding. Name the one need or decision that actually requires words instead of rehearsing every possible outcome.",
+            'journaling':"Write one short entry that separates what happened, what you felt, what you assumed, and what you want to do next. Use the difference between those four lines as information.",
+            'rest':"If depletion is increasing urgency, protect enough rest to revisit the decision with a steadier nervous system.",
+        }
+        practice=practice_options.get(first,practice)
+
+    reflection_questions=[
+        tone.get('question') if tone else '',
+        "What pattern in my Journal is asking to be handled differently now rather than repeated automatically?",
+        "What would be different if I responded to the present situation instead of to the memory of a similar one?",
+        "Which part of this situation needs action, and which part needs understanding before action?",
+        "What choice would still feel aligned after the strongest emotion has softened?",
+    ]
+    reflection_questions=[q for q in reflection_questions if q]
+    reflection=reflection_questions[(seed//17)%len(reflection_questions)]
 
     if kind=='monthly':
-        heading_focus="This month, notice the repeated situations where your first emotional response and your longer-term values do not immediately agree."
-        reflection="What repeated choice this month would show that my values—not my temporary emotional state—are setting the direction?"
+        focus_heading="Your Current Lunar Reflection Cycle"
+        cycle_frame="This reflection belongs to the current lunar cycle and will be rebuilt when the next cycle begins."
     else:
-        heading_focus=focus
-        reflection="What am I trying to soothe, protect or secure right now—and what choice would still make sense after the emotion settles?"
+        focus_heading="Your Focus Right Now"
+        cycle_frame="Today’s reflection uses the current lunar cycle as background while responding to what is active now."
 
-    if practices and practices[0]=='meditation':
-        practice=("Use 8-10 minutes of meditation before an important decision or conversation. Do not try to solve the issue while sitting. "
-                  "Notice the strongest feeling, where it shows up in your body, and the urge attached to it. When you finish, ask: What do I know, what am I assuming, and what still matters after the intensity drops?")
-    elif practices and practices[0]=='nature':
-        practice=("Take a short walk outside before deciding or responding. Do not rehearse the problem. Let your attention widen first, then return and ask what still feels important once the immediate emotional loop has loosened.")
-    elif practices and practices[0]=='movement':
-        practice=("Use a short period of movement before acting on something emotionally charged. Revisit the decision after your body is less activated and see whether the same choice still makes sense.")
-    elif practices and practices[0]=='quiet time':
-        practice=("Give yourself deliberate quiet time before responding. Use it to identify the one thing you actually need to communicate, rather than rehearsing every possible outcome.")
+    openers=[
+        "Pay attention to the place where your usual strength is starting to require a more deliberate choice.",
+        "The useful question today is not whether a familiar pattern is good or bad, but whether it still fits the situation in front of you.",
+        "Something familiar may be showing up in a different form, which makes context more important than habit.",
+        "This is a good moment to distinguish what you already know about yourself from what the present situation is actually asking.",
+    ]
+    opener=openers[(seed//23)%len(openers)]
 
     return (
-        f"Your Focus Right Now\n\n{heading_focus} "
-        f"{sky_sentence}\n\n"
-        f"In Real Life\n\n{real_life}\n\n"
+        f"{focus_heading}\n\n{opener} {focus} {cycle_sentence}\n\n"
+        f"Your Journal in Context\n\n{journal_sentence}\n\n"
+        f"In Real Life\n\n{real_life} {cycle_frame}\n\n"
         f"What May Help\n\n{practice}\n\n"
-        f"Something to Notice\n\n{notice}\n\n"
+        f"Something to Notice\n\n{tone.get('watch','Notice whether urgency, assumption or old expectations are deciding before the present facts are clear.')}\n\n"
         f"Reflection\n\n{reflection}"
     )
 
@@ -1704,63 +2071,81 @@ def _fallback_coordination_reflection(ctx,kind):
 
 
 def get_astrology_reflection(user_id,kind):
-    period=datetime.utcnow().strftime('%Y-%m-%d' if kind=='daily' else '%Y-%m')
+    # Daily reflections change by date. The longer reflection changes at each
+    # factual lunar-cycle boundary rather than on an arbitrary calendar month.
+    if kind=='daily':
+        period=datetime.utcnow().strftime('%Y-%m-%d')
+    else:
+        cycle_probe=_current_lunar_cycle_chart(current_sky_data())
+        period=cycle_probe.get('cycle_id') or datetime.utcnow().strftime('%Y-%m')
+
     conn=db()
-    row=conn.execute('SELECT payload FROM astrology_reflections WHERE user_id=? AND reflection_type=? AND period_key=?',(user_id,kind,period)).fetchone()
+    row=conn.execute(
+        'SELECT payload FROM astrology_reflections WHERE user_id=? AND reflection_type=? AND period_key=?',
+        (user_id,kind,period)
+    ).fetchone()
     if row:
         cached=json.loads(row['payload'])
         cached_text=(cached.get('text') or '')
-        if (cached.get('engine_version')==4
+        if (
+            cached.get('engine_version')==REFLECTION_ENGINE_VERSION
             and 'Complete your birth date' not in cached_text
-            and 'temporarily unavailable' not in cached_text):
+            and 'temporarily unavailable' not in cached_text
+        ):
             conn.close()
             return cached
     conn.close()
 
     ctx=_reflection_context(user_id)
     ctx['behavioral_insights']=_behavioral_insights(ctx.get('profile') or {})
-    mode='DAILY' if kind=='daily' else 'MONTHLY'
+    mode='DAILY' if kind=='daily' else 'CURRENT LUNAR CYCLE'
 
     instruction=f'''
 Write a personalized {mode} CONSCIOUS COORDINATION reflection.
 
-The calculated chart, current sky, aspects and questionnaire answers are INTERNAL EVIDENCE. Do not show your work.
+This reading must be newly composed for this member and this exact reflection context. The member’s complete Journal history is private internal evidence and must be meaningfully considered together with the factual birth chart, the current sky, the current lunar-cycle chart, relevant chart connections, Conscious Coordination profile and actual wellness practices.
+
+IMPORTANT PRIVACY:
+- Use all supplied Journal history as background evidence.
+- Do not quote private Journal passages.
+- Do not expose dates, names or identifying Journal details unless the member explicitly asks for them.
+- Never make one member’s private Journal evidence available in another member’s report.
+
+PUBLIC LANGUAGE:
+- Brand the experience as Conscious Coordination.
+- If the cycle itself must be named, say "current lunar reflection cycle" or "lunar cycle."
+- Do not use technical lunar-event names as member-facing wording.
+- Do not explain technical transit/aspect terminology, degrees or chart mechanics.
+
+The calculated chart, current sky, current lunar-cycle chart, aspects, questionnaire answers and Journal history are INTERNAL EVIDENCE. Do not show your work.
 
 The member-facing response must NOT:
 - list planetary degrees;
 - list several natal placements;
 - explain aspect names/orbs;
 - repeat long lists of questionnaire selections;
-- read like a horoscope;
-- say "your profile says..." more than once;
-- turn every paragraph into astrology terminology.
+- recite or quote Journal entries;
+- read like a generic horoscope;
+- reuse stock Sun, lunar, sign or wellness paragraphs;
+- repeat a prior member’s reading or a prior day/cycle reading.
 
-Use the astrology and self-report together to decide what is most useful, then translate that into plain behavioral guidance.
+The reflection should primarily answer:
+1. What pattern deserves attention in this exact cycle/day?
+2. Which long-running Journal themes are relevant now, and what appears to be changing?
+3. How might this show up in a real conversation, relationship, business decision or wellness choice?
+4. What should the member watch for?
+5. What concrete action or real regulation practice would help?
+6. What question would move the reflection forward instead of repeating an old answer?
 
-The response should primarily answer:
-1. What pattern deserves attention now?
-2. How might it show up in a real conversation, relationship, business decision or wellness choice?
-3. What should the member watch for?
-4. What concrete action or regulation practice would help?
-5. What question should they reflect on?
+Use the actual lunar-cycle chart as a changing timing layer. A new lunar cycle must produce a newly generated reading even though the natal chart remains the same.
 
-Astrology may appear in ONE short sentence only when useful, such as:
-"Today's planetary pattern puts extra emphasis on communication and value-based decisions."
-Do not mention degrees or technical aspect names unless the member explicitly asks for technical detail.
-
-If meditation is actually one of the member's practices, make the meditation specific to the psychological pattern the chart/profile combination suggests. If yoga, nature, movement, quiet time, music/sound or another real practice is supplied, use that instead.
-
-Example of the desired level of usefulness:
-If today's Moon is in Taurus and the member's pattern suggests security/comfort becomes important under stress, it can be useful to say:
-"Before making a purchase, investment, commitment or comfort-driven decision, give yourself enough time to separate emotional relief from a choice that still fits your priorities tomorrow."
-This is reflective guidance, not financial advice or prediction.
-
-For relationship themes, translate the data into useful communication, trust, affection, conflict, repair or boundary guidance.
+For relationship themes, translate the evidence into useful communication, trust, affection, conflict, repair or boundary guidance.
 For business themes, translate it into useful guidance about pace, resources, commitments, clarity, collaboration or decision-making.
-For wellness themes, connect the member's real regulation practice to the actual behavioral pattern.
+For wellness themes, connect the member’s real regulation practice to the actual behavioral pattern.
 
 Write with these headings:
 - Your Focus Right Now
+- Your Journal in Context
 - In Real Life
 - What May Help
 - Something to Notice
@@ -1768,48 +2153,96 @@ Write with these headings:
 
 Keep it practical, psychologically thoughtful, non-diagnostic and non-deterministic.
 '''
-    generated=_openai_text(instruction+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(ctx,default=str))
-    output=generated or _fallback_coordination_reflection(ctx,kind)
+
+    reading_type='daily_reflection' if kind=='daily' else 'lunar_cycle_reflection'
+    fallback_factory=lambda variant: _fallback_coordination_reflection(ctx,kind,variant)
+    output,ai_generated=_generate_unique_reflection(
+        user_id,reading_type,period,instruction,ctx,fallback_factory
+    )
 
     payload={
         'text':output,
-        'ai_generated':bool(generated),
-        'engine_version':4,
+        'ai_generated':bool(ai_generated),
+        'engine_version':REFLECTION_ENGINE_VERSION,
         'chart_ready':bool(ctx.get('chart',{}).get('ready')),
         'current_sky':ctx.get('current_sky',{}),
+        'lunar_cycle':ctx.get('lunar_cycle_chart',{}),
         'aspects_used':ctx.get('current_to_natal_aspects',[])[:4],
+        'lunar_cycle_aspects_used':ctx.get('lunar_cycle_to_natal_aspects',[])[:4],
+        'journal_entry_count':(ctx.get('journal_history') or {}).get('entry_count',0),
+        'journal_history_fingerprint':(ctx.get('journal_history') or {}).get('history_fingerprint',''),
         'wellness_practices':ctx.get('wellness_practices',[])
     }
     conn=db()
-    conn.execute('''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at)
-                 VALUES(?,?,?,?,?)
-                 ON CONFLICT(user_id,reflection_type,period_key)
-                 DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',
-                 (user_id,kind,period,json.dumps(payload),now()))
-    conn.commit(); conn.close()
+    conn.execute(
+        '''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at)
+           VALUES(?,?,?,?,?)
+           ON CONFLICT(user_id,reflection_type,period_key)
+           DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',
+        (user_id,kind,period,json.dumps(payload),now())
+    )
+    conn.commit()
+    conn.close()
     return payload
 
 def ensure_free_coordination_notifications(user_id):
-    month=datetime.utcnow().strftime('%Y-%m'); day=datetime.utcnow().strftime('%Y-%m-%d')
-    conn=db(); monthly=conn.execute('SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',(user_id,'monthly',month)).fetchone(); matchrun=conn.execute('SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',(user_id,'matches',day)).fetchone(); me=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); others=conn.execute('SELECT user_id FROM connection_profiles WHERE opted_in=1 AND user_id<>?',(user_id,)).fetchall(); conn.close()
-    if not monthly:
-        notify(user_id,'Monthly Conscious Coordination Reflection','Your monthly Conscious Coordination reflection is ready.',url_for('monthly_coordination_reflection'))
-        conn=db(); conn.execute('''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
-        VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
-        DO UPDATE SET created_at=excluded.created_at''',(user_id,'monthly',month,now())); conn.commit(); conn.close()
+    day=datetime.utcnow().strftime('%Y-%m-%d')
+    lunar_cycle=_current_lunar_cycle_chart(current_sky_data())
+    cycle_key=lunar_cycle.get('cycle_id') or datetime.utcnow().strftime('%Y-%m')
+    conn=db()
+    cycle_run=conn.execute(
+        'SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',
+        (user_id,'lunar_reflection',cycle_key)
+    ).fetchone()
+    matchrun=conn.execute(
+        'SELECT 1 FROM coordination_alert_runs WHERE user_id=? AND run_type=? AND period_key=?',
+        (user_id,'matches',day)
+    ).fetchone()
+    me=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+    others=conn.execute('SELECT user_id FROM connection_profiles WHERE opted_in=1 AND user_id<>?',(user_id,)).fetchall()
+    conn.close()
+
+    if not cycle_run:
+        notify(
+            user_id,
+            'Conscious Coordination Reflection',
+            'Your new lunar-cycle Conscious Coordination reflection is ready.',
+            url_for('monthly_coordination_reflection')
+        )
+        conn=db()
+        conn.execute(
+            '''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
+               VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
+               DO UPDATE SET created_at=excluded.created_at''',
+            (user_id,'lunar_reflection',cycle_key,now())
+        )
+        conn.commit()
+        conn.close()
+
     if not matchrun and me:
         mytypes=_split_choices(me['coordination_types'])
         candidates=[]
         for r in others:
-            conn=db(); other=conn.execute('SELECT coordination_types FROM connection_profiles WHERE user_id=?',(r['user_id'],)).fetchone(); name=conn.execute('SELECT name FROM users WHERE id=?',(r['user_id'],)).fetchone(); conn.close()
+            conn=db()
+            other=conn.execute('SELECT coordination_types FROM connection_profiles WHERE user_id=?',(r['user_id'],)).fetchone()
+            name=conn.execute('SELECT name FROM users WHERE id=?',(r['user_id'],)).fetchone()
+            conn.close()
             if other and (_split_choices(other['coordination_types']) & mytypes):
                 c=basic_compatibility(user_id,r['user_id'],'general')
-                if c.get('score') is not None: candidates.append((c['score'],r['user_id'],name['name']))
+                if c.get('score') is not None:
+                    candidates.append((c['score'],r['user_id'],name['name']))
         for score,oid,name in sorted(candidates,reverse=True)[:3]:
-            if score>=45: notify(user_id,'New Conscious Coordination Match',name+' shares compatible intentions with you. Open their profile to explore the connection.',url_for('connection_profile',user_id=oid))
-        conn=db(); conn.execute('''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
-        VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
-        DO UPDATE SET created_at=excluded.created_at''',(user_id,'matches',day,now())); conn.commit(); conn.close()
+            if score>=45:
+                notify(user_id,'New Conscious Coordination Match',name+' shares compatible intentions with you. Open their profile to explore the connection.',url_for('connection_profile',user_id=oid))
+        conn=db()
+        conn.execute(
+            '''INSERT INTO coordination_alert_runs(user_id,run_type,period_key,created_at)
+               VALUES(?,?,?,?) ON CONFLICT(user_id,run_type,period_key)
+               DO UPDATE SET created_at=excluded.created_at''',
+            (user_id,'matches',day,now())
+        )
+        conn.commit()
+        conn.close()
 
 def reflection_card(payload,title):
     body=html.escape(payload.get('text','')).replace('\n\n','</p><p>').replace('\n','<br>')
@@ -2017,7 +2450,7 @@ def home():
     moon=planets.get('Moon') or {}
     phase=sky.get('lunar_phase') or ''
     if moon:
-        sky_heading=f"Moon in {html.escape(str(moon.get('sign','')))} {html.escape(str(moon.get('degree','')))}°"
+        sky_heading=f"Lunar position: {html.escape(str(moon.get('sign','')))} {html.escape(str(moon.get('degree','')))}°"
         if phase:
             sky_heading+=f" • {html.escape(str(phase))}"
     else:
@@ -2027,7 +2460,8 @@ def home():
     for name in PLANET_NAMES:
         p=planets.get(name)
         if p:
-            chips.append(f'<span class="chip">{html.escape(name)} {html.escape(str(p.get("sign","")))} {html.escape(str(p.get("degree","")))}°</span>')
+            label='Lunar' if name=='Moon' else name
+            chips.append(f'<span class="chip">{html.escape(label)} {html.escape(str(p.get("sign","")))} {html.escape(str(p.get("degree","")))}°</span>')
     sky_chips=''.join(chips)
 
     mercury=(planets.get('Mercury') or {}).get('sign','')
@@ -2223,7 +2657,7 @@ def community():
         message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>'; controls=message+(f'<a class="out" href="{url_for("community_post_edit",post_id=p["id"])}">Edit Post</a><form method="post" action="{url_for("community_post_delete",post_id=p["id"])}" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form>' if p['user_id']==u['id'] else '')
         cards.append(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div style="width:100%"><span class="badge">{p['category']}</span><h3 style="margin:6px 0">{p['title']}</h3><p class="muted small"><a class="out" href="{url_for('member_profile',user_id=p['user_id'])}">{p['name']}</a> • {p['created_at']}</p><p>{p['body']}</p>{community_media_html(p)}<div class="actions">{controls}</div></div></div></article>''')
     post_html=''.join(cards) or '<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
-    sky=current_sky_data(); planets=sky.get('planets',{}); moon=planets.get('Moon',{}); sky_chips=''.join('<span class="chip">%s %s %s°</span>'%(name,p.get('sign',''),p.get('degree','')) for name,p in planets.items() if name in PLANET_NAMES); sky_title=('Moon in %s %s° • %s'%(moon.get('sign',''),moon.get('degree',''),sky.get('lunar_phase',''))) if moon else 'Current Sky'
+    sky=current_sky_data(); planets=sky.get('planets',{}); moon=planets.get('Moon',{}); sky_chips=''.join('<span class="chip">%s %s %s°</span>'%(('Lunar' if name=='Moon' else name),p.get('sign',''),p.get('degree','')) for name,p in planets.items() if name in PLANET_NAMES); sky_title=('Lunar position: %s %s° • %s'%(moon.get('sign',''),moon.get('degree',''),sky.get('lunar_phase',''))) if moon else 'Current Sky'
     content=f'''{community_switch}<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The daily heart of The Seasons Within: reflection, wellness, Conscious Coordination and real member posts. Replies are private.</p></div><article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">DAILY SEASONS WITHIN</span><h2>{sky_title}</h2><p class="muted">Current planetary positions support reflection, not prediction.</p><div class="chips">{sky_chips or '<span class="chip">Current sky</span>'}</div></div></article><div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">DAILY CONSCIOUS COORDINATION REFLECTION</span><h3>What deserves your conscious attention today?</h3><a class="out" href="{url_for('astrology_reflections')}">Open My Daily Reflection</a></article></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Title</b></label><input class="input" name="title" placeholder="Morning Reflection" required><label><b>Category</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select><textarea class="input" name="body" placeholder="Share with the community..." required></textarea><label class="small"><b>Add Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post to Community</button></form>{post_html}'''
     return page('Community',content,'community')
 
@@ -2353,7 +2787,7 @@ def profile():
             {time_note}
             <div class="actions">
                 <a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">Open My Full Conscious Coordination</a>
-                <a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a>
+                <a class="out" href="{url_for('astrology_reflections')}">Daily + Lunar Reflections</a>
             </div>
             </article>'''
 
@@ -2687,7 +3121,7 @@ def daily_astrology_reflection():
 @login_required
 
 def monthly_coordination_reflection():
-    return redirect(url_for('astrology_reflections')+'#monthly')
+    return redirect(url_for('astrology_reflections')+'#lunar')
 
 
 @app.route('/journal/astrology-reflections')
@@ -2696,17 +3130,17 @@ def monthly_coordination_reflection():
 def astrology_reflections():
     u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
     if not conscious_coordination_ready(u,cp):
-        flash('Complete your Conscious Coordination Profile to open your Daily and Monthly Reflections.','info')
+        flash('Complete your Conscious Coordination Profile to open your Daily and Lunar Reflections.','info')
         return redirect(url_for('connection_edit'))
     daily=get_astrology_reflection(u['id'],'daily')
     monthly=get_astrology_reflection(u['id'],'monthly')
     daily_prompt=(daily.get('text') or '')[-900:]
     monthly_prompt=(monthly.get('text') or '')[-900:]
     daily_link=url_for('journal',category='Reflection',title='Daily Conscious Coordination Reflection',prompt=daily_prompt)
-    monthly_link=url_for('journal',category='Reflection',title='Monthly Conscious Coordination Reflection',prompt=monthly_prompt)
-    content=f'''<div class="hero"><span class="badge">CONSCIOUS COORDINATION REFLECTIONS</span><h1>The Seasons Within</h1><p class="muted">Your daily and monthly reflections bring your planetary placements, current sky and Conscious Coordination profile together as one personal reflection.</p></div>
+    monthly_link=url_for('journal',category='Reflection',title='Lunar Conscious Coordination Reflection',prompt=monthly_prompt)
+    content=f'''<div class="hero"><span class="badge">CONSCIOUS COORDINATION REFLECTIONS</span><h1>The Seasons Within</h1><p class="muted">Your daily and lunar reflections bring your planetary placements, current sky and Conscious Coordination profile together as one personal reflection.</p></div>
     <article class="card"><span class="badge">DAILY CONSCIOUS COORDINATION REFLECTION</span><h2>What deserves your conscious attention today?</h2><div style="line-height:1.75">{html.escape(daily.get('text','')).replace(chr(10),'<br>')}</div><div class="actions"><a class="btn" href="{daily_link}#new-entry">Journal About This Reflection</a></div></article>
-    <article class="card" id="monthly"><span class="badge heart">MONTHLY CONSCIOUS COORDINATION REFLECTION</span><h2>Your Monthly Reflection</h2><div style="line-height:1.75">{html.escape(monthly.get('text','')).replace(chr(10),'<br>')}</div><div class="actions"><a class="btn" href="{monthly_link}#new-entry">Journal About This Reflection</a></div></article>
+    <article class="card" id="lunar"><span class="badge heart">LUNAR CONSCIOUS COORDINATION REFLECTION</span><h2>Your Current Lunar Reflection</h2><div style="line-height:1.75">{html.escape(monthly.get('text','')).replace(chr(10),'<br>')}</div><div class="actions"><a class="btn" href="{monthly_link}#new-entry">Journal About This Reflection</a></div></article>
     <p class="muted small">These reflections are for conscious reflection and guidance, not prediction.</p>'''
     return page('Conscious Coordination Reflections',content,'more')
 
@@ -2808,7 +3242,7 @@ def connections():
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     feed=''.join(feed_cards) or '<div class="empty"><h3>Galaxy Eve posts will appear here</h3></div>'
-    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Conscious Coordination Profile</a><a class="out" href="{url_for('astrology_reflections')}">Daily + Monthly Reflections</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
+    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Conscious Coordination Profile</a><a class="out" href="{url_for('astrology_reflections')}">Daily + Lunar Reflections</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     {host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2></div>{feed}
     <div class="topspace"><h2>Discover Members</h2></div><div class="chips">{filters}</div><div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
@@ -3568,57 +4002,97 @@ def _planet_specific_practice(pname, practices):
         return "Break the responsibility into the next concrete step. Long-term structure is built more reliably through repeatable action than pressure."
     return "Use a short regulation pause before responding."
 
-def _planet_fallback_guidance(pname, profile, practices, sky, relevant_aspects):
-    cfg=PLANET_BEHAVIORAL_LENSES.get(pname,{})
-    insights=_behavioral_insights(profile or {})
-    moon_sign=(((sky or {}).get('planets') or {}).get('Moon') or {}).get('sign','')
+def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,placement=None,journal_context=None,lunar_cycle=None,user_id=None,variant=0):
+    placement=placement or {}
+    journal_context=journal_context or {}
+    lunar_cycle=lunar_cycle or {}
+    sign=placement.get('sign','')
+    tone=SIGN_BEHAVIORAL_TONES.get(sign,{})
+    journal_themes=list((journal_context.get('theme_counts') or {}).keys())
+    seed_raw='|'.join([
+        str(user_id or ''),
+        pname,
+        sign,
+        str(lunar_cycle.get('cycle_id','')),
+        str(journal_context.get('history_fingerprint','')),
+        str(variant),
+    ])
+    seed=int(hashlib.sha256(seed_raw.encode('utf-8')).hexdigest()[:12],16)
+
+    planet_roles={
+        'Sun':('self-direction and identity','own a choice without needing every outside reaction to settle first'),
+        'Moon':('emotional safety and recovery','understand the feeling before turning it into a lasting decision'),
+        'Mercury':('thinking and communication','separate observation, interpretation and assumption before responding'),
+        'Venus':('affection, reciprocity and values','notice whether investment and care are moving in both directions'),
+        'Mars':('action, assertion and boundaries','choose the clearest action without letting activation choose the method'),
+        'Jupiter':('growth, opportunity and belief','test possibility against capacity, timing and follow-through'),
+        'Saturn':('responsibility, limits and long-term structure','turn pressure into a repeatable next step rather than paralysis'),
+    }
+    role,action=planet_roles.get(pname,('personal coordination','respond deliberately to what is actually present'))
+
+    sign_strength=tone.get('strength','a distinctive way of approaching this part of life')
+    sign_watch=tone.get('watch','the familiar strength can become less useful when it is automatic')
+    sign_question=tone.get('question','What response fits the present situation rather than the old pattern?')
+
+    openings=[
+        f"Your {pname} pattern brings {sign_strength} into the area of {role}.",
+        f"In the part of life connected with {role}, the {sign} quality here is expressed through {sign_strength}.",
+        f"This placement combines {role} with {sign_strength}, which changes how this part of your coordination tends to operate.",
+        f"For {role}, this placement is less about a fixed trait and more about how {sign_strength} gets used under real pressure.",
+    ]
+    main=openings[seed%len(openings)]
+    main+=f" The useful task is to {action}."
+
+    if journal_themes:
+        primary=journal_themes[(seed//7)%len(journal_themes)]
+        second=journal_themes[(seed//13)%len(journal_themes)] if len(journal_themes)>1 else ''
+        journal_note=f"Your Journal history repeatedly returns to {primary}"
+        if second and second!=primary:
+            journal_note+=f" and {second}"
+        journal_note+=f", so those themes give this {pname} pattern a concrete place to be observed rather than treated as an abstract description."
+    else:
+        journal_note="There is not yet enough private Journal history to add a long-running theme, so this interpretation leans on the current chart, profile and lived choices."
+
     practice=_planet_specific_practice(pname,practices)
+    if practices:
+        rotations=[
+            practice,
+            practice.replace("Before","When possible, before",1) if "Before" in practice else practice,
+            practice+" Keep the exercise short enough that it helps you return to the situation rather than avoid it.",
+        ]
+        practice=rotations[(seed//19)%len(rotations)]
 
-    if pname=='Sun':
-        main="You may be good at considering more than one perspective, but that strength can become costly when managing everyone else's reaction makes your own position harder to hear."
-        real="In relationships or collaboration, take other people's input seriously without handing them ownership of your decision. Before agreeing, ask whether you would still choose the same thing if no one were disappointed or impressed."
-        watch="Watch for peacekeeping that quietly turns into self-abandonment. Being considerate and being clear about your own position do not have to compete."
-        reflection="Where am I trying to earn agreement when what I really need is to make a decision I can stand behind?"
-    elif pname=='Moon':
-        main="Emotional pressure may become harder to tolerate when you feel boxed in, over-managed or unable to see a way forward. Relief can become tempting before the feeling has actually been understood."
-        real="Before changing plans, withdrawing, spending, booking something, or making a large decision mainly to feel better, give the emotion time to settle and identify what kind of safety or freedom you actually need."
-        watch="Watch for turning movement, distraction or a new option into an escape hatch before the original feeling has been processed."
-        reflection="What feeling am I trying to get away from, and what would help me stay with it long enough to understand what it needs?"
-    elif pname=='Mercury':
-        main="You may naturally look beneath the surface and try to understand what people really mean. That can make you perceptive, but it can also make an interpretation feel like a fact before it has been checked."
-        real="When something feels suspicious, emotionally loaded or inconsistent, separate what was actually said, what you observed, and what you concluded. Then ask the direct question before responding to the conclusion."
-        watch="Watch for reading silence, tone or incomplete information as proof of motive. Curiosity is more useful than certainty when the evidence is incomplete."
-        reflection="What do I know for certain, what am I inferring, and what question would reduce the guesswork?"
-    elif pname=='Venus':
-        main="Closeness is most useful when affection, reciprocity and values are moving in the same direction. Strong chemistry or comfort can feel meaningful without necessarily answering whether the exchange is balanced."
-        real="Before giving more time, money, attention or emotional labor, notice whether the other person is also showing consistent investment in a form you can actually receive."
-        watch="Watch for treating intensity, attraction or being needed as evidence that the connection is reciprocal."
-        reflection="What am I investing here, what am I receiving, and does the exchange still match what I say matters to me?"
-    elif pname=='Mars':
-        main="Your strongest action is not always your fastest action. Frustration can clarify what boundary or goal matters, but it becomes less useful when the need to discharge intensity starts deciding the method."
-        real="When activated, identify whether you need to say no, ask for clarity, make a decision, or leave the situation temporarily. Choose the smallest direct action that addresses the real issue."
-        watch="Watch for either pushing too hard or waiting so long that resentment ends up speaking for you."
-        reflection="What action would protect what matters without making the emotional intensity the leader?"
-    elif pname=='Jupiter':
-        main="Opportunity can feel energizing enough that possibility starts to sound like evidence. Growth works better when enthusiasm and capacity are checked together."
-        real="Before expanding a project, relationship, trip, purchase or commitment, test the idea against time, money, energy and what you would have to stop doing to support it."
-        watch="Watch for saying yes because the future feels exciting while leaving the practical cost for later."
-        reflection="What part of this opportunity is genuinely promising, and what would make it sustainable rather than merely exciting?"
-    else:  # Saturn
-        main="Responsibility can make you stronger, but too much pressure can turn caution into paralysis or make you feel you have to carry everything alone."
-        real="When something matters long-term, define the next repeatable step instead of demanding certainty or perfection before you begin."
-        watch="Watch for using preparation as a way to postpone exposure, vulnerability or the possibility of getting something wrong."
-        reflection="What is the next responsible step I can actually repeat, rather than the perfect plan I wish I could guarantee?"
+    real_options=[
+        f"In a real situation, notice the moment when {sign_watch}. That is the point to slow down enough to {action}.",
+        f"The practical test is whether {sign_strength} is helping you handle the present facts or whether {sign_watch}. If the latter is happening, return to the simplest next action.",
+        f"Use this placement as a decision lens: keep the strength of {sign_strength}, while refusing to let {sign_watch}.",
+    ]
+    real=real_options[(seed//23)%len(real_options)]
 
-    sky_note=''
-    if pname in {'Moon','Venus','Jupiter'} and moon_sign=='Taurus':
-        sky_note=(" Today's broader pattern adds extra emphasis to comfort, security and resources. "
-                  "If money, spending, investment or commitment is involved, separate the desire for emotional relief from the question of whether the choice is sustainable.")
-    elif relevant_aspects:
-        sky_note=" The current sky is emphasizing this area, so it is especially useful to observe the behavior in real time rather than treating it as a fixed trait."
+    cycle_note=''
+    if relevant_aspects:
+        cycle_note=" The current reflection cycle is activating this area strongly enough that it is worth observing in real time instead of treating it as a permanent personality statement."
+    elif lunar_cycle.get('cycle_id'):
+        cycle_note=" The current lunar reflection cycle provides the timing background, while the placement describes the personal function being worked with."
+
+    watch_options=[
+        sign_watch.capitalize()+".",
+        f"Watch for the moment when {sign_watch}. The goal is not to suppress the strength, but to use it with more choice.",
+        f"Be especially alert if {sign_watch}; that is where this placement can shift from useful instinct to automatic reaction.",
+    ]
+    watch=watch_options[(seed//29)%len(watch_options)]
+
+    questions=[
+        sign_question,
+        f"How is my current Journal history changing the way I need to use {role} now?",
+        f"Where could I keep the strength of this placement without repeating the part that no longer fits?",
+        f"What would a more deliberate use of {role} look like in the situation I am actually living today?",
+    ]
+    reflection=questions[(seed//31)%len(questions)]
 
     return (
-        f"What This May Look Like\n\n{main}{sky_note}\n\n"
+        f"What This May Look Like\n\n{main}{cycle_note}\n\n"
+        f"Your Journal in Context\n\n{journal_note}\n\n"
         f"Use It in Real Life\n\n{real}\n\n"
         f"What May Help\n\n{practice}\n\n"
         f"Watch For\n\n{watch}\n\n"
@@ -3655,8 +4129,13 @@ def planet_interpretation(user_id,planet):
         return redirect(url_for('birth_chart',user_id=user_id))
 
     sky=current_sky_data()
+    lunar_cycle=_current_lunar_cycle_chart(sky)
     relevant_aspects=[
         a for a in _chart_sky_aspects(chart,sky)
+        if a.get('natal_planet')==pname or a.get('current_planet')==pname
+    ][:5]
+    cycle_aspects=[
+        a for a in (_chart_sky_aspects(chart,lunar_cycle) if lunar_cycle.get('planets') else [])
         if a.get('natal_planet')==pname or a.get('current_planet')==pname
     ][:5]
 
@@ -3666,8 +4145,22 @@ def planet_interpretation(user_id,planet):
     lens=PLANET_BEHAVIORAL_LENSES.get(pname,{})
     profile_slice=_planet_profile_slice(profile,pname)
 
+    # Private Journal evidence is only available for the member’s OWN reading.
+    # Paid access to another member never grants access to that member’s Journal.
+    if user_id==me['id']:
+        journal_context=_all_journal_context(user_id)
+    else:
+        journal_context={
+            'entry_count':0,
+            'history_fingerprint':'private-not-shared',
+            'theme_counts':{},
+            'history_for_reflection':'Private Journal evidence is not available in another member’s report.',
+            'privacy':'Do not infer, request or expose the other member’s private Journal.'
+        }
+
     data={
         'member':{'name':member['name'],'city':member['city']},
+        'member_id':user_id,
         'focus_planet':pname,
         'focus_question':lens.get('question',''),
         'behavioral_focus':lens.get('focus',[]),
@@ -3676,30 +4169,48 @@ def planet_interpretation(user_id,planet):
         'wellness_practices':wellness,
         'full_chart_internal':chart,
         'current_sky_internal':sky,
+        'lunar_cycle_chart_internal':lunar_cycle,
         'relevant_current_to_natal_aspects_internal':relevant_aspects,
-        'placement_internal':placement
+        'relevant_lunar_cycle_to_natal_aspects_internal':cycle_aspects,
+        'placement_internal':placement,
+        'journal_history':journal_context
     }
 
     instruction=f'''
-Write a Conscious Coordination interpretation for the member's {pname} placement.
+Write a Conscious Coordination interpretation for the member’s {pname} placement.
 
-IMPORTANT: Each planet must produce a DIFFERENT kind of report. This report's behavioral question is:
+THIS PLACEMENT IS:
+{pname} in {placement.get('sign','')}
+
+The actual sign MUST meaningfully change how this planet’s behavioral function is interpreted. Do not give two different signs the same report with only the sign name swapped.
+
+This report’s behavioral question is:
 "{lens.get('question','')}"
 
 Behavioral focus for this planet:
 {', '.join(lens.get('focus',[]))}
 
-The chart, technical aspects and questionnaire selections are INTERNAL EVIDENCE. Do not show your work.
+The chart, technical aspects, lunar-cycle chart, questionnaire selections and private Journal evidence are INTERNAL EVIDENCE. Do not show your work.
+
+If this is the member’s own report, use the complete supplied Journal history to understand recurring themes, change over time and what is relevant now. Do not quote their Journal. If this is another member’s report, no private Journal evidence is available and none may be inferred.
+
+PUBLIC LANGUAGE:
+- Keep the experience under Conscious Coordination.
+- If cycle timing is mentioned, say "current lunar reflection cycle."
+- Do not use technical lunar-event names as member-facing wording.
+- Do not explain degrees, aspect names, or technical chart mechanics.
 
 Do NOT:
-- recycle the Sun/Moon/Mercury/Venus/Mars/Jupiter/Saturn wording;
+- recycle another sign’s Sun/Moon/Mercury/Venus/Mars/Jupiter/Saturn wording;
+- recycle another member’s report;
+- reuse a prior day or prior cycle reading;
 - list other planets or degrees;
-- explain technical aspect names or orbs;
 - recite questionnaire selections;
+- quote Journal entries;
 - write a textbook zodiac description;
-- use the same meditation paragraph that another planet would use.
+- use the same wellness paragraph another planet would use.
 
-Translate the evidence into this planet's specific human problem:
+Translate the evidence into this planet’s specific human problem:
 Sun = self-direction, identity, confidence and owning choices.
 Moon = emotional safety, stress, regulation and recovery.
 Mercury = thinking, interpretation, communication and assumptions.
@@ -3708,12 +4219,11 @@ Mars = action, assertion, frustration, anger and boundaries.
 Jupiter = growth, opportunity, beliefs, risk and overextension.
 Saturn = responsibility, fear, limits, patience, discipline and long-term structure.
 
-Use current sky only when it directly strengthens THIS planet's behavioral theme. If there is no relevant current connection, omit it.
-
-If the member uses meditation or another wellness practice, adapt that practice specifically to this planet's function rather than repeating a universal exercise.
+Use current sky and the current lunar reflection cycle only when they strengthen THIS planet’s behavioral theme.
 
 Use these headings:
 - What This May Look Like
+- Your Journal in Context
 - Use It in Real Life
 - What May Help
 - Watch For
@@ -3721,12 +4231,7 @@ Use these headings:
 
 Make the report practical, psychologically thoughtful, non-diagnostic and non-deterministic.
 '''
-    generated=_openai_text(instruction+'\nINTERNAL FACTUAL DATA:\n'+json.dumps(data,default=str))
-    fallback=_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects)
 
-    body=(generated or '').strip()
-    # Guard against generic or collapsed outputs. If AI returns something too short
-    # or fails to address this planet's distinct theme, use the planet-specific fallback.
     required_terms={
         'Sun':['choice','direction','own'],
         'Moon':['emotion','regulat','safety'],
@@ -3736,9 +4241,30 @@ Make the report practical, psychologically thoughtful, non-diagnostic and non-de
         'Jupiter':['opportun','expand','risk'],
         'Saturn':['responsib','limit','disciplin'],
     }.get(pname,[])
-    low=body.lower()
-    if (not body or len(body)<350 or not any(term in low for term in required_terms)):
-        body=fallback
+
+    def validator(body):
+        low=(body or '').lower()
+        return bool(body and len(body)>=350 and any(term in low for term in required_terms))
+
+    context_key='|'.join([
+        pname,
+        datetime.utcnow().strftime('%Y-%m-%d'),
+        str(lunar_cycle.get('cycle_id','')),
+        str(placement.get('sign','')),
+        str(journal_context.get('history_fingerprint','')),
+    ])
+    fallback_factory=lambda variant: _planet_fallback_guidance(
+        pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant
+    )
+    body,_=_generate_unique_reflection(
+        user_id,
+        'planet_'+pname.lower(),
+        context_key,
+        instruction,
+        data,
+        fallback_factory,
+        validator=validator
+    )
 
     heading=f'{pname} — {placement.get("sign","")} {placement.get("degree","")}°'
     return page('Conscious Coordination',f'''<div class="hero">
@@ -4292,12 +4818,12 @@ def retreat_builder():
 
 def membership():
     return page('Membership',f'''<div class="hero"><h1>Membership & Business Packages</h1>
-    <p class="muted">Your own Conscious Coordination, daily/monthly reflections and Basic Compatibility Preview are included. Upgrade opens deeper member-to-member reports, Earn While You Grow, and ongoing member/business-development tools.</p>
+    <p class="muted">Your own Conscious Coordination, daily/lunar reflections and Basic Compatibility Preview are included. Upgrade opens deeper member-to-member reports, Earn While You Grow, and ongoing member/business-development tools.</p>
     <div class="actions"><a class="btn" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
 
     <div class="grid">
     <article class="card"><span class="badge">FREE</span><h2>Community + Conscious Coordination</h2><h1>$0</h1>
-    <p class="muted">Member profile • your own full Conscious Coordination • Daily Conscious Coordination Reflection • Monthly Conscious Coordination Reflection • compatible-member alerts • connection suggestions • Basic Compatibility percentages • Date/Friendship/Business/Retreat ideas • Journal • Inbox • Retreats • one FREE Hosted Business App structure. Community access begins after the Conscious Coordination Profile is completed.</p></article>
+    <p class="muted">Member profile • your own full Conscious Coordination • Daily Conscious Coordination Reflection • Lunar Conscious Coordination Reflection • compatible-member alerts • connection suggestions • Basic Compatibility percentages • Date/Friendship/Business/Retreat ideas • Journal • Inbox • Retreats • one FREE Hosted Business App structure. Community access begins after the Conscious Coordination Profile is completed.</p></article>
 
     <article class="card paid"><span class="badge gold">★ FULL MEMBERSHIP</span><h2>Earn While You Grow + Full Conscious Coordination</h2><h1>$10.99/mo</h1>
     <p class="muted">Everything included with basic membership, plus full written compatibility reports, deeper access to another member’s Conscious Coordination, eligible private video initiation, your personal affiliate link, direct-referral community tracking, recurring direct-referral commission eligibility, and ongoing business-development workspace tools when you want them. You do not need a business account.</p>
