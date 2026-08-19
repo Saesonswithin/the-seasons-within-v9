@@ -5104,6 +5104,26 @@ ZODIAC_WHEEL_SIGNS = [
 PLANET_GLYPHS = {'Sun':'☉','Moon':'☽','Mercury':'☿','Venus':'♀','Mars':'♂','Jupiter':'♃','Saturn':'♄','Uranus':'♅','Neptune':'♆','Pluto':'♇','Rising':'ASC'}
 NATAL_WHEEL_PLANETS=('Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto')
 PLANETARY_COORDINATION_WHEEL_PLANETS=('Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn')
+ZODIAC_SIGN_INDEX={name:index for index,(_,name) in enumerate(ZODIAC_WHEEL_SIGNS)}
+
+def _planetary_coordination_longitude(placement):
+    """Resolve the same sign/degree shown on the Journal card to true longitude.
+
+    The stored longitude remains authoritative when it agrees with the visible
+    sign. If stale chart data ever disagrees, the visible calculated sign and
+    degree win so the wheel cannot contradict Your Planetary Coordination.
+    """
+    placement=placement or {}; sign=str(placement.get('sign') or '')
+    try: stored=float(placement.get('longitude'))%360.0
+    except (TypeError,ValueError): stored=None
+    try: within=float(placement.get('degree'))%30.0
+    except (TypeError,ValueError): within=None
+    sign_index=ZODIAC_SIGN_INDEX.get(sign)
+    if stored is not None and (sign_index is None or int(stored//30)==sign_index):
+        return stored
+    if sign_index is not None and within is not None:
+        return sign_index*30.0+within
+    return stored
 
 def _zodiac_wheel_html(chart, member_name='Member'):
     """Visualize the exact seven placements used by Your Planetary Coordination.
@@ -5119,8 +5139,10 @@ def _zodiac_wheel_html(chart, member_name='Member'):
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     radii=[116,100,130,108,136,92,122]
     def point(radius,longitude):
-        # 0° Aries starts at the top; zodiac longitude increases clockwise.
-        angle=math.radians((float(longitude)%360.0)-90.0)
+        # Fixed zodiac orientation: Aries 0° left, Cancer 0° bottom,
+        # Libra 0° right and Capricorn 0° top. Both sectors and planets use
+        # this one transform, so the visible wheel matches true longitude.
+        angle=math.radians(180.0-(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} Planetary Coordination wheel" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
@@ -5136,14 +5158,14 @@ def _zodiac_wheel_html(chart, member_name='Member'):
         svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="{1.2 if degree%30==0 else .55}" opacity=".24"/>')
     for index,pname in enumerate(PLANETARY_COORDINATION_WHEEL_PLANETS):
         placement=planets.get(pname) or {}
-        try: longitude=float(placement.get('longitude'))%360.0
-        except (TypeError,ValueError): continue
+        longitude=_planetary_coordination_longitude(placement)
+        if longitude is None: continue
         radius=radii[index%len(radii)]; px,py=point(radius,longitude); ex,ey=point(inner-4,longitude)
         glyph=PLANET_GLYPHS.get(pname,pname[:1]); display='Lunar' if pname=='Moon' else pname
         sign=placement.get('sign',''); degree=placement.get('degree','')
         svg.append(f'<line x1="{cx}" y1="{cy}" x2="{ex:.1f}" y2="{ey:.1f}" stroke="currentColor" stroke-width=".7" opacity=".10"/>')
-        svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="14" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".98"><title>{html.escape(display)} — {html.escape(str(sign))} {html.escape(str(degree))}°</title></circle>')
-        svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(display,quote=True)}">{glyph}</text>')
+        svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="14" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".98" data-planet="{html.escape(display,quote=True)}" data-longitude="{longitude:.4f}" data-sign="{html.escape(str(sign),quote=True)}" data-degree="{html.escape(str(degree),quote=True)}"><title>{html.escape(display)} — {html.escape(str(sign))} {html.escape(str(degree))}°</title></circle>')
+        svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(display,quote=True)} — {html.escape(str(sign),quote=True)} {html.escape(str(degree),quote=True)} degrees">{glyph}</text>')
     svg.append('</svg>')
     return ''.join(svg)
 
@@ -5155,7 +5177,7 @@ def _comparison_zodiac_wheel_html(chart_a,chart_b,name_a='You',name_b='Member'):
         return '<div class="empty"><h3>Coordination wheel unavailable</h3><p class="muted">Both members need complete birth information for chart-to-chart coordination.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     def point(radius,longitude):
-        angle=math.radians((float(longitude)%360.0)-90.0)
+        angle=math.radians(180.0-(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 520" role="img" aria-label="{html.escape(name_a,quote=True)} and {html.escape(name_b,quote=True)} Conscious Coordination comparison wheel" style="width:100%;max-width:560px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
