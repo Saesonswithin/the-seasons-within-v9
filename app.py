@@ -1473,7 +1473,7 @@ def _split_choices(v):
 # Conscious Coordination v2 — deterministic scoring architecture
 # Astrology calculates. Psychology contextualizes. Conscious Coordination communicates.
 # -----------------------------------------------------------------------------
-CC_ENGINE_VERSION = 5
+CC_ENGINE_VERSION = 6
 CC_NEUTRAL_SCORE = 65.0
 
 CC_ASPECT_DEFINITIONS = {
@@ -1851,14 +1851,27 @@ def _personal_monthly_coordination_snapshot(user_id, force=False):
     _cc_save_cycle_record(cycle)
     cycle_point=(((cycle.get('planets') or {}).get('Sun') or (cycle.get('planets') or {}).get('Moon') or {}).get('longitude'))
     cycle=dict(cycle); cycle['member_house']=_cc_house_for_longitude(chart,cycle_point)
+    cp=dict(cp_row) if cp_row else {}; journal=_all_journal_context(user_id)
+    # A Lunar-cycle snapshot may be reused only while its member evidence is
+    # unchanged. Current-sky movement is intentionally excluded so the monthly
+    # score remains stable within the cycle; profile, birth-chart or Journal
+    # changes create a new evidence fingerprint and therefore a fresh snapshot.
+    source_fingerprint=hashlib.sha256(json.dumps({
+        'engine_version':CC_ENGINE_VERSION,
+        'cycle_key':cycle_key,
+        'profile':cp,
+        'birth':{k:user[k] for k in ('dob','birth_time','exact_time','birth_time_unknown','birth_city','birth_region','birth_country') if k in user.keys()},
+        'chart_planets':chart.get('planets') or {},
+        'chart_aspects':chart.get('aspects') or [],
+        'journal_history':journal,
+    },sort_keys=True,default=str).encode('utf-8')).hexdigest()
     if not force:
         conn=db(); row=conn.execute('SELECT payload FROM planetary_coordination_snapshots WHERE user_id=? AND lunar_cycle_key=?',(user_id,cycle_key)).fetchone(); conn.close()
         if row:
             try:
                 cached=json.loads(row['payload'])
-                if cached.get('engine_version')==CC_ENGINE_VERSION: return cached
+                if cached.get('engine_version')==CC_ENGINE_VERSION and cached.get('source_fingerprint')==source_fingerprint: return cached
             except Exception: pass
-    cp=dict(cp_row) if cp_row else {}; journal=_all_journal_context(user_id)
     planet_results={}
     for planet in CC_PERSONAL_OVERALL_WEIGHTS:
         astro=_cc_current_astro_result(chart,sky,cycle,planet)
@@ -1870,7 +1883,7 @@ def _personal_monthly_coordination_snapshot(user_id, force=False):
         planet_results[planet]={'coordination_score':round(_cc_clamp(score)),'activation_score':round(_cc_clamp(activation)),'score_confidence':score_confidence,'effective_component_weights':effective_weights,'astrology':astro,'psychology':psych,'natal':natal,'journal':lived}
     overall=round(sum(planet_results[p]['coordination_score']*w for p,w in CC_PERSONAL_OVERALL_WEIGHTS.items()))
     season,season_scores=_cc_season_from_monthly_evidence(planet_results,cp,journal)
-    payload={'ready':True,'engine_version':CC_ENGINE_VERSION,'user_id':user_id,'lunar_cycle_id':cycle_key,'lunar_cycle':cycle,'planetary':planet_results,'overall_coordination':overall,'current_season':season,'season_scores':season_scores,'journal_theme_snapshot':_cc_journal_evidence_packet(journal),'calculation_note':'Coordination and activation are separate non-clinical reflective indicators. AI does not choose these numbers.'}
+    payload={'ready':True,'engine_version':CC_ENGINE_VERSION,'source_fingerprint':source_fingerprint,'user_id':user_id,'lunar_cycle_id':cycle_key,'lunar_cycle':cycle,'planetary':planet_results,'overall_coordination':overall,'current_season':season,'season_scores':season_scores,'journal_theme_snapshot':_cc_journal_evidence_packet(journal),'calculation_note':'Coordination and activation are separate non-clinical reflective indicators. AI does not choose these numbers.'}
     _cc_persist_personal_evidence(user_id,cycle_key,cp,planet_results)
     conn=db()
     try:
@@ -2265,10 +2278,17 @@ def _cc_cached_report_audio(user_id, other_user_id, report_type, period_key, spo
     identity=f'{user_id}|{other_user_id}|{report_type}|{period_key}|{report_id}|{report_version}|{script_hash}'
     filename=hashlib.sha256(identity.encode('utf-8')).hexdigest()+'.mp3'
     path=AUDIO_DIR/filename
-    if path.exists() and path.stat().st_size>0:
+    if path.exists() and path.stat().st_size>512:
         try: return path.read_bytes()
         except Exception: pass
-    audio=_openai_tts_audio(spoken_script)
+    audio=None
+    for attempt in range(3):
+        try:
+            candidate=_openai_tts_audio(spoken_script)
+            if candidate and len(candidate)>512:
+                audio=candidate; break
+        except Exception:
+            app.logger.exception('Planetary audio attempt %s failed for user=%s type=%s',attempt+1,user_id,report_type)
     if not audio: return None
     tmp=path.with_suffix('.tmp')
     try:
@@ -2467,7 +2487,7 @@ EVIDENCE:\n{json.dumps(evidence,default=str)}'''
     return {'ready':True,'report_id':rid,'report_version':1,'report_type':report_type,'other_storage_id':other_storage_id,'title':title,'score':score,'activation_score':activation,'written_report':written,'spoken_script':spoken,'privacy_scope':privacy_scope,'period_key':period_key}
 
 
-REFLECTION_ENGINE_VERSION = 13
+REFLECTION_ENGINE_VERSION = 14
 
 def _angle_distance(a,b):
     try:
@@ -3024,6 +3044,13 @@ def _generate_unique_reflection(user_id,reading_type,context_key,instruction,dat
                 continue
             if _register_unique_reading(user_id,reading_type,context_key,candidate):
                 return candidate,False
+        # Availability wins over similarity after all normal and fallback
+        # attempts have been exhausted. This final evidence-bound report is
+        # still validated and is saved against the exact report context.
+        candidate=(fallback_factory(99) or '').strip()
+        if candidate and (validator is None or validator(candidate)):
+            _register_unique_reading(user_id,reading_type,context_key,candidate)
+            return candidate,False
     raise RuntimeError('A sufficiently unique Conscious Coordination reading could not be generated for this exact context.')
 
 def _cc_safe_spoken_script(user_id, reading_type, context_key, instruction, data, written_text, display_name='Reflection'):
@@ -4491,16 +4518,16 @@ def profile():
             display_name='LUNAR' if name=='Moon' else name.upper(); spoken_name='Lunar' if name=='Moon' else name.title(); glyph=PLANET_GLYPHS.get(name,'')
             sensitive=' • birth-time sensitive' if placement.get('time_sensitive') else ''
             month_item=((monthly_snapshot.get('planetary') or {}).get(name) or {}) if monthly_snapshot.get('ready') else {}
-            coord_score=month_item.get('coordination_score'); activation_score=month_item.get('activation_score')
-            score_note=(f' • {coord_score}% Coordination • {activation_score}% Activation' if coord_score is not None and activation_score is not None else '')
+            coord_score=month_item.get('coordination_score')
+            score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
             inline_url=url_for('planet_interpretation',user_id=u['id'],planet=name.lower(),inline=1)
             audio_url=url_for('planet_interpretation_audio',user_id=u['id'],planet=name.lower())
-            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}{html.escape(score_note)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="none" src="{html.escape(audio_url,quote=True)}" style="width:min(420px,100%)"></audio></div><p class="muted small">🎧 Listen to My {html.escape(spoken_name)} Reflection uses a separate listening script tied to this exact report.</p></div></details>''')
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}{html.escape(score_note)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="metadata" data-planet-audio-url="{html.escape(audio_url,quote=True)}" aria-label="Listen to My {html.escape(spoken_name)} Reflection" style="width:min(420px,100%)"></audio></div><p class="muted small" data-audio-status>Preparing the listening reflection…</p></div></details>''')
         if chart.get('time_approximate'):
             planet_cards.append('<p class="muted small">Birth time is unknown, so Rising and houses are not shown. A time-sensitive lunar placement is identified rather than treated as certain.</p>')
     else:
         planet_cards.append(f'''<article class="card"><p class="muted">Complete the birth information in Edit My Profile before planetary placements can be calculated accurately.</p><a class="out" href="{url_for('edit_profile')}">Edit My Profile</a></article>''')
-    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own Lunar-cycle Coordination percentage, separate Activation percentage, individualized written reflection and matching spoken reflection. These refresh with the next Lunar cycle while your natal chart remains your permanent foundation.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
+    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own Lunar-cycle Coordination percentage, individualized written reflection and matching spoken reflection. Activation remains part of the private evidence used to shape each reflection rather than appearing as a second score on the collapsed card. These refresh with the next Lunar cycle while your natal chart remains your permanent foundation.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
 
     try: minutes=int(request.args.get('minutes','5'))
     except Exception: minutes=5
@@ -4558,7 +4585,11 @@ def profile():
     shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
-    script='''<script>async function loadPlanetReading(button){if(button.dataset.loaded==='1')return;const box=button.closest('[data-planet-body]');const oldText=button.textContent;button.disabled=true;button.textContent='Opening reflection…';try{const response=await fetch(button.dataset.inlineUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Unable to load');const holder=document.createElement('div');holder.innerHTML=await response.text();box.appendChild(holder);button.dataset.loaded='1';button.textContent='📖 Reflection Open';}catch(e){button.disabled=false;button.textContent=oldText;}}</script>'''
+    script='''<script>
+async function loadPlanetReading(button){if(button.dataset.loaded==='1')return;const box=button.closest('[data-planet-body]');const oldText=button.textContent;button.disabled=true;button.textContent='Opening reflection…';try{const response=await fetch(button.dataset.inlineUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Unable to load');const holder=document.createElement('div');holder.innerHTML=await response.text();box.appendChild(holder);button.dataset.loaded='1';button.textContent='📖 Reflection Open';}catch(e){button.disabled=false;button.textContent=oldText;}}
+async function preparePlanetAudio(){const players=[...document.querySelectorAll('audio[data-planet-audio-url]')];for(const player of players){const status=player.closest('[data-planet-body]').querySelector('[data-audio-status]');try{const response=await fetch(player.dataset.planetAudioUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Audio unavailable');const blob=await response.blob();if(blob.size<512)throw new Error('Audio incomplete');player.src=URL.createObjectURL(blob);player.load();status.textContent='🎧 Listening reflection ready — generated from this exact written report.';}catch(error){status.textContent='Listening reflection could not be prepared yet. Press play to retry.';player.src=player.dataset.planetAudioUrl;player.load();}}}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',preparePlanetAudio);}else{preparePlanetAudio();}
+</script>'''
     content=''.join([header,season_section,shortcuts,reflection_section,planetary_section,audio_html,meditation_section,reiki_section,public_section,script])
     return page('My Journal',content,'profile')
 
@@ -5107,12 +5138,7 @@ PLANETARY_COORDINATION_WHEEL_PLANETS=('Sun','Moon','Mercury','Venus','Mars','Jup
 ZODIAC_SIGN_INDEX={name:index for index,(_,name) in enumerate(ZODIAC_WHEEL_SIGNS)}
 
 def _planetary_coordination_longitude(placement):
-    """Resolve the same sign/degree shown on the Journal card to true longitude.
-
-    The stored longitude remains authoritative when it agrees with the visible
-    sign. If stale chart data ever disagrees, the visible calculated sign and
-    degree win so the wheel cannot contradict Your Planetary Coordination.
-    """
+    """Return the true longitude that agrees with the visible sign and degree."""
     placement=placement or {}; sign=str(placement.get('sign') or '')
     try: stored=float(placement.get('longitude'))%360.0
     except (TypeError,ValueError): stored=None
@@ -5139,10 +5165,10 @@ def _zodiac_wheel_html(chart, member_name='Member'):
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     radii=[116,100,130,108,136,92,122]
     def point(radius,longitude):
-        # Fixed zodiac orientation: Aries 0° left, Cancer 0° bottom,
-        # Libra 0° right and Capricorn 0° top. Both sectors and planets use
-        # this one transform, so the visible wheel matches true longitude.
-        angle=math.radians(180.0-(float(longitude)%360.0))
+        # Fixed orientation required by the approved member wheel: Aries 0°
+        # right, Cancer 0° top, Libra 0° left, Capricorn 0° bottom.
+        # Sectors and all seven glyphs use this exact same transform.
+        angle=math.radians(-(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} Planetary Coordination wheel" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
@@ -5177,7 +5203,7 @@ def _comparison_zodiac_wheel_html(chart_a,chart_b,name_a='You',name_b='Member'):
         return '<div class="empty"><h3>Coordination wheel unavailable</h3><p class="muted">Both members need complete birth information for chart-to-chart coordination.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     def point(radius,longitude):
-        angle=math.radians(180.0-(float(longitude)%360.0))
+        angle=math.radians(-(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 520" role="img" aria-label="{html.escape(name_a,quote=True)} and {html.escape(name_b,quote=True)} Conscious Coordination comparison wheel" style="width:100%;max-width:560px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
@@ -6119,7 +6145,7 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
     if row:
         try: cached=json.loads(row['payload'])
         except Exception: cached={}
-        if cached.get('engine_version')==REFLECTION_ENGINE_VERSION and cached.get('text') and cached.get('spoken'):
+        if cached.get('engine_version')==REFLECTION_ENGINE_VERSION and cached.get('context_fingerprint')==planet_context_fingerprint and cached.get('text') and cached.get('spoken'):
             return cached
 
     data={
@@ -6186,11 +6212,12 @@ WRITTEN REPORT FOR CONTEXT ONLY:
 {text}'''
     spoken_data={'member_id':user_id,'focus_planet':pname,'written_report_for_context_only':text,'journal_history':journal_context,'placement_internal':placement,'current_sky_internal':sky}
     spoken=_cc_safe_spoken_script(user_id,reflection_type+'_spoken',context_key,spoken_instruction,spoken_data,text,display_name+' Conscious Coordination')
-    report_version=1
+    conn=db(); existing_report=conn.execute('SELECT report_version,context_fingerprint FROM coordination_reports WHERE user_id=? AND other_user_id=? AND report_type=? AND period_key=?',(user_id,0,'planetary_'+pname.lower()+'_monthly',context_key)).fetchone(); conn.close()
+    report_version=(int(existing_report['report_version'] or 1)+(1 if existing_report['context_fingerprint']!=planet_context_fingerprint else 0)) if existing_report else 1
     audio_key=hashlib.sha256((context_key+'|'+hashlib.sha256(text.encode()).hexdigest()).encode()).hexdigest()[:16]
     payload={'ready':True,'engine_version':REFLECTION_ENGINE_VERSION,'planet':pname,'display_name':display_name,
         'placement':placement,'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'lunar_cycle_id':lunar_cycle.get('cycle_id',''),'text':text,'spoken':spoken,'structured_sections':structured_sections,'period_key':context_key,
-        'report_version':report_version,'audio_key':audio_key,'report_type':'planetary_'+pname.lower()+'_monthly','other_storage_id':0,'period_key':context_key,
+        'report_version':report_version,'audio_key':audio_key,'context_fingerprint':planet_context_fingerprint,'report_type':'planetary_'+pname.lower()+'_monthly','other_storage_id':0,'period_key':context_key,
         'privacy_scope':'owner-private' if use_private else 'member-shared-no-private-journal'}
     evidence_summary={'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'lunar_cycle_id':lunar_cycle.get('cycle_id',''),'planet':pname,'structured_sections':structured_sections,'privacy_scope':payload['privacy_scope']}
     normalized=_normalize_report_text(text); digest=hashlib.sha256(normalized.encode()).hexdigest()

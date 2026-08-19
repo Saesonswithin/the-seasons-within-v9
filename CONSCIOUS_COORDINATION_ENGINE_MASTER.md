@@ -135,12 +135,12 @@ The same two people may therefore have different Overall Coordination percentage
 
 ## Wheel behavior
 
-- Self view: the member’s factual natal wheel.
+- Self view: the member’s seven-function Planetary Coordination wheel, using the same factual natal longitudes shown on the seven Journal cards.
 - Other-member view: viewer + member comparison wheel.
 - Planet positions use exact stored zodiac longitude.
 - Cross-chart aspect lines come from the reusable aspect engine.
-- Reliable house cusps are drawn only when supported by exact birth time/location.
-- Missing reliable birth time never invents Rising or houses.
+- The self wheel excludes outer planets, Rising and houses so it cannot conflict with the seven-function member experience.
+- The comparison wheel may draw reliable house cusps only when supported by exact birth time/location; missing reliable birth time never invents Rising or houses.
 
 ## Structured report generation
 
@@ -206,5 +206,7 @@ The member-facing communication layer is connected after deterministic scoring:
 - Monthly personal and pair scores combine only available evidence using explicit confidence. Coordination and Activation remain separate.
 - All seven monthly Planetary Coordination reports must always return a written report. AI failure or uniqueness exhaustion falls back to deterministic evidence-bound communication; it must never leave six cards as “temporarily unavailable.”
 - Listening scripts are separate from written reports. Spoken-generation failure cannot invalidate the written report. Audio is generated once, cached persistently, and tied to the exact coordination report identity/version/script.
+- Collapsed Planetary Coordination cards display Coordination only. Activation remains in the evidence/report system and may be explained in the written reflection rather than appearing as a second collapsed-card percentage.
+- The seven planetary audio files are prepared sequentially, retried and validated before the browser receives them so concurrent first-load generation cannot leave every player at 0:00 / 0:00.
 - Daily What Deserves Your Attention is ranked from today’s real Lunar/current-planet activation inside the monthly cycle, current structured life themes, and recent report continuity. Recent repetition reduces novelty weight rather than reinforcing the same domain indefinitely.
 - The Conscious Coordination Profile wheel is the visual Wheel Planetary Coordination: only Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn, taken from the exact same calculated longitudes powering Your Planetary Coordination. Zodiac sectors and glyphs use the same transform. Do not mix outer planets, houses or ASC into this seven-function personal wheel.
