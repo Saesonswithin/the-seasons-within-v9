@@ -75,8 +75,8 @@ SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER or RETREAT_ADMIN_EMAIL).strip(
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() not in {'0','false','no'}
 APP_BASE_URL = os.environ.get('APP_BASE_URL','').strip().rstrip('/')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY','').strip()
-BUSINESS_PLAN_AI_MODEL = os.environ.get('BUSINESS_PLAN_AI_MODEL','gpt-5.6').strip()
-ASTROLOGY_AI_MODEL = os.environ.get('ASTROLOGY_AI_MODEL','gpt-5.6').strip()
+BUSINESS_PLAN_AI_MODEL = os.environ.get('BUSINESS_PLAN_AI_MODEL','gpt-5.6-sol').strip()
+ASTROLOGY_AI_MODEL = os.environ.get('ASTROLOGY_AI_MODEL','gpt-5.6-sol').strip()
 SEMANTIC_EMBEDDING_MODEL = os.environ.get('SEMANTIC_EMBEDDING_MODEL','text-embedding-3-small').strip()
 CONSCIOUS_TTS_MODEL = os.environ.get('CONSCIOUS_TTS_MODEL','gpt-4o-mini-tts').strip()
 CONSCIOUS_TTS_VOICE = os.environ.get('CONSCIOUS_TTS_VOICE','shimmer').strip()
@@ -99,7 +99,11 @@ PG_ID_TABLES = {
     'users','journal_entries','community_posts','messages','notifications','businesses',
     'business_media','business_calendar','business_plans','retreats','business_bookings',
     'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
-    'password_reset_tokens','astrology_reflections','compatibility_reports','coordination_video_requests'
+    'password_reset_tokens','astrology_reflections','compatibility_reports','coordination_video_requests',
+    'natal_charts','planet_positions','natal_aspects','lunar_cycles','member_lunar_cycles',
+    'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
+    'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
+    'report_embeddings','member_pair_coordination','member_pair_planetary_scores'
 }
 
 def _pg_qmarks(sql):
@@ -882,6 +886,54 @@ def init_astrology_tables():
         created_at TEXT NOT NULL,
         responded_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS natal_charts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE, payload TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS planet_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, chart_kind TEXT NOT NULL, reference_key TEXT NOT NULL, planet TEXT NOT NULL, longitude REAL, sign TEXT DEFAULT '', degree REAL, house INTEGER, payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS natal_aspects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, planet_a TEXT NOT NULL, planet_b TEXT NOT NULL, aspect TEXT NOT NULL, orb REAL, strength REAL, payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS lunar_cycles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, cycle_key TEXT NOT NULL UNIQUE, started_utc TEXT NOT NULL, next_started_utc TEXT DEFAULT '', longitude REAL, sign TEXT DEFAULT '', payload TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS member_lunar_cycles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, lunar_cycle_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(user_id,lunar_cycle_key)
+    );
+    CREATE TABLE IF NOT EXISTS transit_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, snapshot_key TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS transit_aspects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, snapshot_key TEXT NOT NULL, current_planet TEXT NOT NULL, natal_planet TEXT NOT NULL, aspect TEXT NOT NULL, orb REAL, flow_score REAL, activation_score REAL, payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS psychological_profiles (
+        user_id INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS psychological_dimensions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, domain TEXT NOT NULL, score REAL NOT NULL, confidence REAL NOT NULL DEFAULT 0, payload TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, UNIQUE(user_id,domain)
+    );
+    CREATE TABLE IF NOT EXISTS journal_theme_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, snapshot_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(user_id,snapshot_key)
+    );
+    CREATE TABLE IF NOT EXISTS planetary_coordination_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, lunar_cycle_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id,lunar_cycle_key)
+    );
+    CREATE TABLE IF NOT EXISTS daily_attention_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, report_date TEXT NOT NULL, lunar_cycle_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id,report_date)
+    );
+    CREATE TABLE IF NOT EXISTS coordination_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, other_user_id INTEGER NOT NULL DEFAULT 0, report_type TEXT NOT NULL, period_key TEXT NOT NULL, report_version INTEGER NOT NULL DEFAULT 1, written_report TEXT NOT NULL DEFAULT '', spoken_script TEXT NOT NULL DEFAULT '', audio_reference TEXT DEFAULT '', evidence_summary TEXT NOT NULL DEFAULT '{}', privacy_scope TEXT NOT NULL DEFAULT 'owner-private', context_fingerprint TEXT NOT NULL DEFAULT '', normalized_text_hash TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id,other_user_id,report_type,period_key)
+    );
+    CREATE TABLE IF NOT EXISTS report_embeddings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, coordination_report_id INTEGER NOT NULL, embedding TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS member_pair_coordination (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, viewer_id INTEGER NOT NULL, other_id INTEGER NOT NULL, relationship_type TEXT NOT NULL, context_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(viewer_id,other_id,relationship_type,context_key)
+    );
+    CREATE TABLE IF NOT EXISTS member_pair_planetary_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, pair_snapshot_id INTEGER NOT NULL, domain TEXT NOT NULL, score REAL NOT NULL, activation REAL NOT NULL DEFAULT 0, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(pair_snapshot_id,domain)
+    );
     ''')
     conn.commit(); conn.close()
 
@@ -1046,36 +1098,77 @@ def _member_lunar_phase_label(value):
     return re.sub(r'\bmoon\b','Lunar',label,flags=re.I)
 
 def current_sky_data():
-    ext=_astrology_provider('current_sky',{'utc':datetime.utcnow().replace(microsecond=0).isoformat()+'Z'})
+    # Current-sky snapshots are cached by UTC hour so page loads reuse the same
+    # deterministic astronomy instead of recalculating every request.
+    n=datetime.utcnow(); snapshot_key=n.strftime('%Y-%m-%dT%H:00Z')
+    try:
+        conn=db(); row=conn.execute('SELECT payload FROM transit_snapshots WHERE snapshot_key=?',(snapshot_key,)).fetchone(); conn.close()
+        if row:
+            cached=json.loads(row['payload'])
+            if cached.get('planets'): return cached
+    except Exception:
+        pass
+    ext=_astrology_provider('current_sky',{'utc':n.replace(microsecond=0).isoformat()+'Z'})
     if ext and ext.get('planets'):
         ext['lunar_phase']=_member_lunar_phase_label(ext.get('lunar_phase'))
-        ext['source']=ext.get('source') or 'configured astrology provider'; return ext
+        ext['source']=ext.get('source') or 'configured astrology provider'; result=ext
+    else:
+        try:
+            import swisseph as swe
+            jd=swe.julday(n.year,n.month,n.day,n.hour+n.minute/60+n.second/3600)
+            ids={'Sun':swe.SUN,'Moon':swe.MOON,'Mercury':swe.MERCURY,'Venus':swe.VENUS,'Mars':swe.MARS,'Jupiter':swe.JUPITER,'Saturn':swe.SATURN,'Uranus':swe.URANUS,'Neptune':swe.NEPTUNE,'Pluto':swe.PLUTO}
+            planets={}
+            for name,pid in ids.items():
+                lon=float(swe.calc_ut(jd,pid)[0][0])%360; sign,degree=_sign_from_longitude(lon)
+                planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
+            phase=(planets['Moon']['longitude']-planets['Sun']['longitude'])%360
+            names=('Lunar Renewal','Waxing Crescent','First Quarter','Waxing Gibbous','Lunar Peak','Waning Gibbous','Last Quarter','Waning Crescent')
+            phase_name=names[int(((phase+22.5)%360)//45)]
+            result={'utc':n.replace(microsecond=0).isoformat()+'Z','planets':planets,'lunar_phase':phase_name,'source':'Swiss Ephemeris runtime'}
+        except Exception:
+            result={'utc':n.replace(microsecond=0).isoformat()+'Z','planets':{},'lunar_phase':'','source':'astrology provider not configured'}
     try:
-        import swisseph as swe
-        n=datetime.utcnow(); jd=swe.julday(n.year,n.month,n.day,n.hour+n.minute/60+n.second/3600)
-        ids={'Sun':swe.SUN,'Moon':swe.MOON,'Mercury':swe.MERCURY,'Venus':swe.VENUS,'Mars':swe.MARS,'Jupiter':swe.JUPITER,'Saturn':swe.SATURN,'Uranus':swe.URANUS,'Neptune':swe.NEPTUNE,'Pluto':swe.PLUTO}
-        planets={}
-        for name,pid in ids.items():
-            lon=float(swe.calc_ut(jd,pid)[0][0])%360; sign,degree=_sign_from_longitude(lon)
-            planets[name]={'longitude':round(lon,3),'sign':sign,'degree':degree}
-        phase=(planets['Moon']['longitude']-planets['Sun']['longitude'])%360
-        names=('Lunar Renewal','Waxing Crescent','First Quarter','Waxing Gibbous','Lunar Peak','Waning Gibbous','Last Quarter','Waning Crescent')
-        phase_name=names[int(((phase+22.5)%360)//45)]
-        return {'utc':n.replace(microsecond=0).isoformat()+'Z','planets':planets,'lunar_phase':phase_name,'source':'Swiss Ephemeris runtime'}
+        conn=db(); conn.execute('INSERT INTO transit_snapshots(snapshot_key,payload,created_at) VALUES(?,?,?) ON CONFLICT(snapshot_key) DO UPDATE SET payload=excluded.payload',(snapshot_key,json.dumps(result,default=str),now())); conn.commit(); conn.close()
     except Exception:
-        return {'utc':datetime.utcnow().replace(microsecond=0).isoformat()+'Z','planets':{},'lunar_phase':'','source':'astrology provider not configured'}
+        pass
+    return result
 
 
 def member_chart_data(member):
     if not member or not member['dob'] or not member['birth_city'] or not member['birth_country']:
         return {'ready':False,'reason':'Birth setup is incomplete.'}
     birth={'date':member['dob'],'time':member['birth_time'] or '','exact_time':bool(member['exact_time']),'city':member['birth_city'] or '','region':member['birth_region'] or '','country':member['birth_country'] or ''}
+    birth_fingerprint=hashlib.sha256(json.dumps({'birth':birth,'birth_time_unknown':bool(member['birth_time_unknown']) if 'birth_time_unknown' in member.keys() else False,'engine':'swiss-ephemeris'},sort_keys=True).encode()).hexdigest()
+    try:
+        conn=db(); row=conn.execute('SELECT payload FROM natal_charts WHERE user_id=?',(member['id'],)).fetchone(); conn.close()
+        if row:
+            cached=json.loads(row['payload'])
+            if cached.get('birth_fingerprint')==birth_fingerprint and cached.get('ready'):
+                return cached
+    except Exception:
+        pass
     data=_astrology_provider('natal_chart',{'birth':birth})
     if data and data.get('planets'):
-        data['ready']=True; data['birth']=birth; data['source']=data.get('source') or 'configured planetary provider'; return data
-    local=_local_natal_planets(member)
-    if local: return local
-    return {'ready':False,'reason':'Planetary calculation is waiting for a supported time-zone calculation.','birth':birth}
+        data['ready']=True; data['birth']=birth; data['source']=data.get('source') or 'configured planetary provider'
+    else:
+        data=_local_natal_planets(member)
+    if not data:
+        return {'ready':False,'reason':'Planetary calculation is waiting for a supported time-zone calculation.','birth':birth}
+    data['birth_fingerprint']=birth_fingerprint
+    try:
+        conn=db()
+        conn.execute('INSERT INTO natal_charts(user_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at',(member['id'],json.dumps(data,default=str),now()))
+        conn.execute('DELETE FROM planet_positions WHERE user_id=? AND chart_kind=?',(member['id'],'natal'))
+        for pname,placement in (data.get('planets') or {}).items():
+            conn.execute('INSERT INTO planet_positions(user_id,chart_kind,reference_key,planet,longitude,sign,degree,house,payload,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(member['id'],'natal',birth_fingerprint,pname,placement.get('longitude'),placement.get('sign',''),placement.get('degree'),(data.get('planet_houses') or {}).get(pname),json.dumps(placement,default=str),now()))
+        conn.execute('DELETE FROM natal_aspects WHERE user_id=?',(member['id'],))
+        for aspect in data.get('aspects',[]) or []:
+            spec=CC_ASPECT_DEFINITIONS.get(aspect.get('aspect'),{}); max_orb=float(spec.get('orb',1) or 1); orb=float(aspect.get('orb',0) or 0); strength=max(0.0,1.0-orb/max_orb)
+            conn.execute('INSERT INTO natal_aspects(user_id,planet_a,planet_b,aspect,orb,strength,payload,created_at) VALUES(?,?,?,?,?,?,?,?)',(member['id'],aspect.get('planet_a',''),aspect.get('planet_b',''),aspect.get('aspect',''),orb,strength,json.dumps(aspect,default=str),now()))
+        conn.commit(); conn.close()
+    except Exception:
+        app.logger.exception('Could not persist natal calculation snapshot')
+    return data
 
 
 
@@ -1298,9 +1391,20 @@ def _local_natal_planets(member):
             if moon_time_sensitive:
                 planets['Moon']['time_sensitive']=True
 
+        element_for_sign={
+            'Aries':'Fire','Leo':'Fire','Sagittarius':'Fire',
+            'Taurus':'Earth','Virgo':'Earth','Capricorn':'Earth',
+            'Gemini':'Air','Libra':'Air','Aquarius':'Air',
+            'Cancer':'Water','Scorpio':'Water','Pisces':'Water'
+        }
+        element_balance={'Fire':0,'Earth':0,'Air':0,'Water':0}
+        for pl in planets.values():
+            element=element_for_sign.get(pl.get('sign'))
+            if element: element_balance[element]+=1
         result={
             'ready':True,
             'planets':planets,
+            'element_balance':element_balance,
             'source':'Swiss Ephemeris local calculation',
             'timezone':tzname,
             'time_approximate':time_unknown,
@@ -1363,233 +1467,692 @@ def _split_choices(v):
 
 
 
-def member_coordination_scores(user, cp_row):
-    """Self-reported coordination indicators for a single member.
+# -----------------------------------------------------------------------------
+# Conscious Coordination v2 — deterministic scoring architecture
+# Astrology calculates. Psychology contextualizes. Conscious Coordination communicates.
+# -----------------------------------------------------------------------------
+CC_ENGINE_VERSION = 4
+CC_NEUTRAL_SCORE = 65.0
 
-    These are profile-based indicators, not clinical scores and not two-person
-    compatibility. They summarize how complete/consistent the member's selected
-    approaches are across the Conscious Coordination questionnaire.
+CC_ASPECT_DEFINITIONS = {
+    'conjunction': {'angle':0.0,'orb':8.0},
+    'sextile': {'angle':60.0,'orb':6.0},
+    'square': {'angle':90.0,'orb':7.0},
+    'trine': {'angle':120.0,'orb':7.0},
+    'opposition': {'angle':180.0,'orb':8.0},
+}
+CC_ASPECT_FLOW = {'conjunction':0.70,'sextile':0.82,'square':0.48,'trine':0.88,'opposition':0.45}
+CC_ASPECT_ACTIVATION = {'conjunction':1.00,'sextile':0.65,'square':0.95,'trine':0.70,'opposition':0.95}
+
+CC_COMPONENT_WEIGHTS = {'astrology':0.35,'psychology':0.30,'natal':0.20,'lived':0.15}
+CC_PERSONAL_OVERALL_WEIGHTS = {'Sun':0.15,'Moon':0.20,'Mercury':0.15,'Venus':0.12,'Mars':0.13,'Jupiter':0.10,'Saturn':0.15}
+
+# Monthly current-sky weighting for the seven human functions. "LunarCycle"
+# means the exact beginning-of-cycle Sun/Lunar conjunction point, not a generic sign paragraph.
+CC_MONTHLY_ASTRO_WEIGHTS = {
+    'Sun': {'LunarCycle':0.30,'Sun':0.10,'Mercury':0.10,'Venus':0.08,'Mars':0.12,'Jupiter':0.15,'Saturn':0.15},
+    'Moon': {'LunarCycle':0.35,'Sun':0.08,'Mercury':0.08,'Venus':0.10,'Mars':0.12,'Jupiter':0.10,'Saturn':0.17},
+    'Mercury': {'LunarCycle':0.25,'Sun':0.10,'Mercury':0.20,'Venus':0.06,'Mars':0.15,'Jupiter':0.10,'Saturn':0.14},
+    'Venus': {'LunarCycle':0.22,'Sun':0.08,'Mercury':0.08,'Venus':0.20,'Mars':0.14,'Jupiter':0.12,'Saturn':0.16},
+    'Mars': {'LunarCycle':0.22,'Sun':0.08,'Mercury':0.10,'Venus':0.05,'Mars':0.23,'Jupiter':0.10,'Saturn':0.22},
+    'Jupiter': {'LunarCycle':0.20,'Sun':0.08,'Mercury':0.08,'Venus':0.08,'Mars':0.10,'Jupiter':0.26,'Saturn':0.20},
+    'Saturn': {'LunarCycle':0.20,'Sun':0.08,'Mercury':0.08,'Venus':0.06,'Mars':0.12,'Jupiter':0.16,'Saturn':0.30},
+}
+
+CC_PSYCH_DOMAIN_FIELDS = {
+    'Sun':['values_text','seeking','coordination_types','business_style'],
+    'Moon':['overwhelmed','regulate','other_emotions','retreat_style'],
+    'Mercury':['communication','conflict_style','repair'],
+    'Venus':['affection','values_text','trust','seeking'],
+    'Mars':['boundaries','conflict_style','overwhelmed','repair'],
+    'Jupiter':['lifestyle','seeking','business_style','values_text'],
+    'Saturn':['boundaries','trust','repair','business_style','retreat_style'],
+}
+
+CC_JOURNAL_DOMAIN_THEMES = {
+    'Sun':['confidence/direction','business','creativity'],
+    'Moon':['rest/regulation','relationships','family','grief/change','health/wellness'],
+    'Mercury':['communication','conflict/repair','confidence/direction'],
+    'Venus':['relationships','family','money/resources'],
+    'Mars':['boundaries','conflict/repair','confidence/direction'],
+    'Jupiter':['business','creativity','confidence/direction','money/resources'],
+    'Saturn':['boundaries','business','money/resources','rest/regulation','grief/change'],
+}
+
+CC_PAIR_SYNASTRY_WEIGHTS = {
+    'Sun':[(('Sun','Sun'),0.25),(('Sun','Moon'),0.30),(('Sun','Saturn'),0.15),(('Sun','Jupiter'),0.15),(('Sun','Mars'),0.10),(('Sun','Mercury'),0.05)],
+    'Moon':[(('Moon','Moon'),0.25),(('Moon','Sun'),0.15),(('Moon','Mercury'),0.18),(('Moon','Venus'),0.18),(('Moon','Mars'),0.10),(('Moon','Saturn'),0.14)],
+    'Mercury':[(('Mercury','Mercury'),0.28),(('Mercury','Moon'),0.20),(('Mercury','Mars'),0.18),(('Mercury','Saturn'),0.14),(('Mercury','Sun'),0.10),(('Mercury','Jupiter'),0.10)],
+    'Venus':[(('Venus','Venus'),0.25),(('Venus','Moon'),0.22),(('Venus','Mars'),0.20),(('Venus','Saturn'),0.15),(('Venus','Sun'),0.10),(('Venus','Jupiter'),0.08)],
+    'Mars':[(('Mars','Mars'),0.24),(('Mars','Mercury'),0.20),(('Mars','Moon'),0.18),(('Mars','Saturn'),0.18),(('Mars','Venus'),0.12),(('Mars','Sun'),0.08)],
+    'Jupiter':[(('Jupiter','Jupiter'),0.20),(('Jupiter','Sun'),0.20),(('Jupiter','Mercury'),0.15),(('Jupiter','Venus'),0.10),(('Jupiter','Mars'),0.10),(('Jupiter','Saturn'),0.25)],
+    'Saturn':[(('Saturn','Saturn'),0.18),(('Saturn','Sun'),0.18),(('Saturn','Moon'),0.18),(('Saturn','Mercury'),0.14),(('Saturn','Venus'),0.12),(('Saturn','Mars'),0.12),(('Saturn','Jupiter'),0.08)],
+}
+
+CC_PAIR_PSYCH_FIELDS = {
+    'Sun':['values_text','seeking','coordination_types'],
+    'Moon':['overwhelmed','regulate','other_emotions'],
+    'Mercury':['communication','conflict_style','repair'],
+    'Venus':['affection','values_text','trust'],
+    'Mars':['conflict_style','boundaries','overwhelmed','repair'],
+    'Jupiter':['lifestyle','seeking','values_text'],
+    'Saturn':['trust','boundaries','repair','business_style'],
+}
+
+CC_RELATIONSHIP_WEIGHTS = {
+    'love': {'Sun':0.10,'Moon':0.22,'Mercury':0.16,'Venus':0.18,'Mars':0.14,'Jupiter':0.07,'Saturn':0.13},
+    'friendship': {'Sun':0.10,'Moon':0.18,'Mercury':0.22,'Venus':0.14,'Mars':0.10,'Jupiter':0.16,'Saturn':0.10},
+    'family': {'Sun':0.10,'Moon':0.24,'Mercury':0.20,'Venus':0.12,'Mars':0.14,'Jupiter':0.05,'Saturn':0.15},
+    'business': {'Sun':0.13,'Moon':0.08,'Mercury':0.22,'Venus':0.08,'Mars':0.16,'Jupiter':0.14,'Saturn':0.19},
+    'retreat': {'Sun':0.08,'Moon':0.20,'Mercury':0.14,'Venus':0.10,'Mars':0.10,'Jupiter':0.18,'Saturn':0.20},
+    'general': {'Sun':0.13,'Moon':0.20,'Mercury':0.17,'Venus':0.14,'Mars':0.13,'Jupiter':0.10,'Saturn':0.13},
+}
+
+# Personal Coordination Profile cards are derived from the same seven monthly
+# Lunar-cycle calculations shown in My Journal. These are not questionnaire-completion
+# percentages and AI never chooses them.
+CC_SELF_CATEGORY_PLANET_WEIGHTS = {
+    'Social & Emotional Intelligence': {'Moon':0.45,'Mercury':0.25,'Venus':0.20,'Saturn':0.10},
+    'Communication': {'Mercury':0.70,'Moon':0.10,'Mars':0.10,'Saturn':0.10},
+    'Conflict': {'Mars':0.55,'Mercury':0.20,'Moon':0.10,'Saturn':0.15},
+    'Repair & Accountability': {'Saturn':0.50,'Mercury':0.25,'Moon':0.15,'Venus':0.10},
+    'Emotional Rhythm': {'Moon':0.70,'Saturn':0.15,'Venus':0.10,'Mercury':0.05},
+    'Love Languages / Affection': {'Venus':0.65,'Moon':0.20,'Saturn':0.10,'Mars':0.05},
+    'Lifestyle & Values': {'Sun':0.30,'Venus':0.25,'Jupiter':0.25,'Saturn':0.20},
+    'Boundaries': {'Mars':0.50,'Saturn':0.35,'Moon':0.10,'Mercury':0.05},
+    'Business Collaboration': {'Sun':0.15,'Mercury':0.25,'Mars':0.15,'Jupiter':0.15,'Saturn':0.30},
+    'Planetary Coordination': {'Sun':1/7,'Moon':1/7,'Mercury':1/7,'Venus':1/7,'Mars':1/7,'Jupiter':1/7,'Saturn':1/7},
+}
+
+CC_REPORT_JSON_SCHEMA = {
+    'type':'object','additionalProperties':False,
+    'properties':{
+        'core_theme':{'type':'string'},
+        'psychological_interpretation':{'type':'string'},
+        'emotional_interpretation':{'type':'string'},
+        'current_coordination':{'type':'string'},
+        'potential_tension':{'type':'string'},
+        'supportive_response':{'type':'string'},
+        'coordination_practice':{'type':'string'},
+        'journal_question':{'type':'string'},
+        'wellness_tags':{'type':'array','items':{'type':'string'},'maxItems':8},
+    },
+    'required':['core_theme','psychological_interpretation','emotional_interpretation','current_coordination','potential_tension','supportive_response','coordination_practice','journal_question','wellness_tags']
+}
+
+CC_LUNAR_REPORT_JSON_SCHEMA = {
+    'type':'object','additionalProperties':False,
+    'properties':{
+        'core_theme':{'type':'string'},
+        'psychological_interpretation':{'type':'string'},
+        'current_coordination':{'type':'string'},
+        'grounding_direction':{'type':'string'},
+        'emotional_coordination':{'type':'string'},
+        'communication_reflection':{'type':'string'},
+        'wellness_invitation':{'type':'string'},
+        'journal_question':{'type':'string'},
+        'wellness_tags':{'type':'array','items':{'type':'string'},'maxItems':8},
+    },
+    'required':['core_theme','psychological_interpretation','current_coordination','grounding_direction','emotional_coordination','communication_reflection','wellness_invitation','journal_question','wellness_tags']
+}
+
+CC_PLANET_DOMAIN_LABELS = {
+    'Sun':'Self & Direction',
+    'Moon':'Emotional / Lunar Coordination',
+    'Mercury':'Communication / Mercury Coordination',
+    'Venus':'Affection / Venus Coordination',
+    'Mars':'Action & Boundaries / Mars Coordination',
+    'Jupiter':'Growth / Jupiter Coordination',
+    'Saturn':'Responsibility / Saturn Coordination',
+}
+
+def _cc_clamp(value, low=0.0, high=100.0):
+    try: return max(low,min(high,float(value)))
+    except Exception: return float(low)
+
+def _cc_detect_aspect(longitude_a, longitude_b):
+    distance=_angle_distance(longitude_a,longitude_b)
+    if distance is None: return None
+    best=None
+    for name,spec in CC_ASPECT_DEFINITIONS.items():
+        orb=abs(float(distance)-float(spec['angle']))
+        if orb<=float(spec['orb']):
+            strength=1.0-(orb/max(float(spec['orb']),0.0001))
+            candidate={'aspect':name,'distance':round(float(distance),4),'orb':round(orb,4),'strength':round(strength,6),'max_orb':float(spec['orb'])}
+            if best is None or candidate['strength']>best['strength']:
+                best=candidate
+    return best
+
+def _cc_aspect_scores(aspect):
+    if not aspect:
+        return {'flow_score':CC_NEUTRAL_SCORE,'activation_score':0.0}
+    strength=float(aspect.get('strength',0.0))
+    name=aspect.get('aspect')
+    target_flow=float(CC_ASPECT_FLOW.get(name,0.65))*100.0
+    flow=CC_NEUTRAL_SCORE + strength*(target_flow-CC_NEUTRAL_SCORE)
+    activation=strength*float(CC_ASPECT_ACTIVATION.get(name,0.0))*100.0
+    return {'flow_score':round(_cc_clamp(flow),2),'activation_score':round(_cc_clamp(activation),2)}
+
+def _cc_psych_domain_result(cp, planet):
+    cp=dict(cp or {})
+    fields=CC_PSYCH_DOMAIN_FIELDS.get(planet,[])
+    if not fields:
+        return {'score':CC_NEUTRAL_SCORE,'confidence':0.0,'evidence':{}}
+    answered=0; strategy=[]; flexibility=[]; selections={}
+    for field in fields:
+        vals=_split_choices(cp.get(field,''))
+        selections[field]=sorted(vals)
+        if vals:
+            answered+=1
+            strategy.append(min(1.0,len(vals)/2.0))
+            flexibility.append(min(1.0,max(0,len(vals)-1)/2.0))
+    awareness=answered/max(1,len(fields))
+    strategy_clarity=(sum(strategy)/len(strategy)) if strategy else 0.0
+    flexibility_score=(sum(flexibility)/len(flexibility)) if flexibility else 0.0
+    # These are non-clinical profile indicators. They deliberately do not mark any
+    # particular communication/conflict/affection preference as right or wrong.
+    consistency=0.65 if answered else 0.0
+    adaptability=min(1.0,(strategy_clarity+flexibility_score)/2.0) if answered else 0.0
+    raw=100.0*(0.30*awareness+0.25*strategy_clarity+0.20*flexibility_score+0.15*consistency+0.10*adaptability)
+    confidence=min(1.0,answered/max(1,len(fields)))
+    score=CC_NEUTRAL_SCORE*(1.0-confidence)+raw*confidence
+    return {'score':round(_cc_clamp(score),2),'confidence':round(confidence,3),'evidence':{'fields':selections,'awareness':round(awareness,3),'strategy_clarity':round(strategy_clarity,3),'flexibility':round(flexibility_score,3),'consistency':round(consistency,3),'adaptability':round(adaptability,3)}}
+
+def _cc_journal_domain_result(journal_context, planet):
+    counts=(journal_context or {}).get('theme_counts') or {}
+    themes=CC_JOURNAL_DOMAIN_THEMES.get(planet,[])
+    total=sum(float(counts.get(t,0) or 0) for t in themes)
+    overall=sum(float(v or 0) for v in counts.values())
+    relevance=(total/overall) if overall>0 else 0.0
+    # Journal language can establish relevance, but it does not prove that the
+    # member is handling a theme well or poorly. Integration stays neutral until
+    # a validated structured Journal Theme Extractor supplies evidence for it.
+    return {'relevance':round(_cc_clamp(relevance*100.0),2),'integration_score':CC_NEUTRAL_SCORE,'confidence':0.35 if total else 0.0,'themes':{t:counts.get(t,0) for t in themes if counts.get(t,0)}}
+
+def _cc_natal_integration_result(chart, planet):
+    relevant=[]
+    for item in (chart or {}).get('aspects',[]) or []:
+        if item.get('planet_a')!=planet and item.get('planet_b')!=planet:
+            continue
+        aspect={'aspect':item.get('aspect'),'orb':float(item.get('orb',0) or 0)}
+        spec=CC_ASPECT_DEFINITIONS.get(aspect['aspect'])
+        if not spec or aspect['orb']>spec['orb']: continue
+        aspect['strength']=1.0-(aspect['orb']/spec['orb'])
+        sc=_cc_aspect_scores(aspect)
+        other=item.get('planet_b') if item.get('planet_a')==planet else item.get('planet_a')
+        relevant.append({'other_planet':other,'aspect':aspect['aspect'],'orb':round(aspect['orb'],2),'strength':round(aspect['strength'],3),'flow_score':sc['flow_score']})
+    score=round(sum(x['flow_score'] for x in relevant)/len(relevant),2) if relevant else CC_NEUTRAL_SCORE
+    return {'score':score,'confidence':round(min(1.0,len(relevant)/3.0),3) if relevant else 0.25,'aspects':relevant}
+
+def _cc_current_astro_result(chart, sky, lunar_cycle, target_planet):
+    natal=((chart or {}).get('planets') or {}).get(target_planet) or {}
+    natal_lon=natal.get('longitude')
+    weights=CC_MONTHLY_ASTRO_WEIGHTS.get(target_planet,{})
+    if natal_lon is None or not weights:
+        return {'flow_score':CC_NEUTRAL_SCORE,'activation_score':0.0,'contacts':[]}
+    current=(sky or {}).get('planets') or {}
+    cycle_planets=(lunar_cycle or {}).get('planets') or {}
+    cycle_lon=((cycle_planets.get('Sun') or cycle_planets.get('Moon') or {}).get('longitude'))
+    weighted_flow=0.0; weighted_activation=0.0; total_weight=0.0; contacts=[]
+    for source,weight in weights.items():
+        if source=='LunarCycle':
+            source_lon=cycle_lon
+        else:
+            source_lon=((current.get(source) or {}).get('longitude'))
+        if source_lon is None:
+            continue
+        aspect=_cc_detect_aspect(source_lon,natal_lon)
+        scores=_cc_aspect_scores(aspect)
+        weighted_flow += scores['flow_score']*weight
+        weighted_activation += scores['activation_score']*weight
+        total_weight += weight
+        contacts.append({'source':source,'target':target_planet,'weight':weight,'aspect':aspect,'flow_score':scores['flow_score'],'activation_score':scores['activation_score']})
+    if not total_weight:
+        return {'flow_score':CC_NEUTRAL_SCORE,'activation_score':0.0,'contacts':[]}
+    return {'flow_score':round(weighted_flow/total_weight,2),'activation_score':round(weighted_activation/total_weight,2),'contacts':contacts}
+
+def _cc_season_from_monthly_evidence(planet_results, cp, journal_context):
+    activation={p:float((planet_results.get(p) or {}).get('activation_score',0) or 0) for p in CC_PERSONAL_OVERALL_WEIGHTS}
+    scores={
+        'Spring':0.25*activation['Sun']+0.20*activation['Mercury']+0.30*activation['Jupiter']+0.10*activation['Mars']+0.15*activation['Venus'],
+        'Summer':0.20*activation['Sun']+0.15*activation['Moon']+0.15*activation['Mercury']+0.30*activation['Venus']+0.20*activation['Jupiter'],
+        'Autumn':0.20*activation['Moon']+0.15*activation['Mercury']+0.15*activation['Venus']+0.25*activation['Mars']+0.25*activation['Saturn'],
+        'Winter':0.10*activation['Sun']+0.35*activation['Moon']+0.15*activation['Mercury']+0.10*activation['Mars']+0.30*activation['Saturn'],
+    }
+    counts=(journal_context or {}).get('theme_counts') or {}
+    journal_map={
+        'creativity':{'Spring':5,'Summer':3},'confidence/direction':{'Spring':5,'Summer':3},'business':{'Spring':3,'Summer':2},
+        'communication':{'Spring':1,'Summer':3,'Autumn':2},'relationships':{'Summer':6},'family':{'Summer':2,'Winter':3},
+        'boundaries':{'Autumn':7},'conflict/repair':{'Autumn':7,'Winter':2},'money/resources':{'Autumn':3,'Winter':2},
+        'grief/change':{'Autumn':5,'Winter':5},'rest/regulation':{'Winter':8},'health/wellness':{'Winter':5,'Spring':2},
+    }
+    max_count=max([float(v or 0) for v in counts.values()] or [1.0])
+    for theme,count in counts.items():
+        normalized=min(1.0,float(count or 0)/max_count)
+        for season,weight in journal_map.get(theme,{}).items(): scores[season]+=normalized*weight
+    profile=' '.join(str((cp or {}).get(k,'') or '') for k in ('seeking','coordination_types','values_text','retreat_style')).lower()
+    if any(x in profile for x in ('growth','business','creative','new')): scores['Spring']+=2.5
+    if any(x in profile for x in ('love','dating','friendship','community','social')): scores['Summer']+=2.5
+    if any(x in profile for x in ('boundary','repair','clarity','reflection')): scores['Autumn']+=2.5
+    if any(x in profile for x in ('quiet','restorative','rest','private')): scores['Winter']+=2.5
+    order=['Spring','Summer','Autumn','Winter']
+    season=max(order,key=lambda s:(scores[s],-order.index(s)))
+    return season,{k:round(v,2) for k,v in scores.items()}
+
+def _cc_save_cycle_record(cycle):
+    if not cycle or not cycle.get('cycle_id'): return
+    planets=cycle.get('planets') or {}; point=(planets.get('Sun') or planets.get('Moon') or {})
+    sign=point.get('sign',''); longitude=point.get('longitude')
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO lunar_cycles(cycle_key,started_utc,next_started_utc,longitude,sign,payload,created_at)
+            VALUES(?,?,?,?,?,?,?) ON CONFLICT(cycle_key) DO UPDATE SET started_utc=excluded.started_utc,next_started_utc=excluded.next_started_utc,longitude=excluded.longitude,sign=excluded.sign,payload=excluded.payload''',
+            (cycle.get('cycle_id'),cycle.get('started_utc',''),cycle.get('next_started_utc',''),longitude,sign,json.dumps(cycle,default=str),now()))
+        conn.commit()
+    finally: conn.close()
+
+def _cc_house_for_longitude(chart, longitude):
+    houses=(chart or {}).get('houses') or []
+    if len(houses)<12 or longitude is None:
+        return None
+    try: value=float(longitude)%360.0
+    except (TypeError,ValueError): return None
+    def in_arc(v,start,end):
+        v%=360.0; start%=360.0; end%=360.0
+        return (start<=v<end) if start<end else (v>=start or v<end)
+    for i in range(12):
+        if in_arc(value,float(houses[i]),float(houses[(i+1)%12])):
+            return i+1
+    return None
+
+
+def _cc_persist_personal_evidence(user_id, cycle_key, cp, planet_results):
+    """Persist deterministic psychological dimensions and transit-to-natal contacts.
+
+    These rows are calculation snapshots, not diagnoses.  They let the application
+    reuse the same evidence inside one Lunar cycle instead of rebuilding every
+    score from prose on every request.
     """
-    cp=dict(cp_row) if cp_row else {}
+    psych_domains={}
+    for planet in CC_PERSONAL_OVERALL_WEIGHTS:
+        psych=(planet_results.get(planet) or {}).get('psychology') or _cc_psych_domain_result(cp,planet)
+        psych_domains[planet]={'score':psych.get('score',CC_NEUTRAL_SCORE),'confidence':psych.get('confidence',0.0),'evidence':psych.get('evidence',{})}
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO psychological_profiles(user_id,payload,updated_at) VALUES(?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at''',
+            (user_id,json.dumps({'engine_version':CC_ENGINE_VERSION,'domains':psych_domains},default=str),now()))
+        for planet,item in psych_domains.items():
+            conn.execute('''INSERT INTO psychological_dimensions(user_id,domain,score,confidence,payload,updated_at)
+                VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,domain) DO UPDATE SET score=excluded.score,confidence=excluded.confidence,payload=excluded.payload,updated_at=excluded.updated_at''',
+                (user_id,planet,float(item.get('score',CC_NEUTRAL_SCORE)),float(item.get('confidence',0.0)),json.dumps(item.get('evidence',{}),default=str),now()))
+        # Rebuild the saved contact list for this cycle so stale aspects cannot survive a refresh.
+        conn.execute('DELETE FROM transit_aspects WHERE user_id=? AND snapshot_key=?',(user_id,cycle_key))
+        for target,item in (planet_results or {}).items():
+            for contact in ((item.get('astrology') or {}).get('contacts') or []):
+                aspect=contact.get('aspect') or {}
+                if not aspect:
+                    continue
+                conn.execute('''INSERT INTO transit_aspects(user_id,snapshot_key,current_planet,natal_planet,aspect,orb,flow_score,activation_score,payload,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                    (user_id,cycle_key,str(contact.get('source') or ''),target,str(aspect.get('aspect') or ''),float(aspect.get('orb',0.0) or 0.0),float(contact.get('flow_score',CC_NEUTRAL_SCORE) or CC_NEUTRAL_SCORE),float(contact.get('activation_score',0.0) or 0.0),json.dumps(contact,default=str),now()))
+        conn.commit()
+    finally:
+        conn.close()
 
-    def choices(key):
-        return _split_choices(cp.get(key,''))
 
-    def answered(*keys):
-        return sum(1 for k in keys if choices(k) or (cp.get(k,'') or '').strip())
-
-    def score_group(keys, supportive=None, base=58):
-        total=max(1,len(keys))
-        completion=answered(*keys)/total
-        score=base + round(completion*24)
-        if supportive:
-            hits=0
-            possible=0
-            for key,opts in supportive.items():
-                selected=choices(key)
-                if selected:
-                    possible+=1
-                    if selected & {x.lower() for x in opts}:
-                        hits+=1
-            if possible:
-                score += round((hits/possible)*10)
-        return max(35,min(96,score))
-
-    metrics=[
-        ('Social & Emotional Intelligence',score_group(
-            ['other_emotions','regulate','overwhelmed'],
-            {'other_emotions':['listen first','ask what they need','give space when requested'],
-             'regulate':['quiet time','movement / exercise','nature','breathing / meditation','talking with someone i trust','music / creative activity','rest']},
-            56)),
-        ('Communication',score_group(
-            ['communication'],
-            {'communication':['direct but gentle','thoughtful and measured','warm and expressive','need time to process first']},
-            58)),
-        ('Conflict',score_group(
-            ['conflict_style'],
-            {'conflict_style':['talk it through calmly','prefer direct resolution','seek compromise','need time before discussing']},
-            54)),
-        ('Repair & Accountability',score_group(
-            ['repair'],
-            {'repair':['apologize directly','need actions to match words','talk through what happened','focus on solutions','give space then reconnect']},
-            56)),
-        ('Emotional Rhythm',score_group(
-            ['overwhelmed','regulate','other_emotions'],None,56)),
-        ('Love Languages / Affection',score_group(
-            ['affection'],None,60)),
-        ('Lifestyle & Values',score_group(
-            ['lifestyle','values_text','family'],None,58)),
-        ('Boundaries',score_group(
-            ['boundaries','trust'],
-            {'boundaries':['clear verbal boundaries','need advance notice / planning','value privacy and alone time','flexible with communication'],
-             'trust':['consistency','honesty','time','shared experiences','emotional openness','reliability']},
-            56)),
-        ('Business Collaboration',score_group(
-            ['business_style'],None,58)),
-    ]
-
+def _personal_monthly_coordination_snapshot(user_id, force=False):
+    conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); conn.close()
+    if not user: return {'ready':False,'reason':'Member profile is not available.'}
     chart=member_chart_data(user)
-    if chart.get('ready'):
-        planet_count=sum(1 for p in PLANET_NAMES if (chart.get('planets') or {}).get(p))
-        planetary=max(60,min(96,60+planet_count*5))
-    else:
-        planetary=60
-    metrics.append(('Planetary Coordination',planetary))
+    if not chart.get('ready'): return {'ready':False,'reason':chart.get('reason') or 'Birth information is incomplete.'}
+    sky=current_sky_data(); cycle=_current_lunar_cycle_chart(sky); cycle_key=cycle.get('cycle_id') or datetime.utcnow().strftime('%Y-%m')
+    _cc_save_cycle_record(cycle)
+    cycle_point=(((cycle.get('planets') or {}).get('Sun') or (cycle.get('planets') or {}).get('Moon') or {}).get('longitude'))
+    cycle=dict(cycle); cycle['member_house']=_cc_house_for_longitude(chart,cycle_point)
+    if not force:
+        conn=db(); row=conn.execute('SELECT payload FROM planetary_coordination_snapshots WHERE user_id=? AND lunar_cycle_key=?',(user_id,cycle_key)).fetchone(); conn.close()
+        if row:
+            try:
+                cached=json.loads(row['payload'])
+                if cached.get('engine_version')==CC_ENGINE_VERSION: return cached
+            except Exception: pass
+    cp=dict(cp_row) if cp_row else {}; journal=_all_journal_context(user_id)
+    planet_results={}
+    for planet in CC_PERSONAL_OVERALL_WEIGHTS:
+        astro=_cc_current_astro_result(chart,sky,cycle,planet)
+        psych=_cc_psych_domain_result(cp,planet)
+        natal=_cc_natal_integration_result(chart,planet)
+        lived=_cc_journal_domain_result(journal,planet)
+        score=(astro['flow_score']*CC_COMPONENT_WEIGHTS['astrology']+psych['score']*CC_COMPONENT_WEIGHTS['psychology']+natal['score']*CC_COMPONENT_WEIGHTS['natal']+lived['integration_score']*CC_COMPONENT_WEIGHTS['lived'])
+        activation=0.80*astro['activation_score']+0.20*lived['relevance']
+        planet_results[planet]={'coordination_score':round(_cc_clamp(score)),'activation_score':round(_cc_clamp(activation)),'astrology':astro,'psychology':psych,'natal':natal,'journal':lived}
+    overall=round(sum(planet_results[p]['coordination_score']*w for p,w in CC_PERSONAL_OVERALL_WEIGHTS.items()))
+    season,season_scores=_cc_season_from_monthly_evidence(planet_results,cp,journal)
+    payload={'ready':True,'engine_version':CC_ENGINE_VERSION,'user_id':user_id,'lunar_cycle_id':cycle_key,'lunar_cycle':cycle,'planetary':planet_results,'overall_coordination':overall,'current_season':season,'season_scores':season_scores,'journal_theme_snapshot':_cc_journal_evidence_packet(journal),'calculation_note':'Coordination and activation are separate non-clinical reflective indicators. AI does not choose these numbers.'}
+    _cc_persist_personal_evidence(user_id,cycle_key,cp,planet_results)
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO member_lunar_cycles(user_id,lunar_cycle_key,payload,created_at) VALUES(?,?,?,?) ON CONFLICT(user_id,lunar_cycle_key) DO UPDATE SET payload=excluded.payload''',(user_id,cycle_key,json.dumps({'season':season,'overall':overall}),now()))
+        conn.execute('''INSERT INTO planetary_coordination_snapshots(user_id,lunar_cycle_key,payload,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id,lunar_cycle_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at''',(user_id,cycle_key,json.dumps(payload,default=str),now(),now()))
+        conn.execute('''INSERT INTO journal_theme_snapshots(user_id,snapshot_key,payload,created_at) VALUES(?,?,?,?) ON CONFLICT(user_id,snapshot_key) DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',(user_id,cycle_key,json.dumps(payload['journal_theme_snapshot']),now()))
+        conn.commit()
+    finally: conn.close()
+    return payload
 
-    overall=round(sum(score for _,score in metrics)/len(metrics)) if metrics else 0
-    return {'overall':overall,'metrics':metrics}
+def _cc_current_contact_activation(chart, sky, target_planet, sources):
+    natal=((chart or {}).get('planets') or {}).get(target_planet) or {}; nlon=natal.get('longitude')
+    if nlon is None: return 0.0,[]
+    contacts=[]
+    for source in sources:
+        slon=(((sky or {}).get('planets') or {}).get(source) or {}).get('longitude')
+        if slon is None: continue
+        aspect=_cc_detect_aspect(slon,nlon); scores=_cc_aspect_scores(aspect)
+        contacts.append({'source':source,'target':target_planet,'aspect':aspect,'activation_score':scores['activation_score']})
+    return (max([c['activation_score'] for c in contacts] or [0.0]),contacts)
+
+def _daily_attention_snapshot(user_id, force=False):
+    today=datetime.utcnow().strftime('%Y-%m-%d'); monthly=_personal_monthly_coordination_snapshot(user_id)
+    if not monthly.get('ready'): return monthly
+    cycle_key=monthly.get('lunar_cycle_id','')
+    if not force:
+        conn=db(); row=conn.execute('SELECT payload FROM daily_attention_reports WHERE user_id=? AND report_date=?',(user_id,today)).fetchone(); conn.close()
+        if row:
+            try:
+                cached=json.loads(row['payload'])
+                if cached.get('engine_version')==CC_ENGINE_VERSION: return cached
+            except Exception: pass
+    conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); conn.close(); chart=member_chart_data(user); sky=current_sky_data(); journal=_all_journal_context(user_id)
+    conn=db(); previous_rows=conn.execute('SELECT payload FROM daily_attention_reports WHERE user_id=? AND report_date<? ORDER BY report_date DESC LIMIT 7',(user_id,today)).fetchall(); conn.close()
+    previous=[]
+    for r in previous_rows:
+        try: previous.append(json.loads(r['payload']))
+        except Exception: pass
+    domain_scores={}; evidence={}
+    for planet in CC_PERSONAL_OVERALL_WEIGHTS:
+        moon_activation,moon_contacts=_cc_current_contact_activation(chart,sky,planet,['Moon'])
+        other_activation,other_contacts=_cc_current_contact_activation(chart,sky,planet,['Sun','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto'])
+        monthly_activation=float((monthly.get('planetary',{}).get(planet) or {}).get('activation_score',0) or 0)
+        journal_relevance=float(_cc_journal_domain_result(journal,planet).get('relevance',0) or 0)
+        recent_same=sum(1 for p in previous if p.get('primary_domain')==planet)
+        continuity=min(100.0,55.0+recent_same*10.0)
+        score=0.50*moon_activation+0.20*other_activation+0.15*monthly_activation+0.10*journal_relevance+0.05*continuity
+        domain_scores[planet]=round(_cc_clamp(score))
+        evidence[planet]={'today_lunar_activation':round(moon_activation,2),'other_current_activation':round(other_activation,2),'monthly_activation':round(monthly_activation,2),'journal_relevance':round(journal_relevance,2),'continuity':round(continuity,2),'contacts':moon_contacts+other_contacts}
+    ordered=sorted(domain_scores,key=lambda p:domain_scores[p],reverse=True)
+    primary=ordered[0] if ordered else 'Moon'; secondary=ordered[1] if len(ordered)>1 else None
+    theme_names={'Sun':'direction and authenticity','Moon':'emotional pacing and regulation','Mercury':'communication and interpretation','Venus':'connection and reciprocity','Mars':'action and boundaries','Jupiter':'growth and capacity','Saturn':'responsibility and sustainability'}
+    payload={'ready':True,'engine_version':CC_ENGINE_VERSION,'date':today,'lunar_cycle_id':cycle_key,'moon':((sky.get('planets') or {}).get('Moon') or {}),'lunar_phase':sky.get('lunar_phase',''),'domain_activation':domain_scores,'primary_domain':primary,'secondary_domain':secondary,'primary_theme':theme_names.get(primary,primary),'secondary_theme':theme_names.get(secondary,secondary) if secondary else '','support_tags':[theme_names.get(primary,primary),theme_names.get(secondary,secondary) if secondary else ''],'evidence':evidence,'recent_primary_domains':[p.get('primary_domain') for p in previous if p.get('primary_domain')]}
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO daily_attention_reports(user_id,report_date,lunar_cycle_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,report_date) DO UPDATE SET lunar_cycle_key=excluded.lunar_cycle_key,payload=excluded.payload,updated_at=excluded.updated_at''',(user_id,today,cycle_key,json.dumps(payload,default=str),now(),now())); conn.commit()
+    finally: conn.close()
+    return payload
+
+def _daily_attention_reflection(user_id):
+    snapshot=_daily_attention_snapshot(user_id)
+    if not snapshot.get('ready'): return {'ready':False,'reason':snapshot.get('reason','Daily reflection is not ready.')}
+    if snapshot.get('written_report'):
+        return snapshot
+    monthly=_personal_monthly_coordination_snapshot(user_id)
+    conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); rows=conn.execute('SELECT payload FROM daily_attention_reports WHERE user_id=? AND report_date<? ORDER BY report_date DESC LIMIT 7',(user_id,snapshot['date'])).fetchall(); conn.close()
+    previous=[]
+    for r in rows:
+        try:
+            p=json.loads(r['payload'])
+            if p.get('written_report'): previous.append({'date':p.get('date'),'primary_domain':p.get('primary_domain'),'summary':re.sub(r'\s+',' ',p.get('written_report',''))[:400]})
+        except Exception: pass
+    data={'member':{'id':user_id,'name':user['name'] if user else ''},'daily_attention':snapshot,'monthly_coordination':{'lunar_cycle_id':monthly.get('lunar_cycle_id'),'current_season':monthly.get('current_season'),'planetary':{k:{'coordination_score':v.get('coordination_score'),'activation_score':v.get('activation_score')} for k,v in (monthly.get('planetary') or {}).items()}},'psychology':_profile_psychology_context(dict(cp) if cp else {}),'journal_themes':_all_journal_context(user_id).get('theme_counts',{}),'recent_daily_reports':previous}
+    instruction='''Write today's private “What Deserves Your Attention” Conscious Coordination reflection from the structured evidence supplied below. This is a DAILY reflection operating inside the larger Lunar cycle. Focus first on the highest-activation function and secondarily on the next one. Continue recent themes when useful, but do not repeat yesterday's wording or practice. Interpret the interaction between current Lunar/current-planetary activation, the member's self-reported behavioral patterns and current-life themes. Never diagnose. Never quote private Journal entries or say “Your Journal says.” Do not expose degrees, aspect names, scores, algorithms or internal data. Use possibility language. Give one clear practical coordination practice and one fresh Journal question. Do not write a generic horoscope. Return ONLY valid JSON with keys: core_theme, psychological_interpretation, emotional_interpretation, current_coordination, potential_tension, supportive_response, coordination_practice, journal_question, wellness_tags. wellness_tags must be a short JSON array of strings.'''
+    structured=None; text=''
+    for attempt in range(6):
+        seed=_unique_generation_seed(user_id,'daily_attention',snapshot['date'],{'history_fingerprint':monthly.get('journal_theme_snapshot',{}).get('history_fingerprint','')},attempt)
+        obj=_openai_structured(instruction+f'\nInternal composition seed (never print): {seed}.\nEVIDENCE:\n'+json.dumps(data,default=str),'daily_attention',CC_REPORT_JSON_SCHEMA) or _cc_parse_json_object(_openai_text(instruction+f'\nInternal composition seed (never print): {seed}.\nEVIDENCE:\n'+json.dumps(data,default=str)))
+        if not obj: continue
+        candidate=_cc_format_daily_structured_report(obj)
+        if not _cc_report_quality_ok(candidate): continue
+        duplicate,_=_reading_similarity_status(candidate)
+        if duplicate: continue
+        if _register_unique_reading(user_id,'daily_attention',snapshot['date'],candidate):
+            structured=obj; text=candidate; break
+    if not text:
+        fallback_obj={
+            'core_theme':f"Today may place more attention on {snapshot.get('primary_theme','what needs your attention')}"+(f" and {snapshot.get('secondary_theme')}" if snapshot.get('secondary_theme') else ''),
+            'psychological_interpretation':'Notice what changes when you separate the first reaction from the response you want to stand behind.',
+            'emotional_interpretation':'The emotional signal can be useful information without needing to become the whole decision.',
+            'current_coordination':'Clarity may come from identifying what actually requires a response today rather than treating every feeling or possibility as equally urgent.',
+            'potential_tension':'The first impulse may be useful information without necessarily being the final decision.',
+            'supportive_response':'Give the most activated area enough attention to become specific: one need, one boundary, one question or one next step.',
+            'coordination_practice':'Name one need, one boundary or one next step before adding explanation.',
+            'journal_question':'What deserves a clear response today, and what can be allowed to unfold without immediate action?',
+            'wellness_tags':snapshot.get('support_tags',[])[:4]
+        }
+        text=_cc_format_daily_structured_report(fallback_obj); structured=fallback_obj
+        _register_unique_reading(user_id,'daily_attention',snapshot['date'],text)
+    spoken_prompt='''Create ONLY a warm, calm spoken listening script for this exact daily Conscious Coordination reflection. Preserve its meaning and practice without reading headings aloud. Do not add new claims, astrology mechanics, diagnosis, scores, or private-source references.\n\nWRITTEN DAILY REFLECTION:\n'''+text
+    spoken=_openai_text(spoken_prompt) or re.sub(r'\n+',' ',text)
+    snapshot['written_report']=text; snapshot['structured_sections']=structured; snapshot['spoken_script']=spoken
+    fingerprint=hashlib.sha256(json.dumps(data,sort_keys=True,default=str).encode()).hexdigest(); digest=hashlib.sha256(_normalize_report_text(text).encode()).hexdigest()
+    conn=db()
+    conn.execute('UPDATE daily_attention_reports SET payload=?,updated_at=? WHERE user_id=? AND report_date=?',(json.dumps(snapshot,default=str),now(),user_id,snapshot['date']))
+    conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,spoken_script=excluded.spoken_script,evidence_summary=excluded.evidence_summary,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',
+        (user_id,0,'daily_attention',snapshot['date'],1,text,spoken,'',json.dumps({'primary_domain':snapshot.get('primary_domain'),'secondary_domain':snapshot.get('secondary_domain'),'structured_sections':structured},default=str),'owner-private',fingerprint,digest,now(),now()))
+    conn.commit(); conn.close()
+    return snapshot
+
+def _cc_pair_field_score(a,b,field):
+    av=_split_choices((a or {}).get(field,'')); bv=_split_choices((b or {}).get(field,''))
+    if not av or not bv: return {'score':CC_NEUTRAL_SCORE,'confidence':0.0,'a':sorted(av),'b':sorted(bv)}
+    overlap=len(av & bv); union=max(1,len(av | bv)); similarity=overlap/union
+    # Similarity is one input, not the definition of coordination. Different
+    # preferences stay near neutral unless a known timing tension is present.
+    score=60.0+30.0*similarity
+    low_a={x.lower() for x in av}; low_b={x.lower() for x in bv}
+    if field in {'overwhelmed','communication','conflict_style'}:
+        a_space=any('quiet' in x or 'time' in x or 'written' in x for x in low_a)
+        b_space=any('quiet' in x or 'time' in x or 'written' in x for x in low_b)
+        a_fast=any('fairly soon' in x or 'reassurance' in x or 'direct resolution' in x for x in low_a)
+        b_fast=any('fairly soon' in x or 'reassurance' in x or 'direct resolution' in x for x in low_b)
+        if (a_space and b_fast) or (b_space and a_fast): score-=8.0
+    return {'score':round(_cc_clamp(score),2),'confidence':1.0,'a':sorted(av),'b':sorted(bv)}
+
+def _cc_pair_psych_result(a,b,planet):
+    fields=CC_PAIR_PSYCH_FIELDS.get(planet,[]); results=[]
+    for field in fields:
+        r=_cc_pair_field_score(a,b,field)
+        if r['confidence']>0: results.append((field,r))
+    if not results: return {'score':CC_NEUTRAL_SCORE,'confidence':0.0,'fields':{}}
+    score=sum(r['score'] for _,r in results)/len(results)
+    return {'score':round(score,2),'confidence':round(len(results)/max(1,len(fields)),3),'fields':{f:r for f,r in results}}
+
+def _cc_pair_synastry_result(chart_a,chart_b,domain):
+    ap=(chart_a or {}).get('planets') or {}; bp=(chart_b or {}).get('planets') or {}; entries=[]; total=0.0; total_w=0.0
+    for (pa,pb),weight in CC_PAIR_SYNASTRY_WEIGHTS.get(domain,[]):
+        directions=[(pa,pb,weight)] if pa==pb else [(pa,pb,weight/2.0),(pb,pa,weight/2.0)]
+        for left,right,w in directions:
+            alon=(ap.get(left) or {}).get('longitude'); blon=(bp.get(right) or {}).get('longitude')
+            if alon is None or blon is None: continue
+            aspect=_cc_detect_aspect(alon,blon); scores=_cc_aspect_scores(aspect)
+            total += scores['flow_score']*w; total_w+=w
+            entries.append({'a_planet':left,'b_planet':right,'weight':w,'aspect':aspect,'flow_score':scores['flow_score'],'activation_score':scores['activation_score']})
+    base_score=round(total/total_w,2) if total_w else CC_NEUTRAL_SCORE
+    # Rising contacts are supplemental only when exact birth time produced a real Ascendant.
+    # They never get invented for unknown-time charts and they do not replace the core matrix.
+    ar=((chart_a or {}).get('rising') or (chart_a or {}).get('ascendant') or {}).get('longitude')
+    br=((chart_b or {}).get('rising') or (chart_b or {}).get('ascendant') or {}).get('longitude')
+    asc_contacts=[]; asc_flows=[]
+    target_planet=domain if domain in {'Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn'} else None
+    if target_planet:
+        if ar is not None and (bp.get(target_planet) or {}).get('longitude') is not None:
+            aspect=_cc_detect_aspect(ar,(bp.get(target_planet) or {}).get('longitude')); sc=_cc_aspect_scores(aspect); asc_flows.append(sc['flow_score']); asc_contacts.append({'a_planet':'Rising','b_planet':target_planet,'aspect':aspect,**sc})
+        if br is not None and (ap.get(target_planet) or {}).get('longitude') is not None:
+            aspect=_cc_detect_aspect((ap.get(target_planet) or {}).get('longitude'),br); sc=_cc_aspect_scores(aspect); asc_flows.append(sc['flow_score']); asc_contacts.append({'a_planet':target_planet,'b_planet':'Rising','aspect':aspect,**sc})
+    score=base_score if not asc_flows else (0.92*base_score+0.08*(sum(asc_flows)/len(asc_flows)))
+    return {'score':round(_cc_clamp(score),2),'base_score':base_score,'confidence':round(min(1.0,total_w),3),'contacts':entries,'ascendant_contacts':asc_contacts}
+
+def _pair_coordination_snapshot(viewer_id, other_id, kind='general', force=False):
+    kind=kind if kind in CC_RELATIONSHIP_WEIGHTS else 'general'
+    conn=db(); arow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(viewer_id,)).fetchone(); brow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(other_id,)).fetchone(); au=conn.execute('SELECT * FROM users WHERE id=?',(viewer_id,)).fetchone(); bu=conn.execute('SELECT * FROM users WHERE id=?',(other_id,)).fetchone(); conn.close()
+    if not au or not bu: return {'ready':False,'reason':'Both member profiles are required.'}
+    pair_fingerprint=hashlib.sha256(json.dumps({
+        'viewer':{'dob':au['dob'],'birth_time':au['birth_time'],'birth_city':au['birth_city'],'birth_region':au['birth_region'],'birth_country':au['birth_country'],'profile_updated':(arow['updated_at'] if arow else '')},
+        'other':{'dob':bu['dob'],'birth_time':bu['birth_time'],'birth_city':bu['birth_city'],'birth_region':bu['birth_region'],'birth_country':bu['birth_country'],'profile_updated':(brow['updated_at'] if brow else '')},
+        'kind':kind,'engine':CC_ENGINE_VERSION
+    },sort_keys=True,default=str).encode('utf-8')).hexdigest()[:20]
+    context_key=f'{viewer_id}:{other_id}:{kind}:v{CC_ENGINE_VERSION}:{pair_fingerprint}'
+    if not force:
+        conn=db(); row=conn.execute('SELECT payload FROM member_pair_coordination WHERE viewer_id=? AND other_id=? AND relationship_type=? AND context_key=?',(viewer_id,other_id,kind,context_key)).fetchone(); conn.close()
+        if row:
+            try:
+                cached=json.loads(row['payload'])
+                if cached.get('engine_version')==CC_ENGINE_VERSION:return cached
+            except Exception: pass
+    ca=member_chart_data(au); cb=member_chart_data(bu)
+    if not ca.get('ready') or not cb.get('ready'): return {'ready':False,'reason':'Both members need complete birth information for chart-to-chart coordination.'}
+    a=dict(arow) if arow else {}; b=dict(brow) if brow else {}; domains={}
+    for planet in CC_PERSONAL_OVERALL_WEIGHTS:
+        syn=_cc_pair_synastry_result(ca,cb,planet); psych=_cc_pair_psych_result(a,b,planet)
+        score=0.55*syn['score']+0.45*psych['score']
+        activation=max([float(c.get('activation_score',0) or 0) for c in (syn.get('contacts',[])+syn.get('ascendant_contacts',[]))] or [0.0])
+        domains[planet]={'coordination_score':round(_cc_clamp(score)),'activation_score':round(_cc_clamp(activation)),'synastry':syn,'psychology':psych,'label':CC_PLANET_DOMAIN_LABELS.get(planet,planet)}
+    weights=CC_RELATIONSHIP_WEIGHTS[kind]; overall=round(sum(domains[p]['coordination_score']*weights[p] for p in weights))
+    synastry_overall=round(sum(domains[p]['synastry']['score']*weights[p] for p in weights))
+    psychological_overall=round(sum(domains[p]['psychology']['score']*weights[p] for p in weights))
+    # Existing profile-category cards are translated into pair-specific coordination
+    # so another viewer never sees the target member's personal self-score as their own.
+    overall_activation=round(sum(domains[p]['activation_score']*weights[p] for p in weights))
+    def pair_combo(planets, score_field='coordination_score'):
+        vals=[float(domains[p].get(score_field,0) or 0) for p in planets]
+        return round(sum(vals)/len(vals)) if vals else 0
+    category_metrics={
+        'Social & Emotional Intelligence':{'score':pair_combo(['Moon','Mercury','Venus']),'activation':pair_combo(['Moon','Mercury','Venus'],'activation_score')},
+        'Communication':{'score':domains['Mercury']['coordination_score'],'activation':domains['Mercury']['activation_score']},
+        'Conflict':{'score':domains['Mars']['coordination_score'],'activation':domains['Mars']['activation_score']},
+        'Repair & Accountability':{'score':pair_combo(['Mercury','Saturn']),'activation':pair_combo(['Mercury','Saturn'],'activation_score')},
+        'Emotional Rhythm':{'score':domains['Moon']['coordination_score'],'activation':domains['Moon']['activation_score']},
+        'Love Languages / Affection':{'score':domains['Venus']['coordination_score'],'activation':domains['Venus']['activation_score']},
+        'Lifestyle & Values':{'score':pair_combo(['Sun','Venus','Jupiter']),'activation':pair_combo(['Sun','Venus','Jupiter'],'activation_score')},
+        'Boundaries':{'score':pair_combo(['Mars','Saturn']),'activation':pair_combo(['Mars','Saturn'],'activation_score')},
+        'Business Collaboration':{
+            'score':round(_cc_clamp(sum(domains[p]['coordination_score']*CC_RELATIONSHIP_WEIGHTS['business'][p] for p in CC_RELATIONSHIP_WEIGHTS['business']))),
+            'activation':round(_cc_clamp(sum(domains[p]['activation_score']*CC_RELATIONSHIP_WEIGHTS['business'][p] for p in CC_RELATIONSHIP_WEIGHTS['business'])))
+        },
+        'Planetary Coordination':{'score':synastry_overall,'activation':overall_activation},
+    }
+    payload={'ready':True,'engine_version':CC_ENGINE_VERSION,'viewer_id':viewer_id,'other_id':other_id,'member':bu['name'],'kind':kind,'score':overall,'activation_score':overall_activation,'domains':domains,'metrics':[{'area':k,'score':round(v['score']),'activation_score':round(v['activation']),'source':'two-person chart + psychological coordination'} for k,v in category_metrics.items()],'synastry_overall':synastry_overall,'psychological_overall':psychological_overall,'privacy':'Private Journal content is never used in another member’s coordination.'}
+    conn=db()
+    try:
+        cur=conn.execute('''INSERT INTO member_pair_coordination(viewer_id,other_id,relationship_type,context_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(viewer_id,other_id,relationship_type,context_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at''',(viewer_id,other_id,kind,context_key,json.dumps(payload,default=str),now(),now()))
+        pair_id=cur.lastrowid
+        if not pair_id:
+            row=conn.execute('SELECT id FROM member_pair_coordination WHERE viewer_id=? AND other_id=? AND relationship_type=? AND context_key=?',(viewer_id,other_id,kind,context_key)).fetchone(); pair_id=row['id'] if row else None
+        if pair_id:
+            for planet,item in domains.items():
+                conn.execute('''INSERT INTO member_pair_planetary_scores(pair_snapshot_id,domain,score,activation,payload,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(pair_snapshot_id,domain) DO UPDATE SET score=excluded.score,activation=excluded.activation,payload=excluded.payload''',(pair_id,planet,item['coordination_score'],item['activation_score'],json.dumps(item,default=str),now()))
+        conn.commit()
+    finally: conn.close()
+    return payload
+
+
+def _cc_weighted_monthly_metric(monthly, weights, field='coordination_score'):
+    planetary=(monthly or {}).get('planetary') or {}
+    values=[]; total=0.0
+    for planet,weight in (weights or {}).items():
+        value=(planetary.get(planet) or {}).get(field)
+        if value is None: continue
+        values.append(float(value)*float(weight)); total+=float(weight)
+    return round(_cc_clamp(sum(values)/total)) if total else None
+
+
+def _cc_self_category_details(monthly):
+    if not (monthly or {}).get('ready'): return {}
+    details={}
+    for label,weights in CC_SELF_CATEGORY_PLANET_WEIGHTS.items():
+        score=_cc_weighted_monthly_metric(monthly,weights,'coordination_score')
+        activation=_cc_weighted_monthly_metric(monthly,weights,'activation_score')
+        details[label]={
+            'coordination_score':score,
+            'activation_score':activation,
+            'planet_weights':weights,
+            'source':'current Lunar-cycle planetary coordination + psychology + natal integration + owner-private structured current-life themes'
+        }
+    return details
+
+
+def member_coordination_scores(user, cp_row):
+    """One member's dynamic Lunar-cycle Coordination Profile indicators.
+
+    The visible percentages come from the same deterministic monthly evidence engine
+    as My Journal. Questionnaire answers are psychological evidence inside that engine;
+    completion itself is never the percentage and AI never invents a number.
+    """
+    monthly=_personal_monthly_coordination_snapshot(user['id']) if user else {'ready':False}
+    if not monthly.get('ready'):
+        return {'overall':None,'metrics':[],'category_details':{},'monthly':monthly}
+    details=_cc_self_category_details(monthly)
+    metrics=[(label,details[label]['coordination_score']) for label in CC_SELF_CATEGORY_PLANET_WEIGHTS if details.get(label,{}).get('coordination_score') is not None]
+    overall=round(monthly.get('overall_coordination')) if monthly.get('overall_coordination') is not None else _cc_weighted_monthly_metric(monthly,CC_PERSONAL_OVERALL_WEIGHTS)
+    return {'overall':overall,'metrics':metrics,'category_details':details,'monthly':monthly}
+
 
 def basic_compatibility(me_id,other_id,kind='general'):
-    """Whole-profile compatibility using actual chart-to-chart longitudes + self-reported coordination.
-
-    Private Journal content is intentionally excluded. This is reflective compatibility,
-    not a prediction that two people will or will not succeed together.
-    """
-    conn=db()
-    arow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me_id,)).fetchone()
-    brow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(other_id,)).fetchone()
-    au=conn.execute('SELECT * FROM users WHERE id=?',(me_id,)).fetchone()
-    bu=conn.execute('SELECT * FROM users WHERE id=?',(other_id,)).fetchone()
-    conn.close()
-    if not au or not bu:
-        return {'ready':False,'reason':'Member profile is not available.'}
-    a=dict(arow) if arow else {}
-    b=dict(brow) if brow else {}
-
-    def choice_score(keys):
-        vals=[]
-        for k in keys:
-            av=_split_choices(a.get(k,'')); bv=_split_choices(b.get(k,''))
-            if av and bv:
-                intersection=len(av & bv); union=max(1,len(av | bv))
-                vals.append(round(100*intersection/union))
-        return round(sum(vals)/len(vals)) if vals else None
-
-    behavioral_groups=[
-        ('Social & Emotional Intelligence',['other_emotions','regulate','overwhelmed']),
-        ('Communication',['communication']),
-        ('Conflict',['conflict_style']),
-        ('Repair & Accountability',['repair']),
-        ('Emotional Rhythm',['regulate','overwhelmed','other_emotions']),
-        ('Love Languages / Affection',['affection']),
-        ('Lifestyle & Values',['lifestyle','values_text','family']),
-        ('Boundaries',['boundaries','trust']),
-        ('Business Collaboration',['business_style']),
-    ]
-    metrics=[]
-    for label,keys in behavioral_groups:
-        score=choice_score(keys)
-        if score is not None:
-            metrics.append({'area':label,'score':score,'source':'self-reported profile'})
-
-    ca=member_chart_data(au); cb=member_chart_data(bu)
-
-    # Actual synastry pairs differ by relationship type. No sign/element shortcut is used.
-    pair_sets={
-        'love':[('Sun','Sun'),('Sun','Moon'),('Moon','Moon'),('Moon','Mercury'),('Mercury','Mercury'),('Mercury','Mars'),('Venus','Moon'),('Venus','Venus'),('Venus','Mars'),('Mars','Mars'),('Jupiter','Venus'),('Saturn','Moon'),('Saturn','Venus')],
-        'friendship':[('Sun','Sun'),('Sun','Moon'),('Moon','Moon'),('Moon','Mercury'),('Mercury','Mercury'),('Mercury','Mars'),('Venus','Venus'),('Jupiter','Mercury'),('Saturn','Mercury')],
-        'business':[('Sun','Sun'),('Sun','Mercury'),('Moon','Mercury'),('Mercury','Mercury'),('Mercury','Mars'),('Mars','Mars'),('Jupiter','Mercury'),('Jupiter','Mars'),('Saturn','Mercury'),('Saturn','Mars'),('Saturn','Jupiter')],
-        'retreat':[('Moon','Moon'),('Moon','Mercury'),('Venus','Moon'),('Mars','Mars'),('Jupiter','Moon'),('Saturn','Moon')],
-        'family':[('Sun','Moon'),('Moon','Moon'),('Moon','Mercury'),('Mercury','Mercury'),('Mercury','Mars'),('Venus','Moon'),('Mars','Mars'),('Jupiter','Moon'),('Saturn','Moon'),('Saturn','Mercury')],
-        'general':[('Sun','Sun'),('Sun','Moon'),('Moon','Moon'),('Moon','Mercury'),('Mercury','Mercury'),('Venus','Moon'),('Venus','Venus'),('Venus','Mars'),('Mars','Mars'),('Jupiter','Mercury'),('Saturn','Moon')],
-    }
-    kind=kind if kind in pair_sets else 'general'
-    if kind=='retreat':
-        retreat_score=choice_score(['retreat_style','regulate','lifestyle'])
-        if retreat_score is not None:
-            metrics.append({'area':'Retreat Coordination','score':retreat_score,'source':'self-reported pace, environment and wellness preferences'})
-    elif kind=='family':
-        family_score=choice_score(['family','communication','repair','boundaries','regulate'])
-        if family_score is not None:
-            metrics.append({'area':'Family Coordination','score':family_score,'source':'self-reported communication, support, repair and boundaries'})
-
-    aspect_targets=[('conjunction',0,7),('sextile',60,4),('square',90,6),('trine',120,6),('opposition',180,7)]
-    aspect_base={'conjunction':78,'sextile':84,'trine':90,'square':54,'opposition':58}
-    # Some contacts are useful but naturally demanding; lower/higher the neutral aspect score by function.
-    pair_adjust={
-        ('Mercury','Mercury'):5,('Moon','Moon'):4,('Venus','Moon'):5,('Venus','Venus'):4,
-        ('Mercury','Mars'):-5,('Mars','Mars'):-6,('Saturn','Moon'):-5,('Saturn','Venus'):-4,
-        ('Saturn','Mars'):-5,('Jupiter','Mercury'):3,('Jupiter','Venus'):3,
-    }
-
-    synastry=[]
-    if ca.get('ready') and cb.get('ready'):
-        ap=ca.get('planets') or {}; bp=cb.get('planets') or {}
-        synastry_pairs=[]
-        for pa,pb in pair_sets[kind]:
-            if (pa,pb) not in synastry_pairs: synastry_pairs.append((pa,pb))
-            if pa!=pb and (pb,pa) not in synastry_pairs: synastry_pairs.append((pb,pa))
-        for pa,pb in synastry_pairs:
-            aplanet=ap.get(pa) or {}; bplanet=bp.get(pb) or {}
-            if aplanet.get('longitude') is None or bplanet.get('longitude') is None:
-                continue
-            dist=_angle_distance(aplanet['longitude'],bplanet['longitude'])
-            best=None
-            for name,target,orb in aspect_targets:
-                delta=abs(dist-target)
-                if delta<=orb and (best is None or delta<best[2]):
-                    best=(name,target,delta,orb)
-            if not best:
-                continue
-            aspect,target,delta,orb=best
-            closeness=max(0.0,1.0-(delta/max(orb,0.1)))
-            score=aspect_base[aspect] + round(6*closeness) + pair_adjust.get((pa,pb),0)
-            score=max(35,min(96,score))
-            synastry.append({'pair':f'{pa}–{pb}','aspect':aspect,'orb':round(delta,2),'score':score})
-
-        # Reliable Ascendant contacts are added only when both charts actually provide them.
-        aa=ca.get('rising') or ca.get('ascendant'); ba=cb.get('rising') or cb.get('ascendant')
-        if isinstance(aa,dict) and isinstance(ba,dict) and aa.get('longitude') is not None and ba.get('longitude') is not None:
-            dist=_angle_distance(aa['longitude'],ba['longitude'])
-            best=None
-            for name,target,orb in aspect_targets:
-                delta=abs(dist-target)
-                if delta<=orb and (best is None or delta<best[2]): best=(name,target,delta,orb)
-            if best:
-                aspect,target,delta,orb=best
-                score=max(35,min(96,aspect_base[aspect]+round(6*(1-delta/max(orb,.1)))))
-                synastry.append({'pair':'Ascendant–Ascendant','aspect':aspect,'orb':round(delta,2),'score':score})
-
-    if synastry:
-        planetary=round(sum(x['score'] for x in synastry)/len(synastry))
-        metrics.append({'area':'Planetary Coordination','score':planetary,'source':'actual chart-to-chart aspects'})
-
-    # Relationship-specific weighting keeps the same evidence but changes what matters most.
-    weights={
-        'love':{'Social & Emotional Intelligence':1.2,'Communication':1.25,'Conflict':1.15,'Repair & Accountability':1.2,'Emotional Rhythm':1.25,'Love Languages / Affection':1.3,'Lifestyle & Values':1.0,'Boundaries':1.15,'Planetary Coordination':1.0},
-        'friendship':{'Social & Emotional Intelligence':1.2,'Communication':1.25,'Conflict':.9,'Repair & Accountability':1.05,'Emotional Rhythm':1.0,'Love Languages / Affection':.55,'Lifestyle & Values':1.1,'Boundaries':1.05,'Planetary Coordination':.9},
-        'business':{'Social & Emotional Intelligence':.8,'Communication':1.3,'Conflict':1.15,'Repair & Accountability':1.15,'Emotional Rhythm':.75,'Love Languages / Affection':.25,'Lifestyle & Values':1.0,'Boundaries':1.15,'Business Collaboration':1.4,'Planetary Coordination':.9},
-        'retreat':{'Social & Emotional Intelligence':1.0,'Communication':.95,'Conflict':.65,'Repair & Accountability':.65,'Emotional Rhythm':1.3,'Love Languages / Affection':.45,'Lifestyle & Values':1.2,'Boundaries':1.1,'Retreat Coordination':1.45,'Planetary Coordination':.85},
-        'family':{'Social & Emotional Intelligence':1.2,'Communication':1.25,'Conflict':1.0,'Repair & Accountability':1.25,'Emotional Rhythm':1.2,'Love Languages / Affection':.55,'Lifestyle & Values':.9,'Boundaries':1.25,'Family Coordination':1.4,'Planetary Coordination':.8},
-        'general':{},
-    }
-    weighted=[]
-    for m in metrics:
-        w=weights[kind].get(m['area'],1.0)
-        weighted.append((m['score'],w))
-    overall=round(sum(score*w for score,w in weighted)/sum(w for _,w in weighted)) if weighted else None
-    level='Complete More Profile Details' if overall is None else ('Strong Alignment' if overall>=78 else 'Promising Coordination' if overall>=62 else 'Worth Exploring' if overall>=45 else 'Needs More Conversation')
-    ordered=sorted(metrics,key=lambda x:x['score'],reverse=True)
+    """Compatibility/coordination adapter backed by the v2 pair engine; private Journal content is excluded."""
+    pair=_pair_coordination_snapshot(me_id,other_id,kind)
+    if not pair.get('ready'): return pair
+    ordered=sorted(pair.get('metrics',[]),key=lambda x:x.get('score',0),reverse=True)
     strength=ordered[0]['area'] if ordered else 'Complete more profile information'
     difference=ordered[-1]['area'] if len(ordered)>1 else 'More information will make this clearer'
-    starter=(f"Your strongest current coordination area is {strength}. What does that look like in day-to-day life for each of you?"
-             if ordered else "What helps each of you feel understood and respected when getting to know someone?")
-    return {'ready':True,'member':bu['name'],'kind':kind,'score':overall,'level':level,'metrics':metrics,
-            'synastry':synastry,'strength':strength,'difference':difference,'conversation_starter':starter,
-            'privacy':'Private Journal content is not used in member-to-member compatibility.'}
+    score=pair.get('score')
+    level='Complete More Profile Details' if score is None else ('Strong Coordination' if score>=78 else 'Promising Coordination' if score>=62 else 'Worth Exploring' if score>=45 else 'Needs More Conversation')
+    return {**pair,'level':level,'strength':strength,'difference':difference,'conversation_starter':f'Your strongest current coordination area is {strength}. What does that look like in day-to-day life for each of you?'}
+
+
+def _responses_output_text(data):
+    parts=[]
+    for item in (data or {}).get('output',[]):
+        for c in item.get('content',[]):
+            if c.get('type')=='output_text' and c.get('text'):
+                parts.append(c['text'])
+    return '\n'.join(parts).strip() or None
+
 
 def _openai_text(prompt):
     if not OPENAI_API_KEY: return None
     payload={'model':ASTROLOGY_AI_MODEL,'input':prompt,'store':False}
     try:
         req=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload).encode('utf-8'),headers={'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},method='POST')
-        with urllib.request.urlopen(req,timeout=45) as r: data=json.loads(r.read().decode('utf-8'))
-        parts=[]
-        for item in data.get('output',[]):
-            for c in item.get('content',[]):
-                if c.get('type')=='output_text' and c.get('text'): parts.append(c['text'])
-        return '\n'.join(parts).strip() or None
-    except Exception: return None
+        with urllib.request.urlopen(req,timeout=60) as r: data=json.loads(r.read().decode('utf-8'))
+        return _responses_output_text(data)
+    except Exception:
+        app.logger.exception('OpenAI text generation failed')
+        return None
+
+
+def _openai_structured(prompt, schema_name, schema):
+    """Use Responses API Structured Outputs so report sections are validated before formatting."""
+    if not OPENAI_API_KEY: return None
+    payload={
+        'model':ASTROLOGY_AI_MODEL,
+        'input':prompt,
+        'store':False,
+        'text':{
+            'format':{
+                'type':'json_schema',
+                'name':re.sub(r'[^A-Za-z0-9_-]+','_',str(schema_name or 'cc_report'))[:64],
+                'strict':True,
+                'schema':schema,
+            }
+        }
+    }
+    try:
+        req=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload).encode('utf-8'),headers={'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},method='POST')
+        with urllib.request.urlopen(req,timeout=75) as r: data=json.loads(r.read().decode('utf-8'))
+        text=_responses_output_text(data)
+        return _cc_parse_json_object(text)
+    except Exception:
+        app.logger.exception('OpenAI structured Conscious Coordination generation failed')
+        return None
 
 
 def _openai_tts_audio(script):
@@ -1622,7 +2185,188 @@ def _openai_tts_audio(script):
         return None
 
 
-REFLECTION_ENGINE_VERSION = 9
+
+def _cc_parse_json_object(value):
+    raw=(value or '').strip()
+    if not raw: return None
+    raw=re.sub(r'^```(?:json)?\s*','',raw,flags=re.I); raw=re.sub(r'\s*```$','',raw)
+    try:
+        obj=json.loads(raw)
+        return obj if isinstance(obj,dict) else None
+    except Exception:
+        start=raw.find('{'); end=raw.rfind('}')
+        if start>=0 and end>start:
+            try:
+                obj=json.loads(raw[start:end+1]); return obj if isinstance(obj,dict) else None
+            except Exception: return None
+    return None
+
+
+def _cc_format_structured_report(sections):
+    order=[
+        ('core_theme','Current Coordination'),
+        ('psychological_interpretation','How This May Show Up'),
+        ('emotional_interpretation','Emotional Context'),
+        ('current_coordination','Where Coordination May Be Available'),
+        ('potential_tension','Where More Conscious Effort May Help'),
+        ('supportive_response','What May Support Coordination'),
+        ('coordination_practice','Coordination Practice'),
+        ('journal_question','A Question to Carry With You'),
+    ]
+    parts=[]
+    for key,heading in order:
+        value=str((sections or {}).get(key,'') or '').strip()
+        if value: parts.append(f'{heading}\n\n{value}')
+    return '\n\n'.join(parts).strip()
+
+
+def _cc_format_daily_structured_report(sections):
+    order=[
+        ('core_theme','What Deserves Your Attention Today'),
+        ('psychological_interpretation','How This May Meet Your Usual Pattern'),
+        ('emotional_interpretation','Emotional Context Today'),
+        ('current_coordination','What May Be Most Useful Today'),
+        ('potential_tension','Where to Slow Down'),
+        ('supportive_response','A Supportive Response'),
+        ('coordination_practice','Today’s Coordination Practice'),
+        ('journal_question','Today’s Journal Question'),
+    ]
+    parts=[]
+    for key,heading in order:
+        value=str((sections or {}).get(key,'') or '').strip()
+        if value: parts.append(f'{heading}\n\n{value}')
+    return '\n\n'.join(parts).strip()
+
+
+def _cc_format_lunar_cycle_report(sections):
+    order=[
+        ('core_theme','Your Lunar-Cycle Orientation'),
+        ('psychological_interpretation','How This Cycle May Meet Your Patterns'),
+        ('current_coordination','Your Conscious Coordination'),
+        ('grounding_direction','Your Grounding Direction'),
+        ('emotional_coordination','Your Emotional Coordination'),
+        ('communication_reflection','Your Communication Reflection'),
+        ('wellness_invitation','Your Wellness Invitation'),
+        ('journal_question','A Question to Carry Through This Cycle'),
+    ]
+    parts=[]
+    for key,heading in order:
+        value=str((sections or {}).get(key,'') or '').strip()
+        if value: parts.append(f'{heading}\n\n{value}')
+    return '\n\n'.join(parts).strip()
+
+
+def _cc_indicator_domain_key(category):
+    mapping={
+        'social-emotional':'Moon','communication':'Mercury','conflict':'Mars','repair-accountability':'Saturn',
+        'emotional-rhythm':'Moon','love-affection':'Venus','lifestyle-values':'Venus','boundaries':'Mars',
+        'business-collaboration':'Saturn','planetary':'Sun','overall':'overall'
+    }
+    return mapping.get(category,'overall')
+
+
+def _coordination_indicator_report_payload(viewer_id, other_id, category):
+    conn=db(); viewer=conn.execute('SELECT * FROM users WHERE id=?',(viewer_id,)).fetchone(); other=conn.execute('SELECT * FROM users WHERE id=?',(other_id,)).fetchone(); viewer_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(viewer_id,)).fetchone(); other_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(other_id,)).fetchone(); conn.close()
+    if not viewer or not other: return {'ready':False,'reason':'Member profile is unavailable.'}
+    is_self=int(viewer_id)==int(other_id); label=COORDINATION_INDICATOR_LABELS.get(category,'Overall Coordination')
+    if is_self:
+        monthly=_personal_monthly_coordination_snapshot(other_id)
+        if not monthly.get('ready'): return monthly
+        scores=member_coordination_scores(other,other_cp)
+        details=scores.get('category_details') or {}
+        if category=='overall':
+            score=scores.get('overall')
+            activation=round(sum(float((monthly.get('planetary',{}).get(p) or {}).get('activation_score',0) or 0)*w for p,w in CC_PERSONAL_OVERALL_WEIGHTS.items()))
+            category_planets=dict(CC_PERSONAL_OVERALL_WEIGHTS)
+        else:
+            detail=details.get(label) or {}
+            score=detail.get('coordination_score')
+            activation=detail.get('activation_score')
+            category_planets=detail.get('planet_weights') or {}
+        if score is None: return {'ready':False,'reason':'This coordination indicator is unavailable.'}
+        period_key=f"{monthly.get('lunar_cycle_id','')}|{category}|v{CC_ENGINE_VERSION}"
+        domain=_cc_indicator_domain_key(category)
+        selected_domains={p:(monthly.get('planetary') or {}).get(p,{}) for p in category_planets}
+        evidence={
+            'score':score,'activation_score':activation,'lunar_cycle_id':monthly.get('lunar_cycle_id'),
+            'current_season':monthly.get('current_season'),'season_scores':monthly.get('season_scores',{}),
+            'domain':domain,'category_planet_weights':category_planets,'domain_evidence':selected_domains,
+            'profile':_profile_psychology_context(dict(other_cp) if other_cp else {}),
+            'journal_themes':monthly.get('journal_theme_snapshot',{}),'privacy':'owner-private structured themes only',
+            'calculation_source':'deterministic current Lunar-cycle coordination engine; AI explains but never chooses score or activation'
+        }
+        report_type=f'personal_indicator_{category}'
+        other_storage_id=0
+        title=f'{label} — {score}%'
+        pronouns='Write to one member about their own current Lunar-cycle Conscious Coordination.'
+        fallback_desc=_coordination_indicator_description(label,other,other_cp)
+        privacy_scope='owner-private'
+    else:
+        pair=basic_compatibility(viewer_id,other_id,'general')
+        if not pair.get('ready'): return pair
+        metric=(next((m for m in pair.get('metrics',[]) if m.get('area')==label),{}) if category!='overall' else {})
+        score=pair.get('score') if category=='overall' else metric.get('score')
+        activation=pair.get('activation_score') if category=='overall' else metric.get('activation_score')
+        if score is None: return {'ready':False,'reason':'This shared coordination indicator is unavailable.'}
+        domain=_cc_indicator_domain_key(category)
+        domain_evidence=(pair.get('domains') or {}).get(domain,{}) if domain!='overall' else pair.get('domains',{})
+        pair_fp=hashlib.sha256(json.dumps({'viewer':viewer_id,'other':other_id,'kind':pair.get('kind'),'score':pair.get('score'),'domains':pair.get('domains')},sort_keys=True,default=str).encode()).hexdigest()[:20]
+        period_key=f'pair:{viewer_id}:{other_id}:{category}:v{CC_ENGINE_VERSION}:{pair_fp}'
+        evidence={
+            'score':score,'activation_score':activation,'relationship_type':'general','domain':domain,
+            'domain_evidence':domain_evidence,'pair_domains':pair.get('domains',{}),
+            'synastry_overall':pair.get('synastry_overall'),'psychological_overall':pair.get('psychological_overall'),
+            'privacy':'no-private-journal','calculation_source':'actual chart-to-chart coordination + two permitted self-reported psychological/behavioral profiles'
+        }
+        report_type=f'pair_indicator_{category}'
+        other_storage_id=other_id
+        title=f'{label} Between You & {other["name"]} — {score}%'
+        pronouns=f'Write to the viewer about how they and {other["name"]} may consciously coordinate. Do not write as if this score belongs to {other["name"]} alone.'
+        fallback_desc=(f'This {label} score belongs to the two people in this view. It combines actual chart-to-chart planetary relationships with the two permitted self-reported psychological/behavioral profiles. Differences are not treated as failures; the purpose is to show where the two people may coordinate naturally and where timing, communication, boundaries or expectations may need more explicit care.')
+        privacy_scope='pair-no-private-journal'
+
+    conn=db(); row=conn.execute('SELECT * FROM coordination_reports WHERE user_id=? AND other_user_id=? AND report_type=? AND period_key=?',(viewer_id,other_storage_id,report_type,period_key)).fetchone(); conn.close()
+    if row and row['written_report']:
+        return {'ready':True,'report_id':row['id'],'report_version':row['report_version'],'title':title,'score':score,'activation_score':activation,'written_report':row['written_report'],'spoken_script':row['spoken_script'],'privacy_scope':row['privacy_scope'],'period_key':period_key}
+
+    schema='''Return ONLY valid JSON with these keys: core_theme, psychological_interpretation, emotional_interpretation, current_coordination, potential_tension, supportive_response, coordination_practice, journal_question, wellness_tags. Every string must be individualized to the supplied evidence. wellness_tags must be a short JSON array of strings.'''
+    instruction=f'''You are writing a professional The Seasons Within Conscious Coordination reflection. {pronouns}
+The deterministic engine already calculated the percentage. Never invent or change it. The coordination score is {score}%. The separate activation value is {activation if activation is not None else 'not displayed'}%. Coordination means ease/integration; activation means how strongly this area is emphasized. Never treat high activation as bad or low coordination as personal failure.
+Astrology is a reflective symbolic framework, not a medical cause or diagnosis. Do not expose degrees, aspects, orbs, algorithms, database fields, questionnaire scoring, or internal process. Do not say “the AI analyzed,” “your questionnaire says,” or “your Journal says.”
+Interpret the interaction between the structured evidence sources rather than paraphrasing questionnaire answers. Explain both coordination and possible activation/tension without labeling a person as good/bad, compatible/incompatible, healthy/unhealthy, or successful/unsuccessful. Use possibility language.
+For a pair report, private Journal information is forbidden. For a personal report, Journal themes may inform the reflection but must never be quoted or identified as the source.
+Avoid stock phrases such as “trust the universe,” “embrace your journey,” “everything happens for a reason,” and generic horoscope language.
+{schema}
+EVIDENCE:\n{json.dumps(evidence,default=str)}'''
+    structured=_openai_structured(instruction,'coordination_indicator',CC_REPORT_JSON_SCHEMA) or _cc_parse_json_object(_openai_text(instruction))
+    if not structured:
+        structured={
+            'core_theme':fallback_desc,
+            'psychological_interpretation':'The useful question is not whether one response style is right or wrong, but how clearly the pattern is recognized and communicated when it matters.',
+            'emotional_interpretation':'Notice whether the pace of emotion, reassurance, space or recovery changes how clearly this area can be coordinated.',
+            'current_coordination':'There is room to work with the strengths already present while keeping the practical needs of this area visible.',
+            'potential_tension':'A difference in timing, interpretation, regulation or expectations may require more explicit communication rather than assumption.',
+            'supportive_response':'Name what is needed in concrete language and leave enough room for the other person—or for yourself—to respond without having to guess.',
+            'coordination_practice':'Before an important response, identify the one need, boundary or decision that matters most and communicate that first.',
+            'journal_question':'What would become easier if the most important need were made clear before the explanation around it?',
+            'wellness_tags':['clarity','grounding','communication']
+        }
+    written=_cc_format_structured_report(structured)
+    spoken_prompt=f'''Create ONLY a warm, calm, natural spoken listening script for this exact Conscious Coordination report. Preserve the same meaning and recommendations but do not read webpage headings aloud. Do not add new advice, astrology mechanics, diagnosis, or private-source references.\n\nWRITTEN REPORT:\n{written}'''
+    spoken=_openai_text(spoken_prompt) or re.sub(r'\n+',' ',written)
+    normalized=_normalize_report_text(written); digest=hashlib.sha256(normalized.encode()).hexdigest(); fingerprint=hashlib.sha256(json.dumps(evidence,sort_keys=True,default=str).encode()).hexdigest()
+    conn=db()
+    try:
+        cur=conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,spoken_script=excluded.spoken_script,evidence_summary=excluded.evidence_summary,privacy_scope=excluded.privacy_scope,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',(viewer_id,other_storage_id,report_type,period_key,1,written,spoken,'',json.dumps({'score':score,'structured':structured},default=str),privacy_scope,fingerprint,digest,now(),now()))
+        rid=cur.lastrowid
+        if not rid:
+            rr=conn.execute('SELECT id,report_version FROM coordination_reports WHERE user_id=? AND other_user_id=? AND report_type=? AND period_key=?',(viewer_id,other_storage_id,report_type,period_key)).fetchone(); rid=rr['id'] if rr else None
+        conn.commit()
+    finally: conn.close()
+    return {'ready':True,'report_id':rid,'report_version':1,'title':title,'score':score,'activation_score':activation,'written_report':written,'spoken_script':spoken,'privacy_scope':privacy_scope,'period_key':period_key}
+
+
+REFLECTION_ENGINE_VERSION = 12
 
 def _angle_distance(a,b):
     try:
@@ -1882,9 +2626,23 @@ def _current_lunar_cycle_chart(current_sky=None):
             break
     cycle_planets=_planet_positions_at_utc(guess) if refined else {}
     cycle_id=(guess.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%MZ') if cycle_planets else 'approx-'+guess.astimezone(timezone.utc).strftime('%Y-%m-%d'))
+    # Find the next beginning-of-cycle conjunction from the previous one. This is
+    # internal astronomical timing; member-facing copy continues to use Lunar Cycle.
+    next_guess=guess+timedelta(days=29.530588)
+    next_refined=False
+    for _ in range(10):
+        at=_planet_positions_at_utc(next_guess)
+        if not at: break
+        s=(at.get('Sun') or {}).get('longitude'); m=(at.get('Moon') or {}).get('longitude')
+        if s is None or m is None: break
+        signed=((float(m)-float(s)+180)%360)-180
+        next_guess=next_guess-timedelta(days=signed/relative_speed)
+        next_refined=True
+        if abs(signed)<0.0005: break
     return {
         'cycle_id':cycle_id,
         'started_utc':guess.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+        'next_started_utc':next_guess.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z') if next_refined else '',
         'planets':cycle_planets,
         'source':'Swiss Ephemeris lunar-cycle chart' if cycle_planets else 'lunar-cycle estimate from current factual sky',
         'exact_chart':bool(cycle_planets),
@@ -1993,6 +2751,27 @@ JOURNAL CHUNK:
         'compression':compression,
         'privacy':'Use only for this member’s own private personalization; never expose entries to another member.'
     }
+
+def _cc_journal_evidence_packet(journal_context):
+    """Return only structured private themes for report generation.
+
+    Raw Journal bodies stay in the Journal store.  Report writers receive theme
+    strength/relevance and a continuity fingerprint, never a dump of entries.
+    """
+    journal_context=journal_context or {}
+    counts=journal_context.get('theme_counts') or {}
+    maximum=max([float(v or 0) for v in counts.values()] or [1.0])
+    strengths={k:round(min(1.0,float(v or 0)/maximum),3) for k,v in counts.items() if float(v or 0)>0}
+    ranked=[k for k,_ in sorted(strengths.items(),key=lambda kv:(-kv[1],kv[0]))[:8]]
+    return {
+        'entry_count':int(journal_context.get('entry_count',0) or 0),
+        'history_fingerprint':journal_context.get('history_fingerprint',''),
+        'current_themes':ranked,
+        'theme_strength':strengths,
+        'theme_counts':{k:counts.get(k,0) for k in ranked},
+        'privacy':'Owner-private structured themes only. Never quote or expose Journal entries.'
+    }
+
 
 def _normalize_reading_text(value):
     value=html.unescape(value or '').lower()
@@ -2128,6 +2907,22 @@ def _generate_unique_reflection(user_id,reading_type,context_key,instruction,dat
             continue
         if _register_unique_reading(user_id,reading_type,context_key,candidate):
             return candidate,True
+    # If the configured language model is unavailable, preserve the member's
+    # experience with a deterministic evidence-based fallback instead of showing
+    # a permanent "temporarily unavailable" card. The fallback still passes the
+    # same validator and duplicate checks.
+    if fallback_factory is not None:
+        for variant in range(12):
+            candidate=(fallback_factory(variant) or '').strip()
+            if not candidate:
+                continue
+            if validator is not None and not validator(candidate):
+                continue
+            duplicate,_=_reading_similarity_status(candidate)
+            if duplicate:
+                continue
+            if _register_unique_reading(user_id,reading_type,context_key,candidate):
+                return candidate,False
     raise RuntimeError('A sufficiently unique Conscious Coordination reading could not be generated for this exact context.')
 
 LUNAR_SEASON_MASTER_INSTRUCTION = '''
@@ -2150,9 +2945,9 @@ The symbolic season is not chosen from the outdoor calendar. Never frame Winter 
 
 WRITTEN EXPERIENCE
 Begin with “♡ Your Lunar Season Within” and “Your Current Season.” Use natural headings such as:
-- What Deserves Your Attention
+- Your Lunar-Cycle Orientation
 - Your Conscious Coordination
-- Your Grounding Reset
+- Your Grounding Direction
 - Your Emotional Coordination
 - Your Communication Reflection
 - Your Wellness Invitation
@@ -2277,6 +3072,14 @@ def _lunar_season_scores(ctx):
     return scores
 
 def _lunar_season_for_context(ctx):
+    member_id=(ctx or {}).get('member_id')
+    if member_id:
+        try:
+            snapshot=_personal_monthly_coordination_snapshot(int(member_id))
+            if snapshot.get('ready') and snapshot.get('current_season'):
+                return snapshot['current_season']
+        except Exception:
+            app.logger.exception('Could not load structured Lunar-cycle season snapshot')
     scores=_lunar_season_scores(ctx)
     # Stable tie-break order prevents random season changes for identical evidence.
     order=['Spring','Summer','Autumn','Winter']
@@ -2548,8 +3351,17 @@ def _lunar_season_experience(user_id,minutes=5):
     minutes=minutes if minutes in (5,10,15) else 5
     ctx=_reflection_context(user_id)
     ctx['behavioral_insights']=_behavioral_insights(ctx.get('profile') or {})
-    season=_lunar_season_for_context(ctx)
+    monthly_snapshot=_personal_monthly_coordination_snapshot(user_id)
+    season=(monthly_snapshot.get('current_season') if monthly_snapshot.get('ready') else None) or _lunar_season_for_context(ctx)
     ctx['lunar_season']=season
+    ctx['monthly_coordination_snapshot']={
+        'lunar_cycle_id':monthly_snapshot.get('lunar_cycle_id'),
+        'current_season':monthly_snapshot.get('current_season'),
+        'season_scores':monthly_snapshot.get('season_scores',{}),
+        'overall_coordination':monthly_snapshot.get('overall_coordination'),
+        'planetary':{k:{'coordination_score':v.get('coordination_score'),'activation_score':v.get('activation_score')} for k,v in (monthly_snapshot.get('planetary') or {}).items()},
+        'calculation_note':monthly_snapshot.get('calculation_note','')
+    }
     journal=ctx.get('journal_history') or {}
     cycle=(ctx.get('lunar_cycle_chart') or {}).get('cycle_id') or datetime.utcnow().strftime('%Y-%m')
     fingerprint_packet={
@@ -2565,7 +3377,7 @@ def _lunar_season_experience(user_id,minutes=5):
         'engine_version':REFLECTION_ENGINE_VERSION,
     }
     context_fingerprint=hashlib.sha256(json.dumps(fingerprint_packet,sort_keys=True,default=str).encode('utf-8')).hexdigest()
-    base_period=f'{cycle}|c:{context_fingerprint[:24]}'
+    base_period=f'{cycle}|monthly-v{CC_ENGINE_VERSION}'
     meditation_period=f'{base_period}|m:{minutes}'
 
     data=dict(ctx)
@@ -2607,21 +3419,40 @@ def _lunar_season_experience(user_id,minutes=5):
     else:
         report_instruction=LUNAR_SEASON_MASTER_INSTRUCTION+f'''
 Create the WRITTEN member experience now.
-The selected symbolic season is {season}. Do not explain how it was selected.
-Silently synthesize useful long-running patterns without identifying Journal material as the source.
-Never mention missing information, internal evidence, profile fields, databases, or how the reflection was generated.
+The selected symbolic season is {season}. Do not explain how it was selected and do not choose a different season.
+Silently synthesize the calculated Lunar-cycle evidence, psychological patterns and structured current-life themes without identifying Journal material as the source.
+Never mention missing information, internal evidence, profile fields, databases, scores, degrees, aspect mechanics, or how the reflection was generated.
 Keep the written reflection focused, personal and specific rather than technical or generic.
-Because My Journal supplies the section heading, do not repeat “Your Lunar Season Within,” the current-season title, or “What Deserves Your Attention.” Begin directly with the individualized reflection.
+Because My Journal supplies the section heading, do not repeat “Your Lunar Season Within” or the current-season title. This is the Lunar-cycle report; do not create the separate daily “What Deserves Your Attention” entry here.
+Return ONLY valid JSON with keys: core_theme, psychological_interpretation, current_coordination, grounding_direction, emotional_coordination, communication_reflection, wellness_invitation, journal_question, wellness_tags. wellness_tags must be a short JSON array of strings.
 '''
-        report,_=_generate_unique_reflection(
-            user_id,'lunar_season_report',base_period,report_instruction,data,
-            lambda variant:_lunar_season_report_fallback(ctx,season,variant)
-        )
+        report=''; structured_report=None
+        for attempt in range(6):
+            seed=_unique_generation_seed(user_id,'lunar_season_report',base_period,journal,attempt)
+            obj=_openai_structured(report_instruction+f'\nInternal composition seed (never print): {seed}.\nEVIDENCE:\n'+json.dumps(data,default=str),'lunar_cycle_coordination',CC_LUNAR_REPORT_JSON_SCHEMA) or _cc_parse_json_object(_openai_text(report_instruction+f'\nInternal composition seed (never print): {seed}.\nEVIDENCE:\n'+json.dumps(data,default=str)))
+            if not obj: continue
+            candidate=_cc_format_lunar_cycle_report(obj)
+            if not _cc_report_quality_ok(candidate): continue
+            duplicate,_=_reading_similarity_status(candidate)
+            if duplicate: continue
+            if _register_unique_reading(user_id,'lunar_season_report',base_period,candidate):
+                report=candidate; structured_report=obj; break
+        if not report:
+            report=_lunar_season_report_fallback(ctx,season,0)
+            structured_report={'fallback':True}
+            _register_unique_reading(user_id,'lunar_season_report',base_period,report)
         save_payload('lunar_season_report',base_period,{
             'engine_version':REFLECTION_ENGINE_VERSION,
             'text':report,
+            'structured_sections':structured_report,
             'season':season
         })
+        digest=hashlib.sha256(_normalize_report_text(report).encode()).hexdigest()
+        conn=db()
+        conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,evidence_summary=excluded.evidence_summary,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',
+            (user_id,0,'current_season_lunar_cycle',base_period,1,report,'','',json.dumps({'season':season,'structured_sections':structured_report},default=str),'owner-private',context_fingerprint,digest,now(),now()))
+        conn.commit(); conn.close()
 
     spoken_cached=cached_payload('lunar_season_spoken',base_period)
     if spoken_cached:
@@ -2637,15 +3468,19 @@ Never mention internal data sources, Journal history, technical astrology, missi
 '''
         spoken_data=dict(data)
         spoken_data['written_reflection_for_context_only']=report
-        spoken,_=_generate_unique_reflection(
-            user_id,'lunar_season_spoken',base_period,spoken_instruction,spoken_data,
-            lambda variant:_spoken_reflection_fallback(ctx,season,report,variant)
-        )
+        try:
+            spoken,_=_generate_unique_reflection(
+                user_id,'lunar_season_spoken',base_period,spoken_instruction,spoken_data,
+                lambda variant:_spoken_reflection_fallback(ctx,season,report,variant)
+            )
+        except RuntimeError:
+            spoken=_spoken_reflection_fallback(ctx,season,report,99)
         save_payload('lunar_season_spoken',base_period,{
             'engine_version':REFLECTION_ENGINE_VERSION,
             'text':spoken,
             'season':season
         })
+        conn=db(); conn.execute('UPDATE coordination_reports SET spoken_script=?,audio_reference=?,updated_at=? WHERE user_id=? AND other_user_id=0 AND report_type=? AND period_key=?',(spoken,'lunar-season-audio:'+hashlib.sha256((base_period+'|'+spoken).encode()).hexdigest()[:16],now(),user_id,'current_season_lunar_cycle',base_period)); conn.commit(); conn.close()
 
     meditation_cached=cached_payload('lunar_season_meditation',meditation_period)
     if meditation_cached:
@@ -2664,10 +3499,13 @@ Use natural pauses and a calm closing intention.
 Do not announce technical headings while speaking.
 Never mention Journal data, astrology mechanics, data availability, profile fields, databases, or how the meditation was generated.
 '''
-        meditation,_=_generate_unique_reflection(
-            user_id,'lunar_season_meditation',meditation_period,meditation_instruction,meditation_data,
-            lambda variant:_meditation_fallback(ctx,season,minutes,variant)
-        )
+        try:
+            meditation,_=_generate_unique_reflection(
+                user_id,'lunar_season_meditation',meditation_period,meditation_instruction,meditation_data,
+                lambda variant:_meditation_fallback(ctx,season,minutes,variant)
+            )
+        except RuntimeError:
+            meditation=_meditation_fallback(ctx,season,minutes,99)
         save_payload('lunar_season_meditation',meditation_period,{
             'engine_version':REFLECTION_ENGINE_VERSION,
             'text':meditation,
@@ -2724,7 +3562,7 @@ def _reflection_context(user_id):
     profile=dict(cp) if cp else {}
     current_aspects=_chart_sky_aspects(chart,sky) if chart.get('ready') else []
     cycle_aspects=_chart_sky_aspects(chart,lunar_cycle) if chart.get('ready') and lunar_cycle.get('planets') else []
-    journal_history=_all_journal_context(user_id)
+    journal_history=_cc_journal_evidence_packet(_all_journal_context(user_id))
     return {
         'engine_version':REFLECTION_ENGINE_VERSION,
         'member':u['name'],
@@ -3518,6 +4356,7 @@ def profile():
         return page('My Journal',content,'profile')
 
     chart=member_chart_data(u); planet_cards=[]
+    monthly_snapshot=_personal_monthly_coordination_snapshot(u['id'])
     if chart.get('ready'):
         planet_domains={'Sun':'Self & Direction','Moon':'Emotional Safety & Regulation','Mercury':'Communication & Interpretation','Venus':'Connection, Affection & Values','Mars':'Action, Boundaries & Conflict','Jupiter':'Growth, Possibility & Meaning','Saturn':'Structure, Responsibility & Stability'}
         for name in PLANET_NAMES:
@@ -3525,42 +4364,70 @@ def profile():
             if not placement: continue
             display_name='LUNAR' if name=='Moon' else name.upper(); spoken_name='Lunar' if name=='Moon' else name.title(); glyph=PLANET_GLYPHS.get(name,'')
             sensitive=' • birth-time sensitive' if placement.get('time_sensitive') else ''
+            month_item=((monthly_snapshot.get('planetary') or {}).get(name) or {}) if monthly_snapshot.get('ready') else {}
+            coord_score=month_item.get('coordination_score'); activation_score=month_item.get('activation_score')
+            score_note=(f' • {coord_score}% Coordination • {activation_score}% Activation' if coord_score is not None and activation_score is not None else '')
             inline_url=url_for('planet_interpretation',user_id=u['id'],planet=name.lower(),inline=1)
             audio_url=url_for('planet_interpretation_audio',user_id=u['id'],planet=name.lower())
-            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="none" src="{html.escape(audio_url,quote=True)}" style="width:min(420px,100%)"></audio></div><p class="muted small">🎧 Listen to My {html.escape(spoken_name)} Reflection uses a separate listening script tied to this exact report.</p></div></details>''')
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}{html.escape(score_note)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="none" src="{html.escape(audio_url,quote=True)}" style="width:min(420px,100%)"></audio></div><p class="muted small">🎧 Listen to My {html.escape(spoken_name)} Reflection uses a separate listening script tied to this exact report.</p></div></details>''')
         if chart.get('time_approximate'):
             planet_cards.append('<p class="muted small">Birth time is unknown, so Rising and houses are not shown. A time-sensitive lunar placement is identified rather than treated as certain.</p>')
     else:
         planet_cards.append(f'''<article class="card"><p class="muted">Complete the birth information in Edit My Profile before planetary placements can be calculated accurately.</p><a class="out" href="{url_for('edit_profile')}">Edit My Profile</a></article>''')
-    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own individualized written reflection and its own matching spoken reflection.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
+    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own Lunar-cycle Coordination percentage, separate Activation percentage, individualized written reflection and matching spoken reflection. These refresh with the next Lunar cycle while your natal chart remains your permanent foundation.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
 
     try: minutes=int(request.args.get('minutes','5'))
     except Exception: minutes=5
     if minutes not in (5,10,15): minutes=5
-    experience=None; generation_error=''
-    try: experience=_lunar_season_experience(u['id'],minutes)
-    except RuntimeError:
-        generation_error='Your personalized Conscious Coordination reflection is temporarily unavailable. Please try again shortly.'
-    except Exception:
-        generation_error='Your personalized Conscious Coordination reflection is temporarily unavailable. Please try again shortly.'; app.logger.exception('Could not build My Journal Conscious Coordination experience')
 
-    if experience:
-        season=experience['season']; info=LUNAR_SEASONS[season]
-        season_themes=''.join(f'<span class="chip">{html.escape(x.title())}</span>' for x in info.get('themes',[])[:5])
-        report=re.sub(r'^\s*(What Deserves Your Attention\s*[:\-]?\s*)','',(experience.get('report','') or '').strip(),flags=re.I)
-        report_html=html.escape(report).replace(chr(10),'<br>'); meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>'); reiki=experience.get('reiki') or {}
-        audio_html=_lunar_sound_player_html(season,minutes,experience.get('audio_key',''))
-        journal_link=url_for('journal',category='Conscious Coordination',title='My Seasons Within Reflection',prompt=(experience.get('report','') or '')[-900:])
-        season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR CURRENT SEASON WITHIN</span><h2>{info['emoji']} {html.escape(season)} — {html.escape(info['subtitle'])}</h2><div class="chips">{season_themes}</div></article>'''
-        reflection_section=f'''<article class="card" id="reflection"><span class="badge heart">WHAT DESERVES YOUR ATTENTION</span><h2>What Deserves Your Attention</h2><div style="line-height:1.8">{report_html}</div><div class="actions"><a class="out" href="{journal_link}#new-entry">Journal About This Reflection</a></div></article>'''
-        meditation_section=f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘 Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>'''
-        reiki_section=f'''<article class="card" id="reiki"><span class="badge heart">♡ YOUR REIKI REFLECTION</span><h2>{html.escape(reiki.get('focus','Reflection'))}</h2><p><b>Suggested duration:</b> {html.escape(reiki.get('duration','10–20 minutes'))}</p><p><b>Intention:</b> {html.escape(reiki.get('intention','I can make room for reflection without forcing an answer.'))}</p><p class="muted small">Reiki is offered as a complementary wellness and reflective practice, not as treatment or a cure.</p></article>'''
+    # My Journal is driven by deterministic monthly/daily evidence first. AI is the
+    # communication layer; a report-generation problem must never revert the page
+    # to a generic or stale seasonal assignment.
+    if monthly_snapshot.get('ready'):
+        season=monthly_snapshot.get('current_season') or 'Winter'
     else:
+        try: season=_lunar_season_for_context(_reflection_context(u['id']))
+        except Exception: season='Winter'
+    info=LUNAR_SEASONS.get(season,LUNAR_SEASONS['Winter'])
+    season_themes=''.join(f'<span class="chip">{html.escape(x.title())}</span>' for x in info.get('themes',[])[:5])
+
+    experience={}
+    try:
+        experience=_lunar_season_experience(u['id'],minutes) or {}
+    except Exception:
+        app.logger.exception('Could not prepare optional Lunar-cycle listening/meditation experience')
+
+    monthly_report=(experience.get('report') or '').strip()
+    if not monthly_report:
         try:
-            ctx=_reflection_context(u['id']); season=_lunar_season_for_context(ctx); info=LUNAR_SEASONS[season]; season_themes=''.join(f'<span class="chip">{html.escape(x.title())}</span>' for x in info.get('themes',[])[:5]); season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR CURRENT SEASON WITHIN</span><h2>{info['emoji']} {html.escape(season)} — {html.escape(info['subtitle'])}</h2><div class="chips">{season_themes}</div></article>'''
-        except Exception: season_section=''
-        reflection_section=f'''<article class="card"><span class="badge heart">WHAT DESERVES YOUR ATTENTION</span><h2>What Deserves Your Attention</h2><p class="muted">{html.escape(generation_error)}</p></article>'''
-        audio_html=''; meditation_section=''; reiki_section=''
+            ctx=_reflection_context(u['id']); monthly_report=_lunar_season_report_fallback(ctx,season,99)
+        except Exception:
+            monthly_report='This Lunar cycle is being held as a reflective orientation around the patterns currently most active for you. Use the season as a guide for pacing, not as a prediction.'
+    monthly_report_html=html.escape(monthly_report).replace(chr(10),'<br>')
+    monthly_audio_url=url_for('conscious_coordination_audio',kind='reflection',minutes=minutes,v=monthly_snapshot.get('lunar_cycle_id',''))
+
+    try:
+        daily=_daily_attention_reflection(u['id'])
+    except Exception:
+        app.logger.exception('Could not prepare daily attention reflection')
+        daily={'ready':False}
+    daily_text=(daily.get('written_report') or '').strip() if daily.get('ready') else ''
+    if not daily_text:
+        snapshot=_daily_attention_snapshot(u['id']) if monthly_snapshot.get('ready') else {}
+        daily_text=f"Today may place more attention on {snapshot.get('primary_theme','what needs your attention')}. Give the most activated area enough room to become specific before deciding what requires action."
+    report=re.sub(r'^\s*(What Deserves Your Attention(?: Today)?\s*[:\-]?\s*)','',daily_text,flags=re.I)
+    report_html=html.escape(report).replace(chr(10),'<br>')
+    daily_audio_url=url_for('daily_attention_audio',user_id=u['id'],v=daily.get('date',''))
+    journal_link=url_for('journal',category='Conscious Coordination',title='What Deserves My Attention Today',prompt=report[-900:])
+
+    season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR CURRENT SEASON WITHIN</span><h2>{info['emoji']} {html.escape(season)} — {html.escape(info['subtitle'])}</h2><div class="chips">{season_themes}</div><details style="margin-top:14px"><summary style="cursor:pointer;font-weight:800">Read + Listen ⌄</summary><div style="line-height:1.8;margin-top:14px">{monthly_report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(monthly_audio_url,quote=True)}" style="width:min(420px,100%)"></audio></div><p class="muted small">This report belongs to the current Lunar cycle and refreshes when the next cycle begins.</p></details></article>'''
+    reflection_section=f'''<article class="card" id="reflection"><span class="badge heart">WHAT DESERVES YOUR ATTENTION</span><h2>What Deserves Your Attention</h2><div style="line-height:1.8">{report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(daily_audio_url,quote=True)}" style="width:min(420px,100%)"></audio><a class="out" href="{journal_link}#new-entry">Journal About This Reflection</a></div><p class="muted small">This is today’s reflection inside the larger Lunar-cycle theme and can change with today’s Lunar and planetary conditions.</p></article>'''
+
+    meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>') if experience.get('meditation') else ''
+    reiki=experience.get('reiki') or {}
+    audio_html=_lunar_sound_player_html(season,minutes,experience.get('audio_key','')) if experience.get('spoken') else ''
+    meditation_section=(f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘 Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>''' if meditation_html else '')
+    reiki_section=(f'''<article class="card" id="reiki"><span class="badge heart">♡ YOUR REIKI REFLECTION</span><h2>{html.escape(reiki.get('focus','Reflection'))}</h2><p><b>Suggested duration:</b> {html.escape(reiki.get('duration','10–20 minutes'))}</p><p><b>Intention:</b> {html.escape(reiki.get('intention','I can make room for reflection without forcing an answer.'))}</p><p class="muted small">Reiki is offered as a complementary wellness and reflective practice, not as treatment or a cure.</p></article>''' if reiki else '')
 
     shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     public_html=public_journal_cards(u['id'],u['id'])
@@ -3884,11 +4751,22 @@ def api_coordination_compatibility(user_id):
 
 @app.route('/api/coordination/reflection/daily')
 @login_required
-def api_daily_reflection(): return jsonify(get_astrology_reflection(current_user()['id'],'daily'))
+def api_daily_reflection(): return jsonify(_daily_attention_reflection(current_user()['id']))
 
 @app.route('/api/coordination/reflection/monthly')
 @login_required
-def api_monthly_reflection(): return jsonify(get_astrology_reflection(current_user()['id'],'monthly'))
+def api_monthly_reflection():
+    u=current_user(); monthly=_personal_monthly_coordination_snapshot(u['id'])
+    if not monthly.get('ready'): return jsonify(monthly)
+    try: experience=_lunar_season_experience(u['id'],5)
+    except Exception: experience={}
+    return jsonify({
+        'ready':True,'engine_version':CC_ENGINE_VERSION,'lunar_cycle_id':monthly.get('lunar_cycle_id'),
+        'current_season':monthly.get('current_season'),'season_scores':monthly.get('season_scores',{}),
+        'overall_coordination':monthly.get('overall_coordination'),
+        'planetary':{k:{'coordination_score':v.get('coordination_score'),'activation_score':v.get('activation_score')} for k,v in (monthly.get('planetary') or {}).items()},
+        'written_report':experience.get('report',''),'spoken_script':experience.get('spoken','')
+    })
 
 @app.route('/journal/daily-reflection',methods=['GET','POST'])
 @login_required
@@ -3901,6 +4779,21 @@ def daily_astrology_reflection():
 
 def monthly_coordination_reflection():
     return redirect(url_for('astrology_reflections')+'#lunar')
+
+
+@app.route('/conscious-coordination/daily/<int:user_id>/audio')
+@login_required
+def daily_attention_audio(user_id):
+    me=current_user()
+    if int(user_id)!=int(me['id']): abort(403)
+    try: payload=_daily_attention_reflection(user_id)
+    except Exception:
+        app.logger.exception('Could not prepare daily Conscious Coordination listening script'); abort(503)
+    script=(payload or {}).get('spoken_script','')
+    if not script: abort(503)
+    audio=_openai_tts_audio(script)
+    if not audio: abort(503)
+    return app.response_class(audio,status=200,mimetype='audio/mpeg',headers={'Cache-Control':'private, max-age=86400','Content-Disposition':'inline; filename="daily-conscious-coordination.mp3"','X-Content-Type-Options':'nosniff'})
 
 
 @app.route('/conscious-coordination/audio/<kind>')
@@ -4079,7 +4972,8 @@ ZODIAC_WHEEL_SIGNS = [
     ('♌','Leo'),('♍','Virgo'),('♎','Libra'),('♏','Scorpio'),
     ('♐','Sagittarius'),('♑','Capricorn'),('♒','Aquarius'),('♓','Pisces')
 ]
-PLANET_GLYPHS = {'Sun':'☉','Moon':'☽','Mercury':'☿','Venus':'♀','Mars':'♂','Jupiter':'♃','Saturn':'♄'}
+PLANET_GLYPHS = {'Sun':'☉','Moon':'☽','Mercury':'☿','Venus':'♀','Mars':'♂','Jupiter':'♃','Saturn':'♄','Uranus':'♅','Neptune':'♆','Pluto':'♇','Rising':'ASC'}
+NATAL_WHEEL_PLANETS=('Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto')
 
 def _zodiac_wheel_html(chart, member_name='Member'):
     planets=(chart or {}).get('planets') or {}
@@ -4105,7 +4999,24 @@ def _zodiac_wheel_html(chart, member_name='Member'):
         tick_inner=outer-(8 if degree%30==0 else 4)
         x1,y1=point(tick_inner,degree); x2,y2=point(outer,degree)
         svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="{1.2 if degree%30==0 else .55}" opacity=".24"/>')
-    order=[p for p in PLANET_NAMES if planets.get(p)]
+    # Draw houses only when exact birth time/location produced factual cusps.
+    houses=(chart or {}).get('houses') or []
+    if len(houses)>=12:
+        for i,cusp in enumerate(houses[:12]):
+            try: longitude=float(cusp)%360.0
+            except (TypeError,ValueError): continue
+            x1,y1=point(76,longitude); x2,y2=point(inner-4,longitude)
+            svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="0.8" opacity=".16"/>')
+            lx,ly=point(83,longitude+4.0)
+            svg.append(f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="8" opacity=".42">{i+1}</text>')
+    rising=(chart or {}).get('rising') or (chart or {}).get('ascendant') or {}
+    if rising.get('longitude') is not None:
+        try:
+            rx,ry=point(inner-12,float(rising.get('longitude'))%360.0)
+            svg.append(f'<circle cx="{rx:.1f}" cy="{ry:.1f}" r="11" fill="var(--lav)" stroke="var(--purple)" stroke-width="1.2"/>')
+            svg.append(f'<text x="{rx:.1f}" y="{ry:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="800">ASC</text>')
+        except (TypeError,ValueError): pass
+    order=[p for p in NATAL_WHEEL_PLANETS if planets.get(p)]
     for index,pname in enumerate(order):
         placement=planets[pname]
         try: longitude=float(placement.get('longitude'))%360.0
@@ -4115,6 +5026,74 @@ def _zodiac_wheel_html(chart, member_name='Member'):
         svg.append(f'<line x1="{cx}" y1="{cy}" x2="{ex:.1f}" y2="{ey:.1f}" stroke="currentColor" stroke-width=".7" opacity=".10"/>')
         svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="14" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".98"/>')
         svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(pname,quote=True)}">{glyph}</text>')
+    svg.append('</svg>')
+    return ''.join(svg)
+
+
+def _comparison_zodiac_wheel_html(chart_a,chart_b,name_a='You',name_b='Member'):
+    """Overlay two factual natal wheels using the same longitude transform as the personal wheel."""
+    ap=(chart_a or {}).get('planets') or {}; bp=(chart_b or {}).get('planets') or {}
+    if not (chart_a or {}).get('ready') or not (chart_b or {}).get('ready') or not ap or not bp:
+        return '<div class="empty"><h3>Coordination wheel unavailable</h3><p class="muted">Both members need complete birth information for chart-to-chart coordination.</p></div>'
+    cx=240; cy=240; outer=198; inner=150; sign_r=175
+    def point(radius,longitude):
+        angle=math.radians(180.0-float(longitude))
+        return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
+    svg=[f'<svg viewBox="0 0 480 520" role="img" aria-label="{html.escape(name_a,quote=True)} and {html.escape(name_b,quote=True)} Conscious Coordination comparison wheel" style="width:100%;max-width:560px;height:auto;display:block;margin:0 auto">']
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="{inner}" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".22"/>')
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="86" fill="none" stroke="currentColor" stroke-width="1" opacity=".12"/>')
+    for i,(glyph,name) in enumerate(ZODIAC_WHEEL_SIGNS):
+        longitude=i*30.0; x1,y1=point(inner,longitude); x2,y2=point(outer,longitude); sx,sy=point(sign_r,longitude+15.0)
+        svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="1" opacity=".28"/>')
+        svg.append(f'<text x="{sx:.1f}" y="{sy:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="24" aria-label="{html.escape(name,quote=True)}">{glyph}</text>')
+    for degree in range(0,360,5):
+        tick_inner=outer-(8 if degree%30==0 else 4); x1,y1=point(tick_inner,degree); x2,y2=point(outer,degree)
+        svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="currentColor" stroke-width="{1.2 if degree%30==0 else .55}" opacity=".22"/>')
+    # Reliable houses remain factual geometry.  Each member's cusps are drawn
+    # in a separate ring without changing either person's zodiac longitudes.
+    for houses,r1,r2,stroke,dash in [
+        ((chart_a or {}).get('houses') or [],88,146,'var(--purple)',''),
+        ((chart_b or {}).get('houses') or [],88,118,'var(--plum)','4 4'),
+    ]:
+        if len(houses)>=12:
+            for cusp in houses[:12]:
+                try: longitude=float(cusp)%360.0
+                except (TypeError,ValueError): continue
+                x1,y1=point(r1,longitude); x2,y2=point(r2,longitude)
+                dash_attr=f' stroke-dasharray="{dash}"' if dash else ''
+                svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{stroke}" stroke-width="0.8" opacity=".18"{dash_attr}/>')
+    # Cross-chart aspect lines use exact longitude relationships.
+    contacts=[]
+    for pa in NATAL_WHEEL_PLANETS:
+        for pb in NATAL_WHEEL_PLANETS:
+            alon=(ap.get(pa) or {}).get('longitude'); blon=(bp.get(pb) or {}).get('longitude')
+            if alon is None or blon is None: continue
+            aspect=_cc_detect_aspect(alon,blon)
+            if aspect and aspect.get('strength',0)>=0.25:
+                contacts.append((aspect.get('strength',0),pa,pb,float(alon),float(blon),aspect.get('aspect')))
+    for strength,pa,pb,alon,blon,aspect_name in sorted(contacts,reverse=True)[:26]:
+        ax,ay=point(122,alon); bx,by=point(98,blon)
+        svg.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="var(--purple)" stroke-width="{0.7+1.3*float(strength):.2f}" opacity="{0.10+0.28*float(strength):.2f}"/>')
+    for radius,planets,fill,stroke,who in [(126,ap,'var(--lav)','var(--purple)',name_a),(98,bp,'#fff1ef','var(--plum)',name_b)]:
+        for index,pname in enumerate([p for p in NATAL_WHEEL_PLANETS if planets.get(p)]):
+            placement=planets[pname]
+            try: longitude=float(placement.get('longitude'))%360.0
+            except (TypeError,ValueError): continue
+            px,py=point(radius+(index%3-1)*6,longitude); glyph=PLANET_GLYPHS.get(pname,pname[:1])
+            svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="13" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
+            svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="18" font-weight="700" fill="{stroke}" aria-label="{html.escape(who+" "+pname,quote=True)}">{glyph}</text>')
+    for rising,radius,fill,stroke,who in [
+        (((chart_a or {}).get('rising') or (chart_a or {}).get('ascendant') or {}),136,'var(--lav)','var(--purple)',name_a),
+        (((chart_b or {}).get('rising') or (chart_b or {}).get('ascendant') or {}),108,'#fff1ef','var(--plum)',name_b),
+    ]:
+        if rising.get('longitude') is None: continue
+        try: rx,ry=point(radius,float(rising.get('longitude'))%360.0)
+        except (TypeError,ValueError): continue
+        svg.append(f'<circle cx="{rx:.1f}" cy="{ry:.1f}" r="10" fill="{fill}" stroke="{stroke}" stroke-width="1.2"/>')
+        svg.append(f'<text x="{rx:.1f}" y="{ry:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="800" fill="{stroke}" aria-label="{html.escape(who+' Rising',quote=True)}">ASC</text>')
+    svg.append(f'<text x="240" y="486" text-anchor="middle" font-size="12" fill="var(--purple)">● {html.escape(name_a)}</text>')
+    svg.append(f'<text x="240" y="506" text-anchor="middle" font-size="12" fill="var(--plum)">● {html.escape(name_b)}</text>')
     svg.append('</svg>')
     return ''.join(svg)
 
@@ -4169,56 +5148,47 @@ def _coordination_indicator_description(label, user, cp_row):
 @login_required
 def coordination_indicator_detail(user_id,category):
     me=current_user()
-    conn=db()
-    user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
-    cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
-    conn.close()
-    if not user:
-        abort(404)
+    conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
+    if not user: abort(404)
     is_self=(me['id']==user_id)
     if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
         flash('Upgrade to open the full Conscious Coordination descriptions for another member.','info')
         return redirect(url_for('connection_profile',user_id=user_id))
-    label=COORDINATION_INDICATOR_LABELS.get(category)
-    if not label:
+    if category not in COORDINATION_INDICATOR_LABELS:
         abort(404)
-
-    if category=='overall' and not is_self:
-        pair=basic_compatibility(me['id'],user_id,'general')
-        if not pair.get('ready') or pair.get('score') is None:
-            flash('Complete both member profiles before opening your shared Overall Coordination.','info')
-            return redirect(url_for('connection_profile',user_id=user_id))
-        score=pair['score']
-        heading=f'Overall Coordination Between You & {html.escape(user["name"])} — {score}%'
-        read_label='📖 Read Our Overall Coordination Reflection'
-        listen_label='🎧 Listen to Our Overall Coordination Reflection'
-        description=(f'This Overall Coordination belongs to the two people in this view: you and {user["name"]}. '
-                     'It changes depending on who is logged in and viewing this member profile. The percentage combines '
-                     'the permitted self-reported coordination information from both member profiles with actual chart-to-chart '
-                     'planetary coordination. Private Journal content is not used.')
-    else:
-        scores=member_coordination_scores(user,cp)
-        if category=='overall':
-            score=scores['overall']
-        else:
-            score=next((s for l,s in scores['metrics'] if l==label),None)
-        if score is None:
-            abort(404)
-        heading=f'{html.escape(label)} — {score}%'
-        read_label=('📖 Read My Overall Coordination Reflection' if category=='overall' else f'📖 Read My {html.escape(label)} Reflection')
-        listen_label=('🎧 Listen to My Overall Coordination Reflection' if category=='overall' else f'🎧 Listen to My {html.escape(label)} Reflection')
-        description=_coordination_indicator_description(label,user,cp)
-
+    payload=_coordination_indicator_report_payload(me['id'],user_id,category)
+    if not payload.get('ready'):
+        flash(payload.get('reason','This Conscious Coordination reflection is not ready yet.'),'info')
+        return redirect(url_for('connection_profile',user_id=user_id))
+    score=payload['score']; heading=payload['title']; written=payload.get('written_report','')
+    indicator_name=('Overall Coordination' if category=='overall' else COORDINATION_INDICATOR_LABELS[category])
+    read_label=('📖 Read My '+indicator_name+' Reflection') if is_self else ('📖 Read Our '+indicator_name+' Reflection')
+    listen_label=('🎧 Listen to My '+indicator_name+' Reflection') if is_self else ('🎧 Listen to Our '+indicator_name+' Reflection')
+    audio_url=url_for('coordination_indicator_audio',user_id=user_id,category=category,v=f"{payload.get('report_id','')}-{payload.get('report_version',1)}")
     content=f'''<div class="hero">
     <span class="badge heart">CONSCIOUS COORDINATION</span>
-    <h1>{heading}</h1>
-    <p class="muted">{'Your own coordination profile.' if is_self else 'Coordination between you and the member whose profile you are viewing.'}</p>
+    <h1>{html.escape(heading)}</h1>
+    <p class="muted">{'Your own current Lunar-cycle coordination.' if is_self else 'Coordination between you and the member whose profile you are viewing.'}</p>
     </div>
     <article class="card"><div class="meter"><i style="width:{score}%"></i></div>
-    <div class="actions"><button class="btn" type="button">{read_label}</button><button class="out" type="button">{listen_label}</button></div>
-    <div style="line-height:1.8;margin-top:18px">{html.escape(description)}</div></article>
+    <div class="actions"><span class="badge">{html.escape(read_label)}</span><a class="out" href="{html.escape(audio_url,quote=True)}">{html.escape(listen_label)}</a></div>
+    <div style="line-height:1.8;margin-top:18px">{html.escape(written).replace(chr(10),'<br>')}</div></article>
+    <p class="muted small">Coordination percentages are deterministic reflective indicators, not diagnoses, measures of worth, or guarantees of relationship success. Activation and coordination are calculated separately.</p>
     <div class="actions"><a class="out" href="{url_for('connection_profile',user_id=user_id)}">Back to Conscious Coordination Profile</a></div>'''
     return page('Conscious Coordination',content,'more')
+
+@app.route('/conscious-coordination/profile/<int:user_id>/indicator/<category>/audio')
+@login_required
+def coordination_indicator_audio(user_id,category):
+    me=current_user(); is_self=(me['id']==user_id)
+    if not is_self and not bool(me['conscious_paid'] or me['is_admin']): abort(403)
+    if category not in COORDINATION_INDICATOR_LABELS: abort(404)
+    payload=_coordination_indicator_report_payload(me['id'],user_id,category)
+    if not payload.get('ready') or not payload.get('spoken_script'): abort(503)
+    audio=_openai_tts_audio(payload['spoken_script'])
+    if not audio: abort(503)
+    filename=('my-' if is_self else 'our-')+category+'-coordination.mp3'
+    return app.response_class(audio,status=200,mimetype='audio/mpeg',headers={'Cache-Control':'private, max-age=86400','Content-Disposition':f'inline; filename="{filename}"','X-Content-Type-Options':'nosniff'})
 
 @app.route('/conscious-coordination/profile/<int:user_id>')
 @login_required
@@ -4244,9 +5214,13 @@ def connection_profile(user_id):
     location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),(cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
     coordination_types=cp.get('coordination_types',''); about=cp.get('about_me') or user['about'] or ''
     photo=(f'<img src="{url_for("community_media",filename=cp["photo_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%" alt="{html.escape(user["name"],quote=True)}">' if cp.get('photo_name') else f'<div class="portrait">{initials(user["name"])}</div>')
-    chart=member_chart_data(user); wheel=_zodiac_wheel_html(chart,user['name']); scores=member_coordination_scores(user,cp_row)
-    pair_overall=None
-    if not is_self:
+    chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
+    pair_data=None; pair_overall=None
+    if is_self:
+        wheel=_zodiac_wheel_html(chart,user['name'])
+    else:
+        viewer_chart=member_chart_data(me)
+        wheel=_comparison_zodiac_wheel_html(viewer_chart,chart,'You',user['name'])
         pair_data=basic_compatibility(me['id'],user_id,'general')
         if pair_data.get('ready') and pair_data.get('score') is not None:
             pair_overall=pair_data['score']
@@ -4254,9 +5228,10 @@ def connection_profile(user_id):
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
         if can_open_details and slug:
-            return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Open full description</p></a>'''
+            return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Read + Listen</p></a>'''
         return f'''<article class="card">{inner}<p class="muted small">Upgrade to open this member’s full description.</p></article>'''
-    metric_cards=''.join(metric_card(label,score) for label,score in scores['metrics'])
+    visible_metrics=scores['metrics'] if is_self else [(m.get('area'),m.get('score')) for m in (pair_data or {}).get('metrics',[]) if m.get('area') and m.get('score') is not None]
+    metric_cards=''.join(metric_card(label,score) for label,score in visible_metrics)
     if is_self:
         overall_value=scores['overall']
         overall_title=f'Overall Coordination — {overall_value}%'
@@ -4292,8 +5267,8 @@ def connection_profile(user_id):
             app.logger.exception('Could not build Experiences Within Your Network')
             network_html='''<article class="card"><span class="badge">🌿 EXPERIENCES WITHIN YOUR NETWORK</span><h2>Recommended for Your Season</h2><p class="muted">Matching active Hosted Business Apps will appear here when they correspond to your current support needs.</p></article>'''
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
-    <article class="card"><span class="badge heart">PLANETARY COORDINATION</span><h2>{'My Planetary Wheel' if is_self else html.escape(user['name'])+'’s Planetary Wheel'}</h2><p class="muted">Calculated planetary placements shown visually in the zodiac wheel.</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
-    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}<div class="grid">{metric_cards}</div><p class="muted small">These category indicators describe the member profile and are not a mental-health diagnosis. When another member views this page, Overall Coordination is calculated between the viewer and this member from both permitted profiles and actual chart-to-chart placements. Private Journal content is not used.</p></article>
+    <article class="card"><span class="badge heart">PLANETARY COORDINATION</span><h2>{'My Planetary Wheel' if is_self else 'Your Coordination Wheel Together'}</h2><p class="muted">{'Calculated planetary placements shown visually in your zodiac wheel.' if is_self else 'Your planets and '+html.escape(user['name'])+'’s planets are plotted from their actual zodiac longitudes. Cross-chart aspect lines are calculated from those stored positions.'}</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
+    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Coordination is a dynamic Lunar-cycle calculation across the seven Conscious Coordination functions. It is not a mental-health diagnosis or a measure of worth.' if is_self else 'Every percentage on this view belongs to the coordination between you and this member. It combines actual chart-to-chart relationships with the two permitted psychological/behavioral profiles. Private Journal content is never used in another member’s coordination.'}</p></article>
     {access_note}{business_html}{network_html}'''
     return page('Conscious Coordination Profile',content,'more')
 
@@ -4869,6 +5844,87 @@ def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,place
         f"A Question to Carry With You\n\n{reflection}"
     )
 
+CC_PLANET_REPORT_HEADINGS = {
+    'Sun': [('core_theme','Your Direction'),('psychological_interpretation','Owning Your Position'),('emotional_interpretation','What May Be Under the Choice'),('current_coordination','Where Coordination May Be Available'),('potential_tension','Where You May Be Holding Back'),('supportive_response','What Supports Authentic Choice'),('coordination_practice','Coordination Practice'),('journal_question','A Question to Carry With You')],
+    'Moon': [('core_theme','Your Emotional Rhythm'),('psychological_interpretation','How Your Regulation Pattern May Respond'),('emotional_interpretation','What Your System May Be Asking For'),('current_coordination','Where Emotional Coordination May Be Available'),('potential_tension','Where Recovery May Need More Space'),('supportive_response','What Could Support Recovery'),('coordination_practice','Regulation Practice'),('journal_question','A Question to Carry With You')],
+    'Mercury': [('core_theme','Your Communication Pattern'),('psychological_interpretation','How You May Be Processing This'),('emotional_interpretation','What May Be Influencing Interpretation'),('current_coordination','Where Clarity May Be Available'),('potential_tension','Where Meaning Can Get Lost'),('supportive_response','A Clearer Way to Respond'),('coordination_practice','Communication Practice'),('journal_question','A Question to Carry With You')],
+    'Venus': [('core_theme','Connection & Reciprocity'),('psychological_interpretation','How You May Be Investing in Connection'),('emotional_interpretation','What Closeness May Be Asking For'),('current_coordination','Where Mutuality May Be Available'),('potential_tension','Where Your Energy May Be Overextended'),('supportive_response','What Reciprocity Could Look Like'),('coordination_practice','Connection Practice'),('journal_question','A Question to Carry With You')],
+    'Mars': [('core_theme','Action & Boundaries'),('psychological_interpretation','How You May Be Responding Under Pressure'),('emotional_interpretation','What Frustration May Be Signaling'),('current_coordination','Where Direct Action May Help'),('potential_tension','Where Frustration May Be Building'),('supportive_response','A Direct Next Step'),('coordination_practice','Boundary Practice'),('journal_question','A Question to Carry With You')],
+    'Jupiter': [('core_theme','Growth & Opportunity'),('psychological_interpretation','How You May Be Meeting Possibility'),('emotional_interpretation','What Expansion May Be Stirring'),('current_coordination','Where Growth May Be Available'),('potential_tension','Where More Could Become Too Much'),('supportive_response','A Grounded Expansion'),('coordination_practice','Capacity Practice'),('journal_question','A Question to Carry With You')],
+    'Saturn': [('core_theme','Responsibility & Structure'),('psychological_interpretation','How You May Be Carrying Responsibility'),('emotional_interpretation','What Pressure May Be Asking You to Notice'),('current_coordination','Where Structure May Support You'),('potential_tension','What Needs Clearer Limits'),('supportive_response','What Is Sustainable'),('coordination_practice','Sustainability Practice'),('journal_question','A Question to Carry With You')],
+}
+
+CC_GENERIC_REPORT_PHRASES = (
+    'trust the universe','embrace your journey','everything happens for a reason',
+    'you are entering a transformative time','focus on balance','the universe is telling you'
+)
+
+def _cc_planet_structured_text(pname,sections):
+    parts=[]
+    for key,heading in CC_PLANET_REPORT_HEADINGS.get(pname,[]):
+        value=str((sections or {}).get(key,'') or '').strip()
+        if value:
+            parts.append(f'{heading}\n\n{value}')
+    return '\n\n'.join(parts).strip()
+
+
+def _cc_report_quality_ok(text, source_profile_text=''):
+    low=(text or '').lower()
+    if not text or len(text)<350:
+        return False
+    if sum(1 for phrase in CC_GENERIC_REPORT_PHRASES if phrase in low)>=2:
+        return False
+    # Guard against simply copying a member's questionnaire language into prose.
+    source_words=set(_normalize_report_text(source_profile_text).split())
+    report_words=set(_normalize_report_text(text).split())
+    if source_words and report_words and len(source_words)>=12:
+        overlap=len(source_words & report_words)/max(1,len(source_words))
+        if overlap>0.72:
+            return False
+    return True
+
+
+def _cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms):
+    journal_context=(data or {}).get('journal_history') or {}
+    source_profile=' '.join(str(v or '') for v in ((data or {}).get('relevant_profile_only') or {}).values())
+    schema='''Return ONLY valid JSON with these keys: core_theme, psychological_interpretation, emotional_interpretation, current_coordination, potential_tension, supportive_response, coordination_practice, journal_question, wellness_tags. wellness_tags must be a short JSON array of strings. Do not add markdown or commentary outside the JSON.'''
+    for attempt in range(6):
+        seed=_unique_generation_seed(user_id,'planet_'+pname.lower(),context_key,journal_context,attempt)
+        prompt=instruction+'\n'+schema+f'''\nUNIQUENESS REQUIREMENT:
+Compose this from the exact evidence packet. Do not reuse a sign template, another planet report, another member report, or a prior cycle report. Internal composition seed (never print): {seed}. Attempt {attempt+1}.\nINTERNAL FACTUAL DATA:
+'''+json.dumps(data,default=str)
+        structured=_openai_structured(prompt,'planetary_coordination',CC_REPORT_JSON_SCHEMA) or _cc_parse_json_object(_openai_text(prompt))
+        if not structured:
+            continue
+        candidate=_cc_planet_structured_text(pname,structured)
+        low=candidate.lower()
+        if not _cc_report_quality_ok(candidate,source_profile) or not any(term in low for term in required_terms):
+            continue
+        duplicate,_=_reading_similarity_status(candidate)
+        if duplicate:
+            continue
+        if _register_unique_reading(user_id,'planet_'+pname.lower(),context_key,candidate):
+            return candidate,structured,True
+    for variant in range(12):
+        candidate=(fallback_factory(variant) or '').strip()
+        low=candidate.lower()
+        if not _cc_report_quality_ok(candidate,source_profile) or not any(term in low for term in required_terms):
+            continue
+        duplicate,_=_reading_similarity_status(candidate)
+        if duplicate:
+            continue
+        if _register_unique_reading(user_id,'planet_'+pname.lower(),context_key,candidate):
+            return candidate,{'fallback':True},False
+    # Never leave a member-facing card empty merely because the uniqueness guard
+    # exhausted every generated candidate. Use the evidence-bound deterministic
+    # fallback as the last-resort communication layer and log that calibration is needed.
+    candidate=(fallback_factory(99) or '').strip()
+    if not candidate:
+        candidate=f"This {pname} reflection is anchored to your current Lunar-cycle calculation. Notice what is most active in this function, give yourself enough space to respond deliberately, and choose one concrete practice that fits the situation in front of you."
+    app.logger.warning('Planetary report uniqueness guard exhausted for user=%s planet=%s cycle=%s; serving evidence-bound fallback',user_id,pname,context_key)
+    return candidate,{'fallback':True,'uniqueness_guard_exhausted':True},False
+
+
 def _planet_reflection_payload(user_id,pname,viewer_id=None):
     canonical={x.lower():x for x in PLANET_NAMES}
     pname=canonical.get((pname or '').lower(),pname if pname in PLANET_NAMES else None)
@@ -4885,19 +5941,23 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
     if not chart.get('ready'):
         return {'ready':False,'reason':'Birth information is needed before this reflection can be calculated.'}
     sky=current_sky_data(); lunar_cycle=_current_lunar_cycle_chart(sky)
+    monthly_snapshot=_personal_monthly_coordination_snapshot(user_id)
+    planet_snapshot=((monthly_snapshot.get('planetary') or {}).get(pname) or {}) if monthly_snapshot.get('ready') else {}
     relevant_aspects=[a for a in _chart_sky_aspects(chart,sky) if a.get('natal_planet')==pname or a.get('current_planet')==pname][:5]
     cycle_aspects=[a for a in (_chart_sky_aspects(chart,lunar_cycle) if lunar_cycle.get('planets') else []) if a.get('natal_planet')==pname or a.get('current_planet')==pname][:5]
     placement=(chart.get('planets') or {}).get(pname,{})
     profile=dict(cp) if cp else {}; wellness=_member_wellness_practices(profile); lens=PLANET_BEHAVIORAL_LENSES.get(pname,{})
     profile_slice=_planet_profile_slice(profile,pname)
     use_private=(viewer_id is None or int(viewer_id)==int(user_id))
-    journal_context=_all_journal_context(user_id) if use_private else {
-        'entry_count':0,'history_fingerprint':'private-not-shared','theme_counts':{},'history_for_reflection':'',
+    journal_context=_cc_journal_evidence_packet(_all_journal_context(user_id)) if use_private else {
+        'entry_count':0,'history_fingerprint':'private-not-shared','current_themes':[],'theme_strength':{},'theme_counts':{},
         'privacy':'Private Journal material is excluded from another member’s report.'}
     planet_fingerprint_packet={
         'member_id':user_id,
         'planet':pname,
-        'date':datetime.utcnow().strftime('%Y-%m-%d'),
+        'lunar_cycle_id':lunar_cycle.get('cycle_id',''),
+        'coordination_score':planet_snapshot.get('coordination_score'),
+        'activation_score':planet_snapshot.get('activation_score'),
         'natal_planets':{k:{'longitude':v.get('longitude'),'sign':v.get('sign'),'house':v.get('house')} for k,v in (chart.get('planets') or {}).items()},
         'natal_aspects':chart.get('aspects',[]),
         'focus_placement':placement,
@@ -4912,7 +5972,8 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
         'engine_version':REFLECTION_ENGINE_VERSION,
     }
     planet_context_fingerprint=hashlib.sha256(json.dumps(planet_fingerprint_packet,sort_keys=True,default=str).encode('utf-8')).hexdigest()
-    context_key=f'{pname}|{datetime.utcnow().strftime("%Y-%m-%d")}|c:{planet_context_fingerprint[:24]}'
+    scope_key='owner' if use_private else f'shared-{int(viewer_id or 0)}'
+    context_key=f'{pname}|cycle:{lunar_cycle.get("cycle_id","")}|scope:{scope_key}|v:{CC_ENGINE_VERSION}'
     reflection_type='planet_'+pname.lower()
     conn=db(); row=conn.execute('SELECT payload FROM astrology_reflections WHERE user_id=? AND reflection_type=? AND period_key=?',(user_id,reflection_type,context_key)).fetchone(); conn.close()
     if row:
@@ -4928,6 +5989,7 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
         'current_sky_internal':sky,'lunar_cycle_chart_internal':lunar_cycle,
         'relevant_current_to_natal_aspects_internal':relevant_aspects,
         'relevant_lunar_cycle_to_natal_aspects_internal':cycle_aspects,'placement_internal':placement,
+        'calculated_monthly_coordination':{'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'evidence':planet_snapshot},
         'journal_history':journal_context}
 
     planet_headings={
@@ -4948,6 +6010,8 @@ The actual sign must meaningfully change how this planet’s behavioral function
 
 This report’s behavioral question is: "{lens.get('question','')}"
 Behavioral focus: {', '.join(lens.get('focus',[]))}
+The deterministic engine calculated this lunar-cycle Coordination score before writing: {planet_snapshot.get('coordination_score','')}%.
+The deterministic engine separately calculated Activation: {planet_snapshot.get('activation_score','')}%. A lower coordination score with high activation means this area is highly relevant and may require more conscious effort; it does not mean the member is "bad" at this planetary function.
 
 PUBLIC LANGUAGE:
 - Keep the experience under Conscious Coordination.
@@ -4970,10 +6034,8 @@ Use this planet’s own member-facing section structure rather than a shared gen
 
 The section names and content must make this planetary function feel meaningfully different from every other planetary report. Make it practical, psychologically thoughtful, non-diagnostic and non-deterministic. Do not recycle another planet/member/day/cycle report.'''
     required_terms={'Sun':['choice','direction','own'],'Moon':['emotion','regulat','safety'],'Mercury':['communicat','assum','interpret'],'Venus':['reciproc','affection','invest'],'Mars':['action','boundar','frustrat'],'Jupiter':['opportun','expand','risk'],'Saturn':['responsib','limit','disciplin']}.get(pname,[])
-    def validator(body):
-        low=(body or '').lower(); return bool(body and len(body)>=350 and any(term in low for term in required_terms))
     fallback_factory=lambda variant:_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant)
-    text,_=_generate_unique_reflection(user_id,reflection_type,context_key,instruction,data,fallback_factory,validator=validator)
+    text,structured_sections,_=_cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms)
 
     spoken_instruction=f'''Create ONLY the spoken listening script for this exact {display_name} Conscious Coordination report.
 Use the written report below as meaning to preserve, not wording to read verbatim.
@@ -4985,13 +6047,22 @@ WRITTEN REPORT FOR CONTEXT ONLY:
     spoken_data={'member_id':user_id,'focus_planet':pname,'written_report_for_context_only':text,'journal_history':journal_context,'placement_internal':placement,'current_sky_internal':sky}
     spoken,_=_generate_unique_reflection(user_id,reflection_type+'_spoken',context_key,spoken_instruction,spoken_data,
         lambda variant:f"Take a comfortable breath and listen to this {display_name} reflection. {re.sub(r'\\s+',' ',text)[:1800]} Give yourself room to notice what feels useful without forcing a conclusion.")
+    report_version=1
+    audio_key=hashlib.sha256((context_key+'|'+hashlib.sha256(text.encode()).hexdigest()).encode()).hexdigest()[:16]
     payload={'ready':True,'engine_version':REFLECTION_ENGINE_VERSION,'planet':pname,'display_name':display_name,
-        'placement':placement,'text':text,'spoken':spoken,'period_key':context_key,
-        'audio_key':hashlib.sha256((context_key+'|'+hashlib.sha256(text.encode()).hexdigest()).encode()).hexdigest()[:16],
+        'placement':placement,'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'lunar_cycle_id':lunar_cycle.get('cycle_id',''),'text':text,'spoken':spoken,'structured_sections':structured_sections,'period_key':context_key,
+        'report_version':report_version,'audio_key':audio_key,
         'privacy_scope':'owner-private' if use_private else 'member-shared-no-private-journal'}
-    conn=db(); conn.execute('''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at)
+    evidence_summary={'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'lunar_cycle_id':lunar_cycle.get('cycle_id',''),'planet':pname,'structured_sections':structured_sections,'privacy_scope':payload['privacy_scope']}
+    normalized=_normalize_report_text(text); digest=hashlib.sha256(normalized.encode()).hexdigest()
+    conn=db()
+    conn.execute('''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at)
         VALUES(?,?,?,?,?) ON CONFLICT(user_id,reflection_type,period_key) DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',
-        (user_id,reflection_type,context_key,json.dumps(payload),now())); conn.commit(); conn.close()
+        (user_id,reflection_type,context_key,json.dumps(payload),now()))
+    conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET report_version=excluded.report_version,written_report=excluded.written_report,spoken_script=excluded.spoken_script,audio_reference=excluded.audio_reference,evidence_summary=excluded.evidence_summary,privacy_scope=excluded.privacy_scope,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',
+        (user_id,0,'planetary_'+pname.lower()+'_monthly',context_key,report_version,text,spoken,'planet-audio:'+audio_key,json.dumps(evidence_summary,default=str),payload['privacy_scope'],planet_context_fingerprint,digest,now(),now()))
+    conn.commit(); conn.close()
     return payload
 
 
