@@ -198,3 +198,13 @@ The member-facing communication layer is connected after deterministic scoring:
 10. Speech is generated server-side through the configured OpenAI speech endpoint. No browser speech synthesis is used.
 11. The main My Journal page no longer depends on successful AI generation to decide the season or whether daily/monthly sections can render. Evidence-bound fallbacks prevent a permanent "temporarily unavailable" member experience when generation or uniqueness checks fail.
 12. Cached monthly reports are tied to the Lunar-cycle key; daily reports are tied to the calendar date; pair reports are tied to the two member profiles and relationship context fingerprint.
+
+
+## FINAL REVIEW CORRECTIONS — 2026-08-19
+
+- Do not neutral-pad missing evidence into every visible percentage. Missing evidence lowers confidence; it does not force cards toward 65–75%.
+- Monthly personal and pair scores combine only available evidence using explicit confidence. Coordination and Activation remain separate.
+- All seven monthly Planetary Coordination reports must always return a written report. AI failure or uniqueness exhaustion falls back to deterministic evidence-bound communication; it must never leave six cards as “temporarily unavailable.”
+- Listening scripts are separate from written reports. Spoken-generation failure cannot invalidate the written report. Audio is generated once, cached persistently, and tied to the exact coordination report identity/version/script.
+- Daily What Deserves Your Attention is ranked from today’s real Lunar/current-planet activation inside the monthly cycle, current structured life themes, and recent report continuity. Recent repetition reduces novelty weight rather than reinforcing the same domain indefinitely.
+- The Conscious Coordination Profile wheel is the visual Wheel Planetary Coordination: only Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn, taken from the exact same calculated longitudes powering Your Planetary Coordination. Zodiac sectors and glyphs use the same transform. Do not mix outer planets, houses or ASC into this seven-function personal wheel.
