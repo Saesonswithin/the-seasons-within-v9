@@ -1141,11 +1141,30 @@ def member_chart_data(member):
         return {'ready':False,'reason':'Birth setup is incomplete.'}
     birth={'date':member['dob'],'time':member['birth_time'] or '','exact_time':bool(member['exact_time']),'city':member['birth_city'] or '','region':member['birth_region'] or '','country':member['birth_country'] or ''}
     birth_fingerprint=hashlib.sha256(json.dumps({'birth':birth,'birth_time_unknown':bool(member['birth_time_unknown']) if 'birth_time_unknown' in member.keys() else False,'engine':'swiss-ephemeris'},sort_keys=True).encode()).hexdigest()
+    cached=None
     try:
         conn=db(); row=conn.execute('SELECT payload FROM natal_charts WHERE user_id=?',(member['id'],)).fetchone(); conn.close()
         if row:
             cached=json.loads(row['payload'])
             if cached.get('birth_fingerprint')==birth_fingerprint and cached.get('ready'):
+                return cached
+            # Compatibility with valid charts saved before birth_fingerprint was
+            # introduced. A profile save must not make the seven-function chart
+            # disappear merely because the cached payload uses the older shape.
+            saved_birth=cached.get('birth') or {}
+            same_birth=(
+                str(saved_birth.get('date') or '')==str(member['dob'] or '') and
+                str(saved_birth.get('time') or '')==str(member['birth_time'] or '') and
+                str(saved_birth.get('city') or '').strip().casefold()==str(member['birth_city'] or '').strip().casefold() and
+                str(saved_birth.get('region') or '').strip().casefold()==str(member['birth_region'] or '').strip().casefold() and
+                str(saved_birth.get('country') or '').strip().casefold()==str(member['birth_country'] or '').strip().casefold()
+            )
+            if cached.get('ready') and same_birth and (cached.get('planets') or {}).get('Sun'):
+                cached['birth_fingerprint']=birth_fingerprint
+                try:
+                    conn=db(); conn.execute('UPDATE natal_charts SET payload=?,updated_at=? WHERE user_id=?',(json.dumps(cached,default=str),now(),member['id'])); conn.commit(); conn.close()
+                except Exception:
+                    app.logger.exception('Could not upgrade the saved natal-chart fingerprint')
                 return cached
     except Exception:
         pass
@@ -1155,7 +1174,13 @@ def member_chart_data(member):
     else:
         data=_local_natal_planets(member)
     if not data:
-        return {'ready':False,'reason':'Planetary calculation is waiting for a supported time-zone calculation.','birth':birth}
+        # A transient provider or time-zone failure must not erase a previously
+        # valid chart for the same saved birth foundation.
+        if cached and cached.get('ready') and (cached.get('planets') or {}).get('Sun'):
+            saved_birth=cached.get('birth') or {}
+            if str(saved_birth.get('date') or '')==str(member['dob'] or '') and str(saved_birth.get('city') or '').strip().casefold()==str(member['birth_city'] or '').strip().casefold() and str(saved_birth.get('country') or '').strip().casefold()==str(member['birth_country'] or '').strip().casefold():
+                return cached
+        return {'ready':False,'reason':'Your saved birth information is present, but the planetary calculation could not be completed. Please try again shortly.','birth':birth}
     data['birth_fingerprint']=birth_fingerprint
     try:
         conn=db()
@@ -3451,6 +3476,8 @@ def _lunar_sound_player_html(season,minutes,audio_key=''):
     minutes=minutes if minutes in (5,10,15) else 5
     reflection_url=url_for('conscious_coordination_audio',kind='reflection',minutes=minutes,v=audio_key)
     meditation_url=url_for('conscious_coordination_audio',kind='meditation',minutes=minutes,v=audio_key)
+    reflection_script_url=url_for('lunar_listening_script',kind='reflection',minutes=minutes)
+    meditation_script_url=url_for('lunar_listening_script',kind='meditation',minutes=minutes)
     nature_src=html.escape(MEDITATION_NATURE_AUDIO,quote=True)
     bowl_src=html.escape(MEDITATION_BOWL_AUDIO,quote=True)
     nature_tag=f'<audio id="season-nature" preload="metadata" loop src="{nature_src}"></audio>' if nature_src else '<audio id="season-nature" preload="none"></audio>'
@@ -3472,19 +3499,20 @@ def _lunar_sound_player_html(season,minutes,audio_key=''):
       </div>
       <p><b id="season-audio-time">00:00 / {minutes:02d}:00</b></p>
       {nature_tag}{bowl_tag}<audio id="season-voice" preload="none"></audio>
-      <p class="muted small">Narration uses an AI-generated voice. Reiki and meditation are complementary wellness and reflective practices, not medical or mental-health treatment.</p>
+      <p class="muted small" id="season-audio-status">Narration uses an AI-generated voice. If server audio is unavailable, the same saved listening script will play through this browser’s voice service.</p>
     </article>
     <script>
     (function(){{
       const totalSeconds={minutes*60}; const hasNature={str(bool(nature_src)).lower()}; const hasBowl={str(bool(bowl_src)).lower()};
       const voiceUrls={{meditation:{json.dumps(meditation_url)},reflection:{json.dumps(reflection_url)}}};
+      const scriptUrls={{meditation:{json.dumps(meditation_script_url)},reflection:{json.dumps(reflection_script_url)}}};
       let elapsed=0,timer=null,active=false;
       const nature=()=>document.getElementById('season-nature'); const bowl=()=>document.getElementById('season-bowl'); const voice=()=>document.getElementById('season-voice');
       function draw(){{const e=Math.min(elapsed,totalSeconds);const mm=String(Math.floor(e/60)).padStart(2,'0');const ss=String(e%60).padStart(2,'0');const tm=String(Math.floor(totalSeconds/60)).padStart(2,'0');document.getElementById('season-audio-time').textContent=mm+':'+ss+' / '+tm+':00';}}
       function stopTimer(){{if(timer)clearInterval(timer);timer=null;}}
       window.seasonAudioPause=function(){{active=false;stopTimer();voice().pause();if(hasNature)nature().pause();if(hasBowl)bowl().pause();}};
       window.seasonAudioRestart=function(){{window.seasonAudioPause();elapsed=0;voice().currentTime=0;if(hasNature)nature().currentTime=0;if(hasBowl)bowl().currentTime=0;draw();}};
-      window.seasonAudioStart=function(mode){{window.seasonAudioPause();active=true;voice().volume=1.0;if(hasNature){{nature().volume=0.10;nature().play().catch(()=>{{}});}}if(hasBowl){{bowl().volume=0.07;bowl().currentTime=0;bowl().play().catch(()=>{{}});}}if(mode==='meditation'||mode==='reflection'){{voice().src=voiceUrls[mode];voice().play().catch(()=>{{}});}}timer=setInterval(()=>{{if(!active)return;elapsed++;draw();if(elapsed>=totalSeconds){{active=false;stopTimer();voice().pause();if(hasNature)nature().pause();}}}},1000);draw();}};
+      window.seasonAudioStart=function(mode){{window.seasonAudioPause();active=true;voice().volume=1.0;if(hasNature){{nature().volume=0.10;nature().play().catch(()=>{{}});}}if(hasBowl){{bowl().volume=0.07;bowl().currentTime=0;bowl().play().catch(()=>{{}});}}if(mode==='meditation'||mode==='reflection'){{voice().src=voiceUrls[mode];voice().play().catch(()=>{{active=false;stopTimer();speakListeningScript(scriptUrls[mode],document.getElementById('season-audio-status'));}});}}timer=setInterval(()=>{{if(!active)return;elapsed++;draw();if(elapsed>=totalSeconds){{active=false;stopTimer();voice().pause();if(hasNature)nature().pause();}}}},1000);draw();}};
       draw();
     }})();
     </script>
@@ -4502,7 +4530,7 @@ def profile():
         try:
             conn=db(); conn.execute("UPDATE users SET city=? WHERE id=? AND trim(coalesce(city,''))=''",(display_city,u['id'])); conn.commit(); conn.close()
         except Exception: app.logger.exception('Could not sync profile city to My Journal')
-    member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if u['conscious_paid'] else 'FREE MEMBER'
+    member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if (u['conscious_paid'] or u['is_admin']) else 'FREE MEMBER'
     header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article>'''
     if not ready:
         content=header+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article><div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
@@ -4522,11 +4550,13 @@ def profile():
             score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
             inline_url=url_for('planet_interpretation',user_id=u['id'],planet=name.lower(),inline=1)
             audio_url=url_for('planet_interpretation_audio',user_id=u['id'],planet=name.lower())
-            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}{html.escape(score_note)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="metadata" data-planet-audio-url="{html.escape(audio_url,quote=True)}" aria-label="Listen to My {html.escape(spoken_name)} Reflection" style="width:min(420px,100%)"></audio></div><p class="muted small" data-audio-status>Preparing the listening reflection…</p></div></details>''')
+            script_url=url_for('planetary_listening_script',user_id=u['id'],planet=name.lower())
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(sensitive)}{html.escape(score_note)}</small></span><span class="muted small">Read + Listen ⌄</span></summary><div class="topspace" data-planet-body style="display:block"><div class="actions"><button class="btn" type="button" data-inline-url="{html.escape(inline_url,quote=True)}" onclick="loadPlanetReading(this)">📖 Read My {html.escape(spoken_name)} Reflection</button><audio controls preload="metadata" data-planet-audio-url="{html.escape(audio_url,quote=True)}" aria-label="Listen to My {html.escape(spoken_name)} Reflection" style="width:min(420px,100%)"></audio><button class="out" type="button" data-listening-script-url="{html.escape(script_url,quote=True)}" onclick="speakListeningScript(this.dataset.listeningScriptUrl,this.closest('[data-planet-body]').querySelector('[data-audio-status]'))">🔊 Read My {html.escape(spoken_name)} Reflection Aloud</button></div><p class="muted small" data-audio-status>Preparing the listening reflection…</p></div></details>''')
         if chart.get('time_approximate'):
             planet_cards.append('<p class="muted small">Birth time is unknown, so Rising and houses are not shown. A time-sensitive lunar placement is identified rather than treated as certain.</p>')
     else:
-        planet_cards.append(f'''<article class="card"><p class="muted">Complete the birth information in Edit My Profile before planetary placements can be calculated accurately.</p><a class="out" href="{url_for('edit_profile')}">Edit My Profile</a></article>''')
+        chart_reason=chart.get('reason') or 'The planetary calculation could not be completed.'
+        planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
     planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own Lunar-cycle Coordination percentage, individualized written reflection and matching spoken reflection. Activation remains part of the private evidence used to shape each reflection rather than appearing as a second score on the collapsed card. These refresh with the next Lunar cycle while your natal chart remains your permanent foundation.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
 
     try: minutes=int(request.args.get('minutes','5'))
@@ -4558,6 +4588,7 @@ def profile():
             monthly_report='This Lunar cycle is being held as a reflective orientation around the patterns currently most active for you. Use the season as a guide for pacing, not as a prediction.'
     monthly_report_html=html.escape(monthly_report).replace(chr(10),'<br>')
     monthly_audio_url=url_for('conscious_coordination_audio',kind='reflection',minutes=minutes,v=monthly_snapshot.get('lunar_cycle_id',''))
+    monthly_script_url=url_for('lunar_listening_script',kind='reflection',minutes=minutes)
 
     try:
         daily=_daily_attention_reflection(u['id'])
@@ -4571,10 +4602,11 @@ def profile():
     report=re.sub(r'^\s*(What Deserves Your Attention(?: Today)?\s*[:\-]?\s*)','',daily_text,flags=re.I)
     report_html=html.escape(report).replace(chr(10),'<br>')
     daily_audio_url=url_for('daily_attention_audio',user_id=u['id'],v=daily.get('date',''))
+    daily_script_url=url_for('daily_listening_script',user_id=u['id'])
     journal_link=url_for('journal',category='Conscious Coordination',title='What Deserves My Attention Today',prompt=report[-900:])
 
-    season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR CURRENT SEASON WITHIN</span><h2>{info['emoji']} {html.escape(season)} — {html.escape(info['subtitle'])}</h2><div class="chips">{season_themes}</div><details style="margin-top:14px"><summary style="cursor:pointer;font-weight:800">Read + Listen ⌄</summary><div style="line-height:1.8;margin-top:14px">{monthly_report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(monthly_audio_url,quote=True)}" style="width:min(420px,100%)"></audio></div><p class="muted small">This report belongs to the current Lunar cycle and refreshes when the next cycle begins.</p></details></article>'''
-    reflection_section=f'''<article class="card" id="reflection"><span class="badge heart">WHAT DESERVES YOUR ATTENTION</span><h2>What Deserves Your Attention</h2><div style="line-height:1.8">{report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(daily_audio_url,quote=True)}" style="width:min(420px,100%)"></audio><a class="out" href="{journal_link}#new-entry">Journal About This Reflection</a></div><p class="muted small">This is today’s reflection inside the larger Lunar-cycle theme and can change with today’s Lunar and planetary conditions.</p></article>'''
+    season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR CURRENT SEASON WITHIN</span><h2>{info['emoji']} {html.escape(season)} — {html.escape(info['subtitle'])}</h2><div class="chips">{season_themes}</div><details style="margin-top:14px"><summary style="cursor:pointer;font-weight:800">Read + Listen ⌄</summary><div style="line-height:1.8;margin-top:14px">{monthly_report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(monthly_audio_url,quote=True)}" style="width:min(420px,100%)"></audio><button class="out" type="button" data-listening-script-url="{html.escape(monthly_script_url,quote=True)}" onclick="speakListeningScript(this.dataset.listeningScriptUrl,this.closest('details').querySelector('[data-monthly-audio-status]'))">🔊 Read My Lunar Reflection Aloud</button></div><p class="muted small" data-monthly-audio-status>This report belongs to the current Lunar cycle and refreshes when the next cycle begins.</p></details></article>'''
+    reflection_section=f'''<article class="card" id="reflection"><span class="badge heart">WHAT DESERVES YOUR ATTENTION</span><h2>What Deserves Your Attention</h2><div style="line-height:1.8">{report_html}</div><div class="actions"><audio controls preload="none" src="{html.escape(daily_audio_url,quote=True)}" style="width:min(420px,100%)"></audio><button class="out" type="button" data-listening-script-url="{html.escape(daily_script_url,quote=True)}" onclick="speakListeningScript(this.dataset.listeningScriptUrl,this.closest('article').querySelector('[data-daily-audio-status]'))">🔊 Read Today’s Reflection Aloud</button><a class="out" href="{journal_link}#new-entry">Journal About This Reflection</a></div><p class="muted small" data-daily-audio-status>This is today’s reflection inside the larger Lunar-cycle theme and can change with today’s Lunar and planetary conditions.</p></article>'''
 
     meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>') if experience.get('meditation') else ''
     reiki=experience.get('reiki') or {}
@@ -4587,7 +4619,8 @@ def profile():
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
     script='''<script>
 async function loadPlanetReading(button){if(button.dataset.loaded==='1')return;const box=button.closest('[data-planet-body]');const oldText=button.textContent;button.disabled=true;button.textContent='Opening reflection…';try{const response=await fetch(button.dataset.inlineUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Unable to load');const holder=document.createElement('div');holder.innerHTML=await response.text();box.appendChild(holder);button.dataset.loaded='1';button.textContent='📖 Reflection Open';}catch(e){button.disabled=false;button.textContent=oldText;}}
-async function preparePlanetAudio(){const players=[...document.querySelectorAll('audio[data-planet-audio-url]')];for(const player of players){const status=player.closest('[data-planet-body]').querySelector('[data-audio-status]');try{const response=await fetch(player.dataset.planetAudioUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Audio unavailable');const blob=await response.blob();if(blob.size<512)throw new Error('Audio incomplete');player.src=URL.createObjectURL(blob);player.load();status.textContent='🎧 Listening reflection ready — generated from this exact written report.';}catch(error){status.textContent='Listening reflection could not be prepared yet. Press play to retry.';player.src=player.dataset.planetAudioUrl;player.load();}}}
+async function speakListeningScript(url,status){if(!('speechSynthesis' in window)){if(status)status.textContent='Spoken playback is not supported by this browser.';return;}if(status)status.textContent='Preparing spoken playback…';try{const response=await fetch(url,{credentials:'same-origin'});if(!response.ok)throw new Error('Script unavailable');const data=await response.json();if(!data.script)throw new Error('Script unavailable');window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(data.script);utterance.rate=.88;utterance.pitch=.96;utterance.volume=1;utterance.onstart=()=>{if(status)status.textContent='🔊 Spoken reflection is playing.';};utterance.onend=()=>{if(status)status.textContent='Spoken reflection complete.';};utterance.onerror=()=>{if(status)status.textContent='Spoken playback could not start. Check this browser’s sound permissions.';};window.speechSynthesis.speak(utterance);}catch(error){if(status)status.textContent='The listening script could not be prepared yet.';}}
+async function preparePlanetAudio(){const players=[...document.querySelectorAll('audio[data-planet-audio-url]')];for(const player of players){const status=player.closest('[data-planet-body]').querySelector('[data-audio-status]');try{const response=await fetch(player.dataset.planetAudioUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Audio unavailable');const blob=await response.blob();if(blob.size<512)throw new Error('Audio incomplete');player.src=URL.createObjectURL(blob);player.load();status.textContent='🎧 Listening reflection ready — generated from this exact written report.';}catch(error){status.textContent='Server audio is unavailable. Use Read Aloud to hear this exact listening script.';player.src=player.dataset.planetAudioUrl;player.load();}}}
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',preparePlanetAudio);}else{preparePlanetAudio();}
 </script>'''
     content=''.join([header,season_section,shortcuts,reflection_section,planetary_section,audio_html,meditation_section,reiki_section,public_section,script])
@@ -4619,10 +4652,18 @@ def edit_profile():
         if not birth_time and not time_unknown:
             flash('Enter your birth time, or choose “I do not know my birth time.”','error')
             return redirect(url_for('edit_profile'))
+        birth_foundation_changed=any([
+            str(u['dob'] or '')!=dob,
+            str(u['birth_time'] or '')!=birth_time,
+            str(u['birth_city'] or '').strip().casefold()!=birth_city.casefold(),
+            str(u['birth_region'] or '').strip().casefold()!=birth_region.casefold(),
+            str(u['birth_country'] or '').strip().casefold()!=birth_country.casefold(),
+        ])
+        saved_timezone='' if birth_foundation_changed else str(u['birth_timezone'] or '')
         conn=db()
         conn.execute(
-            """UPDATE users SET name=?,city=?,headline=?,about=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone='',exact_time=?,birth_time_unknown=? WHERE id=?""",
-            (name,city,headline,about,dob,birth_time,birth_city,birth_region,birth_country,exact,time_unknown,u['id'])
+            """UPDATE users SET name=?,city=?,headline=?,about=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone=?,exact_time=?,birth_time_unknown=? WHERE id=?""",
+            (name,city,headline,about,dob,birth_time,birth_city,birth_region,birth_country,saved_timezone,exact,time_unknown,u['id'])
         )
         conn.commit()
         conn.close()
@@ -4721,7 +4762,7 @@ def member_profile(user_id):
     if not m: abort(404)
     if m['id']==u['id']: return redirect(url_for('profile'))
     public_html=public_journal_cards(m['id'],u['id']); business_html=member_business_card(business) if business else ''
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if m['conscious_paid'] else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a></div></div><div class="portrait">{initials(m['name'])}</div></div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a></div></div><div class="portrait">{initials(m['name'])}</div></div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
     return page(f'{m["name"]} — Public Journal',content,'profile')
 
 @app.route('/journal', methods=['GET','POST'])
@@ -4972,6 +5013,42 @@ def conscious_coordination_audio(kind):
         audio=_cc_cached_report_audio(u['id'],0,'lunar_season_meditation',experience.get('period_key','')+f'|m:{minutes}',script)
     if not audio: abort(503)
     return app.response_class(audio,status=200,mimetype='audio/mpeg',headers={'Cache-Control':'private, max-age=86400','Content-Disposition':'inline; filename="conscious-coordination.mp3"','X-Content-Type-Options':'nosniff'})
+
+@app.route('/api/coordination/listening-script/daily/<int:user_id>')
+@login_required
+def daily_listening_script(user_id):
+    me=current_user()
+    if int(user_id)!=int(me['id']): abort(403)
+    payload=_daily_attention_reflection(user_id) or {}
+    script=(payload.get('spoken_script') or '').strip()
+    if not script: abort(503)
+    return jsonify({'ready':True,'script':script,'report_type':'daily_attention','period_key':payload.get('date','')})
+
+@app.route('/api/coordination/listening-script/planet/<int:user_id>/<planet>')
+@login_required
+def planetary_listening_script(user_id,planet):
+    me=current_user()
+    if int(user_id)!=int(me['id']) and not bool(me['conscious_paid'] or me['is_admin']): abort(403)
+    canonical={x.lower():x for x in PLANET_NAMES}; pname=canonical.get((planet or '').lower())
+    if not pname: abort(404)
+    payload=_planet_reflection_payload(user_id,pname,me['id']) or {}
+    script=(payload.get('spoken') or '').strip()
+    if not script: abort(503)
+    return jsonify({'ready':True,'script':script,'report_type':payload.get('report_type',''),'period_key':payload.get('period_key',''),'report_version':payload.get('report_version',1)})
+
+@app.route('/api/coordination/listening-script/lunar/<kind>')
+@login_required
+def lunar_listening_script(kind):
+    if kind not in {'reflection','meditation'}: abort(404)
+    try: minutes=int(request.args.get('minutes','5'))
+    except Exception: minutes=5
+    if minutes not in (5,10,15): minutes=5
+    u=current_user(); experience=_lunar_season_experience(u['id'],minutes) or {}
+    script=(experience.get('spoken') if kind=='reflection' else experience.get('meditation')) or ''
+    if kind=='meditation': script=re.sub(r'^\s*Your Meditation:[^\n]*\n+','',script,flags=re.I)
+    script=script.strip()
+    if not script: abort(503)
+    return jsonify({'ready':True,'script':script,'report_type':'current_season_lunar_cycle' if kind=='reflection' else 'lunar_season_meditation','period_key':experience.get('period_key','')})
 
 @app.route('/conscious-coordination/lunar-season')
 @login_required
