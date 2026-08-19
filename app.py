@@ -3566,7 +3566,7 @@ def profile():
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
     script='''<script>async function loadPlanetReading(button){if(button.dataset.loaded==='1')return;const box=button.closest('[data-planet-body]');const oldText=button.textContent;button.disabled=true;button.textContent='Opening reflection…';try{const response=await fetch(button.dataset.inlineUrl,{credentials:'same-origin'});if(!response.ok)throw new Error('Unable to load');const holder=document.createElement('div');holder.innerHTML=await response.text();box.appendChild(holder);button.dataset.loaded='1';button.textContent='📖 Reflection Open';}catch(e){button.disabled=false;button.textContent=oldText;}}</script>'''
-    content=''.join([header,planetary_section,season_section,shortcuts,reflection_section,audio_html,meditation_section,reiki_section,public_section,script])
+    content=''.join([header,season_section,shortcuts,reflection_section,planetary_section,audio_html,meditation_section,reiki_section,public_section,script])
     return page('My Journal',content,'profile')
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -4182,25 +4182,43 @@ def coordination_indicator_detail(user_id,category):
     label=COORDINATION_INDICATOR_LABELS.get(category)
     if not label:
         abort(404)
-    scores=member_coordination_scores(user,cp)
-    if category=='overall':
-        score=scores['overall']
+
+    if category=='overall' and not is_self:
+        pair=basic_compatibility(me['id'],user_id,'general')
+        if not pair.get('ready') or pair.get('score') is None:
+            flash('Complete both member profiles before opening your shared Overall Coordination.','info')
+            return redirect(url_for('connection_profile',user_id=user_id))
+        score=pair['score']
+        heading=f'Overall Coordination Between You & {html.escape(user["name"])} — {score}%'
+        read_label='📖 Read Our Overall Coordination Reflection'
+        listen_label='🎧 Listen to Our Overall Coordination Reflection'
+        description=(f'This Overall Coordination belongs to the two people in this view: you and {user["name"]}. '
+                     'It changes depending on who is logged in and viewing this member profile. The percentage combines '
+                     'the permitted self-reported coordination information from both member profiles with actual chart-to-chart '
+                     'planetary coordination. Private Journal content is not used.')
     else:
-        score=next((s for l,s in scores['metrics'] if l==label),None)
-    if score is None:
-        abort(404)
-    description=_coordination_indicator_description(label,user,cp)
-    owner='Your' if is_self else f'{html.escape(user["name"])}’s'
+        scores=member_coordination_scores(user,cp)
+        if category=='overall':
+            score=scores['overall']
+        else:
+            score=next((s for l,s in scores['metrics'] if l==label),None)
+        if score is None:
+            abort(404)
+        heading=f'{html.escape(label)} — {score}%'
+        read_label=('📖 Read My Overall Coordination Reflection' if category=='overall' else f'📖 Read My {html.escape(label)} Reflection')
+        listen_label=('🎧 Listen to My Overall Coordination Reflection' if category=='overall' else f'🎧 Listen to My {html.escape(label)} Reflection')
+        description=_coordination_indicator_description(label,user,cp)
+
     content=f'''<div class="hero">
     <span class="badge heart">CONSCIOUS COORDINATION</span>
-    <h1>{html.escape(label)} — {score}%</h1>
-    <p class="muted">{owner} full Conscious Coordination description.</p>
+    <h1>{heading}</h1>
+    <p class="muted">{'Your own coordination profile.' if is_self else 'Coordination between you and the member whose profile you are viewing.'}</p>
     </div>
     <article class="card"><div class="meter"><i style="width:{score}%"></i></div>
+    <div class="actions"><button class="btn" type="button">{read_label}</button><button class="out" type="button">{listen_label}</button></div>
     <div style="line-height:1.8;margin-top:18px">{html.escape(description)}</div></article>
     <div class="actions"><a class="out" href="{url_for('connection_profile',user_id=user_id)}">Back to Conscious Coordination Profile</a></div>'''
     return page('Conscious Coordination',content,'more')
-
 
 @app.route('/conscious-coordination/profile/<int:user_id>')
 @login_required
@@ -4227,6 +4245,11 @@ def connection_profile(user_id):
     coordination_types=cp.get('coordination_types',''); about=cp.get('about_me') or user['about'] or ''
     photo=(f'<img src="{url_for("community_media",filename=cp["photo_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%" alt="{html.escape(user["name"],quote=True)}">' if cp.get('photo_name') else f'<div class="portrait">{initials(user["name"])}</div>')
     chart=member_chart_data(user); wheel=_zodiac_wheel_html(chart,user['name']); scores=member_coordination_scores(user,cp_row)
+    pair_overall=None
+    if not is_self:
+        pair_data=basic_compatibility(me['id'],user_id,'general')
+        if pair_data.get('ready') and pair_data.get('score') is not None:
+            pair_overall=pair_data['score']
     can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
@@ -4234,8 +4257,20 @@ def connection_profile(user_id):
             return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Open full description</p></a>'''
         return f'''<article class="card">{inner}<p class="muted small">Upgrade to open this member’s full description.</p></article>'''
     metric_cards=''.join(metric_card(label,score) for label,score in scores['metrics'])
-    overall_inner=f'''<h2>Overall Coordination — {scores['overall']}%</h2><div class="meter"><i style="width:{scores['overall']}%"></i></div>'''
-    overall_html=(f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}<p class="muted small">Open full description</p></a>''' if can_open_details else overall_inner+'<p class="muted small">Upgrade to open this member’s full description.</p>')
+    if is_self:
+        overall_value=scores['overall']
+        overall_title=f'Overall Coordination — {overall_value}%'
+    elif pair_overall is not None:
+        overall_value=pair_overall
+        overall_title=f'Overall Coordination Between You & {html.escape(user["name"])} — {overall_value}%'
+    else:
+        overall_value=None
+        overall_title=f'Overall Coordination Between You & {html.escape(user["name"])}'
+    if overall_value is not None:
+        overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Read + Listen ⌄</span></div><div class="meter"><i style="width:{overall_value}%"></i></div>'''
+    else:
+        overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Complete both profiles</span></div>'''
+    overall_html=(f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}</a>''' if can_open_details and overall_value is not None else overall_inner+('' if is_self else '<p class="muted small">The shared percentage appears when both member profiles have enough coordination information.</p>'))
     if is_self:
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('community')}">Enter Community</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
@@ -4258,7 +4293,7 @@ def connection_profile(user_id):
             network_html='''<article class="card"><span class="badge">🌿 EXPERIENCES WITHIN YOUR NETWORK</span><h2>Recommended for Your Season</h2><p class="muted">Matching active Hosted Business Apps will appear here when they correspond to your current support needs.</p></article>'''
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
     <article class="card"><span class="badge heart">PLANETARY COORDINATION</span><h2>{'My Planetary Wheel' if is_self else html.escape(user['name'])+'’s Planetary Wheel'}</h2><p class="muted">Calculated planetary placements shown visually in the zodiac wheel.</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
-    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}<div class="grid">{metric_cards}</div><p class="muted small">These are self-reported Conscious Coordination indicators, not a mental-health diagnosis. Two-person compatibility is calculated separately from both member profiles and actual chart-to-chart placements.</p></article>
+    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}<div class="grid">{metric_cards}</div><p class="muted small">These category indicators describe the member profile and are not a mental-health diagnosis. When another member views this page, Overall Coordination is calculated between the viewer and this member from both permitted profiles and actual chart-to-chart placements. Private Journal content is not used.</p></article>
     {access_note}{business_html}{network_html}'''
     return page('Conscious Coordination Profile',content,'more')
 
@@ -5569,7 +5604,7 @@ def retreats():
     builder_url=url_for('retreat_builder') if session.get('user_id') else url_for('join')
     return page('Retreats',f'''<div class="hero" style="text-align:center"><span class="badge">THE SEASONS WITHIN • MICHIGAN</span><img src="{RETREAT_LOGO_DATA_URI}" alt="The Seasons Within Michigan Day Retreats" style="display:block;width:min(680px,92%);margin:10px auto 22px;border-radius:28px"><h1>Private Seasonal Wellness Retreats</h1><h3>All-Day • Overnight • Luxury Weekend</h3><p class="muted"><em>Take a slow, gentle breath.</em></p><h2>A Sacred Journey Created Just for You</h2><p class="muted">Return to Your</p><h1>Natural RHYTHM</h1></div>{season_guide}
     <article class="card paid"><span class="badge heart">🌿 DESIGN YOUR SEASONS WITHIN RETREAT</span><h2>Build a Retreat Around What May Support You</h2><p class="muted">Tell Your Story → Balance Your Seasons Assessment → reuse your existing profile/natal context → choose Preferred Dates and Retreat preferences → receive a personal Retreat & Conscious Coordination report → review a proposed schedule → choose real participating Hosted Business Apps → Request My Retreat.</p><div class="actions"><a class="btn" href="{builder_url}">Design My Seasons Within Retreat</a></div></article>
-    <article class="card" style="text-align:center"><h2>Ready to Begin?</h2><p class="muted">The Seasons Within coordinates the final experience. The system proposes and matches; it does not silently book providers.</p><div class="actions" style="justify-content:center"><a class="btn" href="{builder_url}">Build My Retreat in the App</a><a class="out" href="{form_url}" target="_blank" rel="noopener">Begin My Private Retreat</a></div></article>
+    <article class="card" style="text-align:center"><h2>Ready to Begin?</h2><p class="muted">The Seasons Within coordinates the final experience. The system proposes and matches; it does not silently book providers.</p><div class="actions" style="justify-content:center"><a class="out" href="{form_url}" target="_blank" rel="noopener">Begin My Private Retreat</a></div></article>
     <article class="card"><span class="badge gold">PARTICIPATING HOSTED BUSINESS APPS</span><h2>Wellness Businesses Can Be Part of Retreats</h2><p class="muted">Only real active Hosted Business Apps that opt in can be recommended. Provider choice remains with the member, and final scheduling is coordinated through private inquiries.</p>{owner_action}</article><div class="grid">{participating_html}</div>''','retreats')
 
 @app.route('/retreats/business/<int:business_id>/participate', methods=['POST'])
