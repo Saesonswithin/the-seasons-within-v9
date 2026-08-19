@@ -136,6 +136,7 @@ The same two people may therefore have different Overall Coordination percentage
 ## Wheel behavior
 
 - Self view: the member’s seven-function Planetary Coordination wheel, using the same factual natal longitudes shown on the seven Journal cards.
+- The self wheel is birthday-centered: the member’s exact natal Sun longitude is placed at 12 o’clock. The zodiac sectors and all seven planetary glyphs rotate by the same Sun-derived offset, so changing the member’s birth information changes the wheel orientation without changing any calculated sign, degree or planet-to-planet angle.
 - Other-member view: viewer + member comparison wheel.
 - Planet positions use exact stored zodiac longitude.
 - Cross-chart aspect lines come from the reusable aspect engine.
@@ -209,4 +210,4 @@ The member-facing communication layer is connected after deterministic scoring:
 - Collapsed Planetary Coordination cards display Coordination only. Activation remains in the evidence/report system and may be explained in the written reflection rather than appearing as a second collapsed-card percentage.
 - The seven planetary audio files are prepared sequentially, retried and validated before the browser receives them so concurrent first-load generation cannot leave every player at 0:00 / 0:00.
 - Daily What Deserves Your Attention is ranked from today’s real Lunar/current-planet activation inside the monthly cycle, current structured life themes, and recent report continuity. Recent repetition reduces novelty weight rather than reinforcing the same domain indefinitely.
-- The Conscious Coordination Profile wheel is the visual Wheel Planetary Coordination: only Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn, taken from the exact same calculated longitudes powering Your Planetary Coordination. Zodiac sectors and glyphs use the same transform. Do not mix outer planets, houses or ASC into this seven-function personal wheel.
+- The Conscious Coordination Profile wheel is the visual Wheel Planetary Coordination: only Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn, taken from the exact same calculated longitudes powering Your Planetary Coordination. Its orientation is member-specific and birthday-centered, with the natal Sun at 12 o’clock. Zodiac sectors and glyphs use the same Sun-derived transform. Do not mix outer planets, houses or ASC into this seven-function personal wheel.

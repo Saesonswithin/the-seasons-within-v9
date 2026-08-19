@@ -2512,7 +2512,7 @@ EVIDENCE:\n{json.dumps(evidence,default=str)}'''
     return {'ready':True,'report_id':rid,'report_version':1,'report_type':report_type,'other_storage_id':other_storage_id,'title':title,'score':score,'activation_score':activation,'written_report':written,'spoken_script':spoken,'privacy_scope':privacy_scope,'period_key':period_key}
 
 
-REFLECTION_ENGINE_VERSION = 14
+REFLECTION_ENGINE_VERSION = 15
 
 def _angle_distance(a,b):
     try:
@@ -5241,13 +5241,17 @@ def _zodiac_wheel_html(chart, member_name='Member'):
         return '<div class="empty"><h3>Planetary Coordination wheel unavailable</h3><p class="muted">Complete birth information is needed for the calculated Planetary Coordination wheel.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     radii=[116,100,130,108,136,92,122]
+    # The personal wheel is centered on the member's actual birthday/Sun
+    # longitude. This rotates the zodiac ring for the member while preserving
+    # every true longitude and every angular relationship between placements.
+    sun_anchor=_planetary_coordination_longitude(planets.get('Sun') or {})
+    if sun_anchor is None: sun_anchor=0.0
     def point(radius,longitude):
-        # Fixed orientation required by the approved member wheel: Aries 0°
-        # right, Cancer 0° top, Libra 0° left, Capricorn 0° bottom.
-        # Sectors and all seven glyphs use this exact same transform.
-        angle=math.radians(-(float(longitude)%360.0))
+        # Put the member's exact Sun position at the top. Zodiac sectors and all
+        # seven glyphs use this same member-specific transform.
+        angle=math.radians(-((float(longitude)-sun_anchor)%360.0)-90.0)
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
-    svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} Planetary Coordination wheel" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
+    svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} birthday-centered Planetary Coordination wheel" data-sun-anchor="{sun_anchor:.4f}" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{inner}" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".22"/>')
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="76" fill="none" stroke="currentColor" stroke-width="1" opacity=".12"/>')
@@ -5274,7 +5278,7 @@ def _zodiac_wheel_html(chart, member_name='Member'):
 
 
 def _comparison_zodiac_wheel_html(chart_a,chart_b,name_a='You',name_b='Member'):
-    """Overlay two factual natal wheels using the same longitude transform as the personal wheel."""
+    """Overlay two factual natal wheels in a shared, fixed comparison orientation."""
     ap=(chart_a or {}).get('planets') or {}; bp=(chart_b or {}).get('planets') or {}
     if not (chart_a or {}).get('ready') or not (chart_b or {}).get('ready') or not ap or not bp:
         return '<div class="empty"><h3>Coordination wheel unavailable</h3><p class="muted">Both members need complete birth information for chart-to-chart coordination.</p></div>'
@@ -5510,7 +5514,7 @@ def connection_profile(user_id):
             app.logger.exception('Could not build Experiences Within Your Network')
             network_html='''<article class="card"><span class="badge">🌿 EXPERIENCES WITHIN YOUR NETWORK</span><h2>Recommended for Your Season</h2><p class="muted">Matching active Hosted Business Apps will appear here when they correspond to your current support needs.</p></article>'''
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
-    <article class="card"><span class="badge heart">PLANETARY COORDINATION</span><h2>{'My Planetary Coordination Wheel' if is_self else 'Your Coordination Wheel Together'}</h2><p class="muted">{'The same exact Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn placements used by Your Planetary Coordination are plotted here from their calculated zodiac longitudes.' if is_self else 'Your planets and '+html.escape(user['name'])+'’s planets are plotted from their actual zodiac longitudes. Cross-chart aspect lines are calculated from those stored positions.'}</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
+    <article class="card"><span class="badge heart">PLANETARY COORDINATION</span><h2>{'My Planetary Coordination Wheel' if is_self else 'Your Coordination Wheel Together'}</h2><p class="muted">{'Your birthday centers this wheel on your exact natal Sun. The zodiac signs and the same Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn placements used by Your Planetary Coordination rotate together from their calculated longitudes.' if is_self else 'Your planets and '+html.escape(user['name'])+'’s planets are plotted from their actual zodiac longitudes. Cross-chart aspect lines are calculated from those stored positions.'}</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
     <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Coordination is a dynamic Lunar-cycle calculation across the seven Conscious Coordination functions. It is not a mental-health diagnosis or a measure of worth.' if is_self else 'Every percentage on this view belongs to the coordination between you and this member. It combines actual chart-to-chart relationships with the two permitted psychological/behavioral profiles. Private Journal content is never used in another member’s coordination.'}</p></article>
     {access_note}{business_html}{network_html}'''
     return page('Conscious Coordination Profile',content,'more')
@@ -5983,11 +5987,14 @@ def _planet_specific_practice(pname, practices):
         return "Break the responsibility into the next concrete step. Long-term structure is built more reliably through repeatable action than pressure."
     return "Use a short regulation pause before responding."
 
-def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,placement=None,journal_context=None,lunar_cycle=None,user_id=None,variant=0):
+def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,placement=None,journal_context=None,lunar_cycle=None,user_id=None,variant=0,coordination_score=None,activation_score=None):
     placement=placement or {}
     journal_context=journal_context or {}
     lunar_cycle=lunar_cycle or {}
     sign=placement.get('sign','')
+    try: degree=float(placement.get('degree',0) or 0)
+    except (TypeError,ValueError): degree=0.0
+    degree_phase=('an emerging, immediate expression' if degree<10 else 'an established, reinforced expression' if degree<20 else 'a mature, transitional expression')
     display_name='Lunar' if pname=='Moon' else pname
     tone=SIGN_BEHAVIORAL_TONES.get(sign,{})
     journal_themes=list((journal_context.get('theme_counts') or {}).keys())
@@ -5995,6 +6002,9 @@ def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,place
         str(user_id or ''),
         pname,
         sign,
+        f'{degree:.3f}',
+        str(coordination_score),
+        str(activation_score),
         str(lunar_cycle.get('cycle_id','')),
         str(journal_context.get('history_fingerprint','')),
         str(variant),
@@ -6023,7 +6033,22 @@ def _planet_fallback_guidance(pname,profile,practices,sky,relevant_aspects,place
         f"For {role}, this placement is less about a fixed trait and more about how {sign_strength} gets used under real pressure.",
     ]
     main=openings[seed%len(openings)]
-    main+=f" The useful task is to {action}."
+    main+=f" At this part of the sign, it tends to operate as {degree_phase}. The useful task is to {action}."
+
+    try: coordination_value=float(coordination_score)
+    except (TypeError,ValueError): coordination_value=None
+    try: activation_value=float(activation_score)
+    except (TypeError,ValueError): activation_value=None
+    score_context=''
+    if coordination_value is not None:
+        score_context=(' The calculated pattern suggests this function is currently easier to access deliberately.' if coordination_value>=80 else
+                       ' The calculated pattern suggests this function is available, but benefits from conscious pacing.' if coordination_value>=65 else
+                       ' The calculated pattern suggests this function may require more deliberate support in the present cycle.')
+    if activation_value is not None and activation_value>=55:
+        score_context+=' It is also strongly activated now, making real-time choices in this area especially noticeable.'
+    elif activation_value is not None and activation_value<=20:
+        score_context+=' Its activation is quieter now, so the pattern may appear more as background orientation than immediate pressure.'
+    main+=score_context
 
     if journal_themes:
         primary=journal_themes[(seed//7)%len(journal_themes)].replace('/',' and ')
@@ -6189,6 +6214,10 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
     relevant_aspects=[a for a in _chart_sky_aspects(chart,sky) if a.get('natal_planet')==pname or a.get('current_planet')==pname][:5]
     cycle_aspects=[a for a in (_chart_sky_aspects(chart,lunar_cycle) if lunar_cycle.get('planets') else []) if a.get('natal_planet')==pname or a.get('current_planet')==pname][:5]
     placement=(chart.get('planets') or {}).get(pname,{})
+    sign_tone=SIGN_BEHAVIORAL_TONES.get(placement.get('sign',''),{})
+    try: placement_degree=float(placement.get('degree',0) or 0)
+    except (TypeError,ValueError): placement_degree=0.0
+    placement_phase=('early-sign expression' if placement_degree<10 else 'middle-sign expression' if placement_degree<20 else 'late-sign expression')
     profile=dict(cp) if cp else {}; wellness=_member_wellness_practices(profile); lens=PLANET_BEHAVIORAL_LENSES.get(pname,{})
     profile_slice=_planet_profile_slice(profile,pname)
     use_private=(viewer_id is None or int(viewer_id)==int(user_id))
@@ -6232,6 +6261,7 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
         'current_sky_internal':sky,'lunar_cycle_chart_internal':lunar_cycle,
         'relevant_current_to_natal_aspects_internal':relevant_aspects,
         'relevant_lunar_cycle_to_natal_aspects_internal':cycle_aspects,'placement_internal':placement,
+        'sign_specific_behavioral_tone_internal':sign_tone,'placement_phase_internal':placement_phase,
         'calculated_monthly_coordination':{'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'evidence':planet_snapshot},
         'journal_history':journal_context}
 
@@ -6250,6 +6280,8 @@ THIS PLACEMENT IS:
 {display_name} in {placement.get('sign','')}
 
 The actual sign must meaningfully change how this planet’s behavioral function is interpreted. The full chart, current planetary/lunar conditions, self-reported profile, wellness practices and permitted private context are evidence; this is never a reusable sign paragraph.
+
+The final report must demonstrate the unique intersection of {display_name}'s human function with {placement.get('sign','')}'s specific strength, pressure pattern and reflective question. An interpretation that could be reused unchanged for the same planet in another sign is invalid. The early/middle/late position within the sign is also internal evidence and should subtly change emphasis without exposing degree mechanics.
 
 This report’s behavioral question is: "{lens.get('question','')}"
 Behavioral focus: {', '.join(lens.get('focus',[]))}
@@ -6277,7 +6309,7 @@ Use this planet’s own member-facing section structure rather than a shared gen
 
 The section names and content must make this planetary function feel meaningfully different from every other planetary report. Make it practical, psychologically thoughtful, non-diagnostic and non-deterministic. Do not recycle another planet/member/day/cycle report.'''
     required_terms={'Sun':['choice','direction','own'],'Moon':['emotion','regulat','safety'],'Mercury':['communicat','assum','interpret'],'Venus':['reciproc','affection','invest'],'Mars':['action','boundar','frustrat'],'Jupiter':['opportun','expand','risk'],'Saturn':['responsib','limit','disciplin']}.get(pname,[])
-    fallback_factory=lambda variant:_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant)
+    fallback_factory=lambda variant:_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant,planet_snapshot.get('coordination_score'),planet_snapshot.get('activation_score'))
     text,structured_sections,_=_cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms)
 
     spoken_instruction=f'''Create ONLY the spoken listening script for this exact {display_name} Conscious Coordination report.

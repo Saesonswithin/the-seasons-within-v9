@@ -1,0 +1,23 @@
+THE SEASONS WITHIN — COMPLETE REPAIRED BUILD
+Packaged: 2026-08-19
+
+This build preserves the full application and includes these verified corrections:
+
+- Planetary reports are bound to the exact planetary function, zodiac sign,
+  degree position, Coordination score, internal Activation score, current
+  Lunar-cycle contacts, relevant profile evidence, and permitted Journal themes.
+- The report engine version is increased so older generic cached reports regenerate.
+- All 84 planet-sign fallback combinations are distinct and validated.
+- The personal Planetary Coordination wheel is birthday-centered. The member's
+  exact natal Sun is placed at 12 o'clock, and the zodiac ring plus all seven
+  planetary glyphs rotate together without changing calculated signs, degrees,
+  or planet-to-planet angles.
+- The two-member comparison wheel remains in its shared comparison orientation.
+- Activation remains internal and is not displayed as a second percentage on
+  collapsed planetary cards.
+- Server MP3 narration remains primary, with browser Read Aloud fallback using
+  the exact saved listening script.
+- Existing Journal, Community, messaging, Notifications, Preferred Dates,
+  Retreat, business, affiliate, administrator, and database systems are preserved.
+
+Important: deploy the complete contents of this ZIP together.
