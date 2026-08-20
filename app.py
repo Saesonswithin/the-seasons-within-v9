@@ -1513,7 +1513,7 @@ def _split_choices(v):
 # Conscious Coordination v2 — deterministic scoring architecture
 # Astrology calculates. Psychology contextualizes. Conscious Coordination communicates.
 # -----------------------------------------------------------------------------
-CC_ENGINE_VERSION = 7
+CC_ENGINE_VERSION = 8
 CC_NEUTRAL_SCORE = 65.0
 
 CC_ASPECT_DEFINITIONS = {
@@ -2227,27 +2227,35 @@ def _stable_personal_coordination_snapshot(user, cp_row):
         return {'ready':False,'reason':chart.get('reason') or 'Birth information is incomplete.'}
     details={}
     for label,(fields,planets) in CC_STABLE_PROFILE_CATEGORIES.items():
-        field_scores=[]; field_evidence={}
+        field_evidence={}
         for field in sorted(fields):
             raw=str(cp.get(field,'') or '').strip()
             choices=sorted(_split_choices(raw))
             if not raw: continue
-            # Answers establish demonstrated self-awareness and available
-            # strategies. Multiple genuinely selected options can show range,
-            # but completion alone never becomes a perfect score.
-            score=62.0+min(22.0,6.0*max(1,len(choices)))
-            if len(raw)>=80: score+=3.0
-            field_scores.append(_cc_clamp(score))
-            field_evidence[field]={'present':True,'strategy_count':max(1,len(choices))}
-        psych_score=(sum(field_scores)/len(field_scores)) if field_scores else None
+            field_evidence[field]={'present':True,'strategy_count':max(1,len(choices)),'selections':choices}
+        # Reuse the established seven-function psychological engine rather than
+        # awarding nearly the same visible score for answer completion. Each
+        # category has its own function weights, and missing evidence remains a
+        # confidence limitation instead of becoming a neutral visible value.
+        category_weights=CC_SELF_CATEGORY_PLANET_WEIGHTS.get(label) or {p:1.0/max(1,len(planets)) for p in planets}
+        psych_items=[]
+        for planet,weight in category_weights.items():
+            item=_cc_psych_domain_result(cp,planet)
+            confidence=float(item.get('confidence',0.0) or 0.0)
+            if confidence<=0.0: continue
+            psych_items.append((float(item.get('score',0.0) or 0.0),float(weight)*confidence,planet,item))
+        psych_weight=sum(weight for _,weight,_,_ in psych_items)
+        psych_score=(sum(score*weight for score,weight,_,_ in psych_items)/psych_weight) if psych_weight else None
         natal_items=[]
-        for planet in planets:
+        for planet,base_weight in category_weights.items():
             item=_cc_natal_integration_result(chart,planet)
-            if item.get('confidence',0)>0.10:
-                natal_items.append(float(item.get('score',CC_NEUTRAL_SCORE)))
-        natal_score=(sum(natal_items)/len(natal_items)) if natal_items else None
+            confidence=float(item.get('confidence',0.0) or 0.0)
+            if confidence>0.10:
+                natal_items.append((float(item.get('score',CC_NEUTRAL_SCORE)),float(base_weight)*confidence,planet,item))
+        natal_weight=sum(weight for _,weight,_,_ in natal_items)
+        natal_score=(sum(score*weight for score,weight,_,_ in natal_items)/natal_weight) if natal_weight else None
         if psych_score is not None and natal_score is not None:
-            score=0.78*psych_score+0.22*natal_score
+            score=0.82*psych_score+0.18*natal_score
         elif psych_score is not None:
             score=psych_score
         elif natal_score is not None:
@@ -2256,10 +2264,11 @@ def _stable_personal_coordination_snapshot(user, cp_row):
             continue
         details[label]={
             'coordination_score':round(_cc_clamp(score)),
-            'confidence':round(min(1.0,(len(field_scores)/max(1,len(fields)))*0.78+(0.22 if natal_items else 0.0)),3),
+            'confidence':round(min(1.0,(len(field_evidence)/max(1,len(fields)))*0.82+(0.18 if natal_items else 0.0)),3),
             'psychological_score':round(psych_score,2) if psych_score is not None else None,
             'natal_support_score':round(natal_score,2) if natal_score is not None else None,
             'profile_evidence':field_evidence,
+            'psychological_functions':{planet:{'score':round(item.get('score',0),2),'confidence':item.get('confidence',0)} for _,_,planet,item in psych_items},
             'natal_planets':list(planets),
             'source':'stable psychological dimensions + natal supporting information',
         }
@@ -2628,7 +2637,7 @@ EVIDENCE:\n{json.dumps(evidence,default=str)}'''
     return {'ready':True,'report_id':rid,'report_version':1,'report_type':report_type,'other_storage_id':other_storage_id,'title':title,'score':score,'activation_score':activation,'written_report':written,'spoken_script':spoken,'privacy_scope':privacy_scope,'period_key':period_key}
 
 
-REFLECTION_ENGINE_VERSION = 16
+REFLECTION_ENGINE_VERSION = 17
 
 def _angle_distance(a,b):
     try:
@@ -3913,22 +3922,32 @@ def _current_lunar_sign_experience(user_id):
     def save(reflection_type,payload):
         conn=db(); conn.execute('''INSERT INTO astrology_reflections(user_id,reflection_type,period_key,payload,created_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id,reflection_type,period_key) DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',(user_id,reflection_type,period_key,json.dumps(payload,default=str),now())); conn.commit(); conn.close()
     cached=load('lunar_sign_reflection') or {}
-    report=(cached.get('text') or '').strip()
+    # A deterministic fallback is never treated as the completed AI report.
+    # When generation was temporarily unavailable, later requests retry for the
+    # same Moon-sign period instead of preserving fallback copy until ingress.
+    report=(cached.get('text') or '').strip() if cached.get('ai_generated') is True else ''
     if not report:
         prompt='''Write one professional Lunar Season Reflection for the exact Moon-sign period in the evidence. Synthesize the current Moon, only meaningful natal correspondence, stable personality context and structured private Journal themes. Do not quote or repeat Journal language and never say “your Journal says.” Do not expose degrees, aspects, algorithms, scores or data sources. Do not write a generic zodiac forecast or diagnose. Use possibility language. Write two or three cohesive paragraphs, then a final bold-style text heading “What deserves attention:” followed by one specific practical focus. The selected symbolic Season Within is supplied; do not choose another or base it on the outdoor calendar. Return only the reflection text.\nEVIDENCE:\n'''+json.dumps(evidence,default=str)
-        report=(_openai_text(prompt) or '').strip()
-        if not report:
+        report=''
+        for attempt in range(3):
+            candidate=(_openai_text(prompt+f'\nINTERNAL GENERATION ATTEMPT: {attempt+1}. Do not mention this attempt.') or '').strip()
+            if len(candidate)>=500 and 'what deserves attention' in candidate.lower():
+                report=candidate
+                break
+        ai_generated=bool(report)
+        if not ai_generated:
             themes=journal.get('current_themes') or ['attention and recovery']; primary=themes[0].replace('/',' and ')
             tone=SIGN_BEHAVIORAL_TONES.get(period['moon_sign'],{})
             insight=_behavioral_insights(cp)
             report=(f"This lunar period may be useful for noticing how {primary} is affecting the pace at which you respond, decide, or take responsibility. The current Moon emphasis supports {tone.get('strength','closer attention to what is emotionally active')}, while the more important question is how that emphasis meets the patterns you already carry rather than what the sign is supposed to mean for everyone.\n\n"
                     f"{insight.get('communication','Clarity may become easier when expectations are made explicit instead of assumed.')} Give reactions enough room to become specific before deciding which concern requires action. {tone.get('question','What needs awareness before the next response?')}\n\nWhat deserves attention: Notice where {primary} has quietly become harder to carry because the need, boundary, or next decision has not yet been named clearly.")
-        save('lunar_sign_reflection',{'engine_version':REFLECTION_ENGINE_VERSION,'text':report,'season':season,'period':period,'evidence_fingerprint':hashlib.sha256(json.dumps(evidence,sort_keys=True,default=str).encode()).hexdigest()})
+        save('lunar_sign_reflection',{'engine_version':REFLECTION_ENGINE_VERSION,'text':report,'ai_generated':ai_generated,'season':season,'period':period,'evidence_fingerprint':hashlib.sha256(json.dumps(evidence,sort_keys=True,default=str).encode()).hexdigest()})
         # Preserve reflection history inside the existing private Journal without
         # creating duplicate entries on later page loads.
         title=f"Lunar Season Reflection — {period['moon_sign']} — {period['started_utc']}"
         conn=db(); exists=conn.execute('SELECT id FROM journal_entries WHERE user_id=? AND title=?',(user_id,title)).fetchone()
         if not exists: conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,created_at,updated_at) VALUES(?,?,?,?,0,?,?)',(user_id,title,report,'Conscious Coordination',now(),now()))
+        elif ai_generated: conn.execute('UPDATE journal_entries SET body=?,updated_at=? WHERE id=? AND user_id=?',(report,now(),exists['id'],user_id))
         conn.commit(); conn.close()
     meditation_cached=load('lunar_sign_meditation') or {}
     meditation=(meditation_cached.get('text') or '').strip()
@@ -4782,10 +4801,31 @@ def profile():
     meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>') if experience.get('meditation') else ''
     meditation_section=(f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘 Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>''' if meditation_html else '')
 
+    # The seven changing planetary Journal reports are interpretation layers only.
+    # They may use permitted private Journal themes, but they never write to or
+    # recalculate the member's permanent natal chart.
+    chart=member_chart_data(u); monthly_snapshot=_personal_monthly_coordination_snapshot(u['id'])
+    planet_cards=[]
+    planet_domains={'Sun':'Self & Direction','Moon':'Emotional Safety & Regulation','Mercury':'Communication & Interpretation','Venus':'Connection, Affection & Values','Mars':'Action, Boundaries & Conflict','Jupiter':'Growth, Possibility & Meaning','Saturn':'Structure, Responsibility & Stability'}
+    if chart.get('ready'):
+        for name in PLANET_NAMES:
+            placement=(chart.get('planets') or {}).get(name)
+            if not placement: continue
+            display_name='LUNAR' if name=='Moon' else name.upper(); spoken_name='Lunar' if name=='Moon' else name.title(); glyph=PLANET_GLYPHS.get(name,'')
+            month_item=((monthly_snapshot.get('planetary') or {}).get(name) or {}) if monthly_snapshot.get('ready') else {}
+            coord_score=month_item.get('coordination_score')
+            score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
+            report_url=url_for('planet_interpretation',user_id=u['id'],planet=name.lower())
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(score_note)}</small></span><span class="muted small">Read reflection ⌄</span></summary><div class="actions topspace"><a class="btn" href="{html.escape(report_url,quote=True)}">Read My {html.escape(spoken_name)} Reflection</a></div></details>''')
+    else:
+        chart_reason=chart.get('reason') or 'The planetary calculation could not be completed.'
+        planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
+    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate your permanent natal chart.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
+
     shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
-    content=''.join([header,season_section,shortcuts,meditation_section,public_section])
+    content=''.join([header,season_section,shortcuts,planetary_section,meditation_section,public_section])
     return page('My Journal',content,'profile')
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -5346,11 +5386,11 @@ def _zodiac_wheel_html(chart, member_name='Member'):
     if not (chart or {}).get('ready') or not required:
         return '<div class="empty"><h3>Natal wheel unavailable</h3><p class="muted">Complete birth information is needed for the calculated natal wheel.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
-    radii=[132,116,100,124,108,136,92,128,112,96]
     def point(radius,longitude):
         # Conventional fixed zodiac orientation: 0° Aries at the left, zodiac
-        # longitude increasing counter-clockwise. Only birth data moves planets.
-        angle=math.radians(180.0-(float(longitude)%360.0))
+        # longitude increasing clockwise on the screen. This is the non-mirrored
+        # transform used by the sign ring, planets, cusps and Ascendant alike.
+        angle=math.radians(180.0+(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} accurate natal astrology wheel" data-chart-kind="natal" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
@@ -5374,14 +5414,36 @@ def _zodiac_wheel_html(chart, member_name='Member'):
             x1,y1=point(76,longitude); x2,y2=point(inner,longitude); nx,ny=point(88,(longitude+4)%360)
             svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="var(--purple)" stroke-width="1" opacity=".28"/>')
             svg.append(f'<text x="{nx:.1f}" y="{ny:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="9" fill="var(--purple)" opacity=".72">{house_index}</text>')
-    for index,pname in enumerate(NATAL_WHEEL_PLANETS):
-        placement=planets.get(pname) or {}
-        longitude=_planetary_coordination_longitude(placement)
+    # Keep the longitude anchor exact while placing crowded glyph labels into
+    # collision-free radial/tangential lanes. A leader joins every displaced
+    # label to its factual longitude, so visual spacing never changes the chart.
+    placed=[]
+    label_positions={}
+    radius_candidates=(138,106,74,122,90)
+    offset_candidates=(0.0,-7.0,7.0,-14.0,14.0,-21.0,21.0,-28.0,28.0,-35.0,35.0)
+    for pname in NATAL_WHEEL_PLANETS:
+        placement=planets.get(pname) or {}; longitude=_planetary_coordination_longitude(placement)
         if longitude is None: continue
-        radius=radii[index%len(radii)]; px,py=point(radius,longitude); ex,ey=point(inner-4,longitude)
+        best=None
+        for offset in offset_candidates:
+            for radius in radius_candidates:
+                px,py=point(radius,longitude+offset)
+                nearest=min([math.hypot(px-ux,py-uy) for ux,uy in placed] or [999.0])
+                collision=max(0.0,31.0-nearest)
+                cost=collision*10000.0+abs(offset)*1.8+abs(radius-110)*0.08
+                if best is None or cost<best[0]: best=(cost,px,py,radius,offset)
+        _,px,py,radius,offset=best; placed.append((px,py)); label_positions[pname]=(px,py,radius,offset,longitude)
+    for pname in NATAL_WHEEL_PLANETS:
+        placement=planets.get(pname) or {}
+        position=label_positions.get(pname)
+        if not position: continue
+        px,py,radius,offset,longitude=position; ex,ey=point(inner-4,longitude); ax,ay=point(78,longitude)
         glyph=PLANET_GLYPHS.get(pname,pname[:1]); display=pname
         sign=placement.get('sign',''); degree=placement.get('degree','')
-        svg.append(f'<line x1="{cx}" y1="{cy}" x2="{ex:.1f}" y2="{ey:.1f}" stroke="currentColor" stroke-width=".7" opacity=".10"/>')
+        svg.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{ex:.1f}" y2="{ey:.1f}" stroke="currentColor" stroke-width=".7" opacity=".10"/>')
+        if abs(offset)>0.01 or abs(radius-138)>0.01:
+            anchor_x,anchor_y=point(radius,longitude)
+            svg.append(f'<line x1="{anchor_x:.1f}" y1="{anchor_y:.1f}" x2="{px:.1f}" y2="{py:.1f}" stroke="currentColor" stroke-width=".8" opacity=".30"/>')
         svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="14" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".98" data-planet="{html.escape(display,quote=True)}" data-longitude="{longitude:.4f}" data-sign="{html.escape(str(sign),quote=True)}" data-degree="{html.escape(str(degree),quote=True)}"><title>{html.escape(display)} — {html.escape(str(sign))} {html.escape(str(degree))}°</title></circle>')
         svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(display,quote=True)} — {html.escape(str(sign),quote=True)} {html.escape(str(degree),quote=True)} degrees">{glyph}</text>')
     rising=(chart or {}).get('rising') or (chart or {}).get('ascendant') or {}
@@ -5631,7 +5693,7 @@ def connection_profile(user_id):
         top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
         if bool(me['conscious_paid'] or me['is_admin']): top_actions+=f'''<a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
-        journal_actions=f'''<a class="btn" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
+        journal_actions=f'''<a class="btn" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
     business_html=member_business_card(business) if business and cp.get('display_business_app') else ''
     title='My Conscious Coordination Profile' if is_self else f'{html.escape(user["name"])} — Conscious Coordination Profile'
     access_note=''
@@ -6325,8 +6387,6 @@ Compose this from the exact evidence packet. Do not reuse a sign template, anoth
 
 
 def _planet_reflection_payload(user_id,pname,viewer_id=None):
-    # Separate monthly planetary reports were retired by the simplified system.
-    return {'ready':False,'reason':'Separate planetary reports are not part of the current Journal experience.'}
     canonical={x.lower():x for x in PLANET_NAMES}
     pname=canonical.get((pname or '').lower(),pname if pname in PLANET_NAMES else None)
     if not pname:
@@ -6477,7 +6537,28 @@ WRITTEN REPORT FOR CONTEXT ONLY:
 @app.route('/conscious-coordination/planet/<int:user_id>/<planet>')
 @login_required
 def planet_interpretation(user_id,planet):
-    abort(404)
+    me=current_user()
+    if user_id!=me['id'] and not bool(me['conscious_paid'] or me['is_admin']):
+        flash('Upgrade to open another member’s deeper Conscious Coordination interpretation.','info')
+        return redirect(url_for('membership'))
+    canonical={x.lower():x for x in PLANET_NAMES}; pname=canonical.get(planet.lower())
+    if not pname: abort(404)
+    try: payload=_planet_reflection_payload(user_id,pname,me['id'])
+    except Exception:
+        app.logger.exception('Could not prepare %s planetary reflection',pname)
+        payload=None
+    display_name='Lunar' if pname=='Moon' else pname
+    if not payload or not payload.get('ready'):
+        message=(payload or {}).get('reason') or 'Your individualized '+display_name+' reflection is temporarily unavailable. Please try again shortly.'
+        if request.args.get('inline')=='1':
+            return f'<div class="topspace"><p class="muted">{html.escape(message)}</p></div>',503
+        return page('Conscious Coordination',f'<article class="card"><h2>{html.escape(display_name)} Reflection</h2><p class="muted">{html.escape(message)}</p></article>','more'),503
+    placement=payload.get('placement') or {}; heading=f'{display_name} — {placement.get("sign","")} {placement.get("degree","")}°'
+    body_html=html.escape(payload.get('text','')).replace(chr(10),'<br>')
+    report=f'''<div class="topspace"><h3>{html.escape(heading)}</h3><div class="actions"><span class="badge">READ MY {html.escape(display_name.upper())} REFLECTION</span></div><div style="line-height:1.75;margin-top:12px">{body_html}</div></div>'''
+    if request.args.get('inline')=='1':
+        return report
+    return page('Conscious Coordination',f'''<div class="hero"><span class="badge">THE SEASONS WITHIN • CONSCIOUS COORDINATION</span><h1>{html.escape(heading)}</h1><p class="muted">A personal Conscious Coordination reflection for this specific planetary function.</p></div><article class="card">{report}</article><a class="out" href="{url_for('profile')}#planetary-coordination">Back to My Journal</a>''','more')
 
 
 @app.route('/conscious-coordination/planet/<int:user_id>/<planet>/audio')

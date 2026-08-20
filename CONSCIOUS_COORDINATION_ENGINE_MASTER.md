@@ -40,8 +40,10 @@ The Lunar Season Reflection answers: **What may deserve attention during the Moo
 - Classify one symbolic Season Within from the combined evidence: Spring — Renewal; Summer — Expansion & Connection; Autumn — Reflection & Release; or Winter — Restoration & Inner Listening. This is not the outdoor calendar season.
 - Save the new reflection to private Journal history and make it active.
 - Generate one written personalized meditation from that exact reflection.
+- Keep the seven separate written planetary Journal reports for Sun, Lunar, Mercury, Venus, Mars, Jupiter and Saturn. Each report uses its own planetary function, exact natal placement, current Lunar-cycle calculation, internal Activation evidence, relevant psychological evidence and permitted structured private Journal themes.
+- Planetary Journal reports are interpretation layers only. They never rotate, move, overwrite or recalculate the permanent natal chart.
 
-There is no separate daily report, monthly planetary report collection, Reiki Reflection, report narration, automatic MP3 report audio or browser text-to-speech in this simplified system.
+There is no separate generic daily report, Reiki Reflection, report narration, automatic MP3 report audio or browser text-to-speech in this system.
 
 ## Member-to-member compatibility
 
@@ -86,6 +88,10 @@ Do not create Family, Retreat or generic compatibility types in the updated memb
 ### Lunar Journal
 
 `Actual current Moon longitude/sign/ingress + member natal chart + structured recent private Journal themes + relevant regulation context → meaningful lunar correspondence → symbolic season → Lunar Season Reflection → written personalized meditation → private Journal save`
+
+### Planetary Journal reports
+
+`Planetary function + exact natal sign/degree + current Lunar-cycle calculation + internal Activation + relevant psychological evidence + permitted structured private Journal themes → individualized written report → quality check → saved/versioned report`
 
 These pipelines must remain separate. AI communicates calculated evidence; it does not invent astrology, percentages, private evidence or unsupported claims.
 
