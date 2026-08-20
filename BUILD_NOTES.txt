@@ -1,23 +1,29 @@
-THE SEASONS WITHIN — COMPLETE REPAIRED BUILD
-Packaged: 2026-08-19
+THE SEASONS WITHIN — SIMPLIFIED FUNCTIONAL UPDATE
+Packaged: 2026-08-20
 
-This build preserves the full application and includes these verified corrections:
+This is the complete existing application with its approved visual design preserved.
 
-- Planetary reports are bound to the exact planetary function, zodiac sign,
-  degree position, Coordination score, internal Activation score, current
-  Lunar-cycle contacts, relevant profile evidence, and permitted Journal themes.
-- The report engine version is increased so older generic cached reports regenerate.
-- All 84 planet-sign fallback combinations are distinct and validated.
-- The personal Planetary Coordination wheel is birthday-centered. The member's
-  exact natal Sun is placed at 12 o'clock, and the zodiac ring plus all seven
-  planetary glyphs rotate together without changing calculated signs, degrees,
-  or planet-to-planet angles.
-- The two-member comparison wheel remains in its shared comparison orientation.
-- Activation remains internal and is not displayed as a second percentage on
-  collapsed planetary cards.
-- Server MP3 narration remains primary, with browser Read Aloud fallback using
-  the exact saved listening script.
-- Existing Journal, Community, messaging, Notifications, Preferred Dates,
-  Retreat, business, affiliate, administrator, and database systems are preserved.
+Included functional corrections:
 
-Important: deploy the complete contents of this ZIP together.
+- Permanent natal wheel calculated from birth date, time, place, coordinates,
+  and historical timezone.
+- Exact zodiac-longitude plotting for Sun, Moon, Mercury, Venus, Mars, Jupiter,
+  Saturn, Uranus, Neptune, and Pluto.
+- Ascendant, houses, and house cusps only when birth time and coordinates are reliable.
+- Stable deterministic Conscious Coordination percentages based on psychological
+  dimensions and natal supporting information, not daily or monthly transits.
+- One professional personal profile interpretation that regenerates when relevant
+  profile or birth evidence changes.
+- Two separate side-by-side natal wheels for member compatibility.
+- Love / Relationship, Friendship, and Business compatibility only.
+- Compatibility excludes private Journal information and uses evidence fingerprints.
+- One active Lunar Season Reflection tied to the Moon's actual zodiac-sign ingress.
+- One written personalized meditation tied to that Lunar Season Reflection.
+- Previous Lunar Season Reflections are saved in private Journal history.
+- Separate daily reports, monthly planetary reports, Reiki Reflection, report
+  narration, MP3 report audio, and browser Read Aloud are retired.
+- Community, Journal, Journal Inbox, messaging, Notifications, Preferred Dates,
+  Business, Retreat, Membership, affiliate, administrator, and database systems
+  remain preserved.
+
+Deploy the complete contents of this ZIP together.
