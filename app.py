@@ -5388,9 +5388,10 @@ def _zodiac_wheel_html(chart, member_name='Member'):
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     def point(radius,longitude):
         # Conventional fixed zodiac orientation: 0° Aries at the left, zodiac
-        # longitude increasing clockwise on the screen. This is the non-mirrored
+        # longitude proceeds from Aries toward Taurus below the left horizon.
+        # This is the standard non-mirrored natal-chart orientation, and the
         # transform used by the sign ring, planets, cusps and Ascendant alike.
-        angle=math.radians(180.0+(float(longitude)%360.0))
+        angle=math.radians(180.0-(float(longitude)%360.0))
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} accurate natal astrology wheel" data-chart-kind="natal" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
@@ -5486,7 +5487,9 @@ def _comparison_zodiac_wheel_html(chart_a,chart_b,name_a='You',name_b='Member'):
         return '<div class="empty"><h3>Coordination wheel unavailable</h3><p class="muted">Both members need complete birth information for chart-to-chart coordination.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
     def point(radius,longitude):
-        angle=math.radians(-(float(longitude)%360.0))
+        # The comparison chart uses the same non-mirrored zodiac direction;
+        # Aries is at the right in this legacy overlay renderer.
+        angle=math.radians(float(longitude)%360.0)
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
     svg=[f'<svg viewBox="0 0 480 520" role="img" aria-label="{html.escape(name_a,quote=True)} and {html.escape(name_b,quote=True)} Conscious Coordination comparison wheel" style="width:100%;max-width:560px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
