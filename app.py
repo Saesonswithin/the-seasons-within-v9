@@ -5386,15 +5386,21 @@ def _zodiac_wheel_html(chart, member_name='Member'):
     if not (chart or {}).get('ready') or not required:
         return '<div class="empty"><h3>Natal wheel unavailable</h3><p class="muted">Complete birth information is needed for the calculated natal wheel.</p></div>'
     cx=240; cy=240; outer=198; inner=150; sign_r=175
+    rising=(chart or {}).get('rising') or (chart or {}).get('ascendant') or {}
+    try: asc_longitude=float(rising.get('longitude'))%360.0 if rising.get('longitude') is not None else None
+    except (TypeError,ValueError): asc_longitude=None
     def point(radius,longitude):
-        # Natal-chart orientation used by the member experience: 0° Aries at
-        # the right horizon and 180° Libra at the left. Zodiac longitude then
-        # proceeds from Aries toward Taurus above the right horizon, placing
-        # Cancer at the top and Capricorn at the bottom. This is the
-        # transform used by the sign ring, planets, cusps and Ascendant alike.
-        angle=math.radians(-(float(longitude)%360.0))
+        # With a reliable birth time, rotate the entire factual chart so the
+        # Ascendant/first-house cusp is the left horizon (the start of house 1).
+        # Without a reliable Ascendant, retain the fixed zodiac orientation and
+        # do not invent houses. Signs, planets, cusps and ASC share this transform.
+        value=float(longitude)%360.0
+        angle=(180.0-(value-asc_longitude)) if asc_longitude is not None else -value
+        angle=math.radians(angle)
         return cx+radius*math.cos(angle),cy+radius*math.sin(angle)
-    svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} accurate natal astrology wheel" data-chart-kind="natal" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
+    orientation=('ascendant-house-one' if asc_longitude is not None else 'fixed-zodiac-no-houses')
+    asc_data=(f'{asc_longitude:.4f}' if asc_longitude is not None else '')
+    svg=[f'<svg viewBox="0 0 480 480" role="img" aria-label="{html.escape(member_name,quote=True)} accurate natal astrology wheel" data-chart-kind="natal" data-wheel-orientation="{orientation}" data-house-one-longitude="{asc_data}" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto">']
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{outer}" fill="none" stroke="currentColor" stroke-width="2.2" opacity=".62"/>')
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{inner}" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".22"/>')
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="76" fill="none" stroke="currentColor" stroke-width="1" opacity=".12"/>')
@@ -5448,7 +5454,6 @@ def _zodiac_wheel_html(chart, member_name='Member'):
             svg.append(f'<line x1="{anchor_x:.1f}" y1="{anchor_y:.1f}" x2="{px:.1f}" y2="{py:.1f}" stroke="currentColor" stroke-width=".8" opacity=".30"/>')
         svg.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="14" fill="var(--card,#fff)" stroke="currentColor" stroke-width="1.5" opacity=".98" data-planet="{html.escape(display,quote=True)}" data-longitude="{longitude:.4f}" data-sign="{html.escape(str(sign),quote=True)}" data-degree="{html.escape(str(degree),quote=True)}"><title>{html.escape(display)} — {html.escape(str(sign))} {html.escape(str(degree))}°</title></circle>')
         svg.append(f'<text x="{px:.1f}" y="{py:.1f}" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" aria-label="{html.escape(display,quote=True)} — {html.escape(str(sign),quote=True)} {html.escape(str(degree),quote=True)} degrees">{glyph}</text>')
-    rising=(chart or {}).get('rising') or (chart or {}).get('ascendant') or {}
     if rising.get('longitude') is not None:
         try: rx,ry=point(143,float(rising.get('longitude'))%360.0)
         except (TypeError,ValueError): rx=ry=None
