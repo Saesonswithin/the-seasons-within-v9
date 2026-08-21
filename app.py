@@ -6661,6 +6661,82 @@ def extract_plan_subsection(text, heading, next_heading=None):
         if p>=0: end=p
     return text[start:end].strip()
 
+def extract_markdown_section(text, heading_names):
+    """Return a complete Markdown section without depending on one exact next heading."""
+    if not text:
+        return ''
+    lines=text.splitlines()
+    wanted={re.sub(r'[^a-z0-9]+',' ',name.lower()).strip() for name in heading_names}
+    start=None; level=None
+    for index,line in enumerate(lines):
+        match=re.match(r'^\s*(#{1,6})\s+(.+?)\s*$',line)
+        if not match:
+            continue
+        normalized=re.sub(r'[^a-z0-9]+',' ',match.group(2).lower()).strip()
+        if normalized in wanted or any(name in normalized for name in wanted):
+            start=index; level=len(match.group(1)); break
+    if start is None:
+        return ''
+    end=len(lines)
+    for index in range(start+1,len(lines)):
+        match=re.match(r'^\s*(#{1,6})\s+(.+?)\s*$',lines[index])
+        if match and len(match.group(1))<=level:
+            end=index; break
+    return '\n'.join(lines[start:end]).strip()
+
+def business_plan_companion_texts(plan,answers):
+    """Create both saved workspace documents from the generated plan and intake."""
+    marketing=extract_markdown_section(plan,('Marketing Strategy','Marketing and Growth Strategy'))
+    launch=extract_markdown_section(plan,('90-Day Launch Plan','90 Day Launch Plan','90-Day Action Priorities','90 Day Action Priorities'))
+    if not marketing:
+        marketing='''## Marketing Strategy
+
+### Position and Audience
+{usp}
+
+The priority audience is {audience}
+
+### Current Foundation
+{current}
+
+### Development Priorities
+{help_text}
+
+### Measures of Progress
+Track qualified inquiries, conversion to paid offers, repeat participation, referral sources, and revenue by offer. Review these measures monthly and adjust activity according to demonstrated response rather than visibility alone.'''.format(
+            usp=(answers.get('usp') or 'Use the business mission, values, and strongest customer outcome as the central market position.'),
+            audience=(answers.get('target_audience') or 'the customers identified in the completed business plan.'),
+            current=(answers.get('marketing_strategy') or 'Build from the channels and relationships identified in the completed business plan.'),
+            help_text=(answers.get('marketing_help') or 'Develop a consistent message, practical outreach schedule, referral relationships, and a clear path from discovery to purchase.')
+        )
+    if not launch:
+        launch='''## 90-Day Launch Plan
+
+### Days 1–30 — Foundation
+- Confirm the primary offer, intended customer, pricing assumptions, delivery requirements, and measures of success.
+- Organize the operating, financial, compliance, and marketing tasks identified in the business plan.
+- Turn the short-term goals into dated weekly actions.
+
+### Days 31–60 — Market Preparation
+- Prepare the customer-facing offer and its clearest supporting message.
+- Begin focused outreach through the channels and partnerships identified in the Marketing Strategy.
+- Record inquiries, responses, objections, and early conversion results.
+
+### Days 61–90 — Launch and Review
+- Deliver the launch activity, follow up with qualified contacts, and document results.
+- Compare actual response and spending with the plan assumptions.
+- Keep the actions that produced meaningful results and revise the next 90-day cycle around the evidence collected.
+
+### Member Priorities
+{goals}
+
+### Known Constraints
+{challenges}'''.format(
+            goals=(answers.get('short_goals') or 'Use the short-term goals saved in the completed questionnaire.'),
+            challenges=(answers.get('challenges') or 'Monitor the constraints and risks identified in the completed business plan.')
+        )
+    return marketing.strip(),launch.strip()
+
 def build_simple_pdf(title, text):
     # Dependency-free text PDF: readable plan with automatic pages.
     width,height=612,792; left=54; top=738; bottom=54; font_size=11; leading=16; max_chars=82
@@ -6995,13 +7071,33 @@ def startup():
 @login_required
 @business_development_required
 def business_plan_generate():
-    u=current_user(); conn=db(); row=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
-    if not row: flash('Complete and save the Business Plan questionnaire first.','info'); return redirect(url_for('startup'))
-    answers=json.loads(row['payload']); plan,error=generate_business_plan_ai(answers)
-    if error: flash(error,'error'); return redirect(url_for('business_plan'))
-    marketing=extract_plan_subsection(plan,'Marketing Strategy','Operations Plan') or extract_plan_subsection(plan,'Marketing Strategy','Operations')
-    launch=extract_plan_subsection(plan,'90-Day Launch Plan','Conclusion') or extract_plan_subsection(plan,'90-Day Action Priorities','Conclusion')
-    conn=db(); v=conn.execute('SELECT COALESCE(MAX(version),0)+1 v FROM business_plans WHERE user_id=?',(u['id'],)).fetchone()['v']; conn.execute('''INSERT INTO business_plans(user_id,version,payload,document_text,marketing_text,launch_text,status,created_at) VALUES(?,?,?,?,?,?,?,?)''',(u['id'],v,json.dumps(answers),plan,marketing,launch,'Generated',now())); conn.commit(); conn.close(); notify(u['id'],'Business Plan Ready',f'Business Plan Version {v} is ready to view and download.',url_for('plan_versions')); flash(f'Professional Business Plan Version {v} generated and saved.','success'); return redirect(url_for('business_plan'))
+    u=current_user(); conn=db(); row=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone()
+    if not row:
+        conn.close(); flash('Complete and save the Business Plan questionnaire first.','info'); return redirect(url_for('startup'))
+    answers=json.loads(row['payload'])
+    # Commit the member's version before the longer AI request so the saved
+    # questionnaire and version survive a web-worker restart.
+    version=conn.execute('SELECT COALESCE(MAX(version),0)+1 v FROM business_plans WHERE user_id=?',(u['id'],)).fetchone()['v']
+    cursor=conn.execute('''INSERT INTO business_plans(user_id,version,payload,document_text,marketing_text,launch_text,status,created_at) VALUES(?,?,?,?,?,?,?,?)''',(u['id'],version,json.dumps(answers),'','','','Generating',now()))
+    plan_id=cursor.lastrowid
+    conn.commit(); conn.close()
+
+    plan,error=generate_business_plan_ai(answers)
+    if error:
+        conn=db(); conn.execute('UPDATE business_plans SET status=? WHERE id=? AND user_id=?',('Generation failed',plan_id,u['id'])); conn.commit(); conn.close()
+        flash(error+' Your questionnaire remains saved and you may generate a new version.','error'); return redirect(url_for('plan_versions'))
+
+    marketing,launch=business_plan_companion_texts(plan,answers)
+    conn=db()
+    conn.execute('''UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?''',(plan,marketing,launch,'Generated',plan_id,u['id']))
+    conn.commit()
+    saved=conn.execute('''SELECT id FROM business_plans WHERE id=? AND user_id=? AND status='Generated' AND document_text<>'' AND marketing_text<>'' AND launch_text<>'' ''',(plan_id,u['id'])).fetchone()
+    conn.close()
+    if not saved:
+        flash('The plan was generated but could not be verified as saved. Please try again before downloading.','error'); return redirect(url_for('plan_versions'))
+    notify(u['id'],'Business Plan Ready',f'Business Plan Version {version} is ready. Its Marketing Strategy and 90-Day Launch Plan were also saved.',url_for('plan_versions'))
+    flash(f'Professional Business Plan Version {version}, Marketing Strategy and 90-Day Launch Plan generated and saved.','success')
+    return redirect(url_for('business_plan'))
 
 @app.route('/business-plan/document/<int:plan_id>')
 @login_required
