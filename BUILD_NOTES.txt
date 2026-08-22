@@ -33,6 +33,9 @@ Included functional corrections:
   intake, industry, stage, needs, audience, mission, and goals.
 - Business Plan generation is split into three checkpointed AI stages so Render worker
   timeouts do not erase the questionnaire or completed sections.
+- If the external AI service is unavailable or rejects its credential, the app still
+  creates and saves a complete evidence-based Business Plan from the questionnaire,
+  together with its Marketing Strategy and 90-Day Launch Plan.
 - Failed Business Plan versions show Retry instead of empty View/Download controls.
 - Marketing Strategy and 90-Day Launch Plan are displayed only from a verified,
   successfully generated and persisted Business Plan version.

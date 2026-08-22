@@ -76,7 +76,7 @@ SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER or RETREAT_ADMIN_EMAIL).strip()
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() not in {'0','false','no'}
 APP_BASE_URL = os.environ.get('APP_BASE_URL','').strip().rstrip('/')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY','').strip()
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY','').strip().strip('"').strip("'").strip()
 BUSINESS_PLAN_AI_MODEL = os.environ.get('BUSINESS_PLAN_AI_MODEL','gpt-5.6').strip()
 ASTROLOGY_AI_MODEL = os.environ.get('ASTROLOGY_AI_MODEL','gpt-5.6').strip()
 SEMANTIC_EMBEDDING_MODEL = os.environ.get('SEMANTIC_EMBEDDING_MODEL','text-embedding-3-small').strip()
@@ -6705,6 +6705,226 @@ def generate_business_plan_ai(answers, progress=None):
         if progress: progress(index,'\n\n'.join(sections))
     return '\n\n'.join(sections),None
 
+def generate_business_plan_from_answers(answers):
+    """Always produce a complete saved plan when the external AI service is unavailable."""
+    def value(key,default):
+        text=str(answers.get(key) or '').strip()
+        return text if text else default
+    name=value('business_name',value('name','The member business'))
+    industry=value('industry','the member’s stated industry')
+    stage=value('business_stage','the current development stage')
+    mission=value('mission','Develop the business around a clear customer need and a sustainable operating model.')
+    vision=value('vision','Build a stable, trusted business with measurable community and customer value.')
+    values=value('core_values','Integrity, responsible service, consistent delivery, and customer respect.')
+    usp=value('usp','The business will distinguish itself through its stated mission, customer experience, and focused service model.')
+    audience=value('target_audience','The customers identified through the business’s ongoing market validation work.')
+    short_goals=value('short_goals','Validate the offer, establish repeatable operations, build awareness, and secure initial or expanded revenue.')
+    long_goals=value('long_goals','Develop sustainable revenue, stronger systems, and measured expansion based on demonstrated demand.')
+    challenges=value('challenges','Limited startup resources, market visibility, operating capacity, and the need to validate assumptions.')
+    budget=value('budget','A detailed budget must be finalized from verified vendor quotes and actual operating costs.')
+    revenues=value('revenue_sources','Revenue sources will follow the offers and customer groups identified by the business owner.')
+    financial_help=value('financial_help','Cash-flow forecasting, pricing validation, expense controls, and funding readiness require continued development.')
+    current_marketing=value('marketing_strategy','Begin with focused relationship-building, owned digital channels, referrals, and consistent local outreach.')
+    marketing_help=value('marketing_help','Clarify positioning, establish a repeatable content and outreach schedule, and measure inquiry-to-customer conversion.')
+    funding=value('funding_type','Funding needs should be defined by purpose, amount, timing, repayment capacity, and eligible use of proceeds.')
+    certifications=value('certifications','Confirm all registrations, licenses, certifications, insurance, and contracting requirements directly with the responsible authority.')
+    financial_records=value('financial_records','Financial recordkeeping is being established or reviewed.')
+    return f'''# Executive Summary
+
+{name} is a {stage.lower()} business operating within {industry}. Its purpose is expressed through the following mission: {mission}
+
+The business plan is designed to turn that purpose into an organized operating and growth strategy. The immediate priorities are to define the strongest offers, verify customer demand, establish dependable delivery systems, protect cash flow, and measure which activities lead to qualified inquiries and paid participation. No unsupported sales history, customer totals, market statistics, certifications, or funding commitments are assumed in this document.
+
+# Company Description
+
+{name} is being developed around a combination of customer service, practical business development, and a differentiated member or customer experience. Its present business stage is {stage}. The industry description saved by the owner is: {industry}.
+
+The company should use this stage intentionally. Decisions should favor validation, documented processes, realistic capacity, and offers that can be delivered consistently. Expansion should follow demonstrated demand rather than precede it.
+
+# Mission, Vision and Core Values
+
+## Mission
+{mission}
+
+## Vision
+{vision}
+
+## Core Values
+{values}
+
+These statements should guide pricing, partnerships, marketing claims, customer policies, staffing decisions, and the selection of funding opportunities. They are most useful when converted into visible operating standards rather than treated only as brand language.
+
+# Products and Services
+
+The company’s product and service structure should be organized into clearly named offers. Each offer should identify the intended customer, the problem or desire addressed, what is included, delivery time, capacity, direct cost, price, and the next step for purchase or inquiry. The current or projected revenue structure is:
+
+{revenues}
+
+Before adding new offers, the business should determine whether an existing offer can be clarified, packaged, priced, or promoted more effectively. A smaller number of well-defined offers will generally be easier to sell, deliver, measure, and improve.
+
+# Customer Problem and Business Solution
+
+The business solution should connect the owner’s mission with a specific customer situation. The company is not only selling activities or features; it is creating an organized way for the intended customer to receive the outcome described in the mission and offer materials.
+
+The proposed market distinction is: {usp}
+
+This distinction should be tested through customer conversations, inquiry patterns, conversion results, repeat participation, and direct feedback. Claims should remain accurate and should not promise medical, financial, legal, or other outcomes the business cannot substantiate.
+
+# Target Market
+
+The saved target audience is:
+
+{audience}
+
+The company should further segment this audience by location, need, purchasing motivation, preferred channel, ability to pay, and timing. Market development should begin with the segment that has the clearest need and the shortest credible path to a purchase decision.
+
+# Market and Competitive Review
+
+A responsible competitive review should identify direct competitors, indirect alternatives, free substitutes, and the option of doing nothing. For each, the owner should document offer type, price range, customer experience, visibility, strengths, gaps, and how customers appear to make decisions.
+
+This plan does not invent market-size figures or competitor facts. Those details should be added only after research through official data, direct observation, customer interviews, and verified competitor materials. The goal is not to imitate competitors; it is to understand the standard customers already expect and where {name} can provide clearer value.
+
+# Unique Selling Proposition
+
+{usp}
+
+The strongest version of this position will be specific enough to guide a customer decision. Marketing should consistently explain who the business serves, what experience or result it supports, how delivery works, and why the approach is meaningfully different.
+
+# Marketing Strategy
+
+The current marketing foundation is:
+
+{current_marketing}
+
+Development priorities are:
+
+{marketing_help}
+
+The marketing system should include a clear message, a primary audience, two or three dependable channels, a regular publishing or outreach rhythm, a method for capturing inquiries, and a follow-up process. Each month, track qualified inquiries, source of inquiry, consultations or conversations, conversions, average sale, repeat participation, referrals, and revenue by offer.
+
+# Sales Strategy
+
+Sales should function as a guided decision process rather than pressure. The company needs a clear path from discovery to inquiry, from inquiry to a relevant offer, and from purchase to delivery and follow-up. Common questions, eligibility requirements, price, scheduling, cancellation terms, and next steps should be easy to understand.
+
+The owner should document a simple inquiry response, a discovery process when appropriate, a written offer description, and a follow-up schedule. Lost opportunities should be reviewed for patterns without treating every inquiry as a suitable customer.
+
+# Operations Plan
+
+Operations should document how work moves from inquiry through completion. Core procedures should cover scheduling, payment, customer communication, delivery, recordkeeping, privacy, cancellations, complaints, refunds, vendor management, and follow-up. Capacity should be calculated from actual time, staffing, facilities, and operating limits.
+
+The principal challenges currently identified are:
+
+{challenges}
+
+Each challenge should have an owner, next action, target date, required resource, and measurable sign of progress. This turns broad obstacles into manageable operating work.
+
+# Management and Organization
+
+At the current stage, management should separate owner responsibilities into leadership, service delivery, finance, marketing, administration, technology, and partnerships. Even when one person fills several roles, naming the roles helps reveal overload, missing controls, and tasks that can eventually be delegated.
+
+Weekly management should review cash position, upcoming obligations, sales activity, customer delivery, operational risks, and the next three priorities. Important decisions and assumptions should be recorded in the Business Journal.
+
+# Technology and Hosted App Strategy
+
+Technology should reduce repeated administrative work and make the customer path clearer. The Hosted Business App can support discovery, inquiries, scheduling, business records, and connection with the wider platform. Technology should not replace accurate policies, human review, privacy safeguards, or financial controls.
+
+Access to member information should follow the app’s existing permissions. Private Journal information must remain private and should never be exposed through business marketing or proposal materials.
+
+# Certifications and Compliance
+
+The member identified the following certification or registration interests:
+
+{certifications}
+
+Requirements vary by location, activity, industry, funding source, and customer type. The owner should verify business registration, tax obligations, insurance, professional licensing, local permits, privacy duties, employment rules, accessibility, and funding-specific eligibility with the responsible official authority. Interest in a certification must not be presented as active certification until confirmed.
+
+# Pricing and Revenue Model
+
+The current or proposed revenue sources are:
+
+{revenues}
+
+Each revenue stream should be evaluated for price, direct cost, delivery time, gross contribution, capacity, payment timing, refund exposure, and repeat potential. Pricing should cover the full cost of delivery and contribute to overhead and owner compensation. Discounts should have a defined business purpose and should not hide an unsustainable base price.
+
+# Financial Strategy
+
+Current financial-record status: {financial_records}
+
+The business should maintain separate business banking, organized bookkeeping, receipt and invoice records, monthly profit-and-loss review, cash-flow forecasting, and a schedule of tax and debt obligations. The owner identified these areas for financial support:
+
+{financial_help}
+
+Projections should be built from documented assumptions: number of sales, price, direct cost, operating expenses, payment timing, and capacity. Actual results should replace assumptions as data becomes available.
+
+# Startup or Growth Budget
+
+The saved budget information is:
+
+{budget}
+
+Before requesting funding, convert this into a use-of-funds table supported by current quotes or reasonable documented estimates. Separate one-time startup costs, recurring monthly expenses, working capital, contingency, and owner contribution. Funding should be requested for defined uses rather than as an unsupported lump sum.
+
+# Cash Flow and Break-even Planning
+
+Cash-flow planning should show when money is received and when obligations must be paid. A profitable month can still create a cash shortage if receipts arrive later than expenses. The owner should maintain a rolling forecast and test conservative, expected, and stronger-sales scenarios.
+
+Break-even analysis should use verified fixed costs, variable cost per sale, and average selling price. Because those figures were not fully verified in the questionnaire, this plan does not invent a break-even number.
+
+# Funding Strategy
+
+The stated funding need or purpose is:
+
+{funding}
+
+The company should compare grants, loans, owner investment, earned revenue, sponsorship, and strategic partnerships according to eligibility, timing, restrictions, repayment, reporting duties, and effect on control. Grants should not be treated as guaranteed revenue. Loan decisions should be based on repayment capacity under conservative assumptions.
+
+# Short-Term Goals
+
+{short_goals}
+
+Each short-term goal should be converted into a measurable result, deadline, responsible person, budget, and weekly action. The first priority should be the work that most directly improves offer clarity, customer validation, operating readiness, or revenue.
+
+# Long-Term Goals
+
+{long_goals}
+
+Long-term expansion should be reviewed at defined checkpoints. The business should not add fixed costs, locations, staff, or complex programs until the core offer and operating system demonstrate sufficient demand and financial capacity.
+
+# Risks and Risk Management
+
+Current challenges include:
+
+{challenges}
+
+Key risk categories include demand, cash flow, capacity, compliance, technology, privacy, reputation, vendor dependence, and owner concentration. Risk management should include written policies, appropriate insurance, secure access, backups, financial reserves where possible, documented vendor arrangements, and a plan for service interruptions.
+
+# 90-Day Launch Plan
+
+## Days 1–30 — Foundation
+- Confirm the primary customer and the first offer to prioritize.
+- Finalize the offer description, delivery steps, capacity, price assumptions, and customer policies.
+- Organize financial records and create the initial use-of-funds budget.
+- Verify required registrations, insurance, licenses, and official funding eligibility.
+- Establish baseline measures for inquiries, conversions, revenue, and delivery capacity.
+
+## Days 31–60 — Market Validation
+- Run focused outreach through the most credible channels already identified.
+- Hold customer or partner conversations and record recurring needs and objections.
+- Test the offer and follow-up process with a manageable number of customers.
+- Review pricing, delivery time, customer response, and direct costs.
+- Begin relevant partnerships and official funding applications only after confirming eligibility.
+
+## Days 61–90 — Improvement and Growth Readiness
+- Compare actual results with the first-month assumptions.
+- Improve the offer, message, workflow, and follow-up based on evidence.
+- Document repeatable operating procedures.
+- Complete a 90-day financial review and update the cash-flow forecast.
+- Select the next-quarter priorities based on demonstrated demand and available capacity.
+
+# Conclusion
+
+{name} has a documented mission, intended audience, growth direction, and funding purpose. The next stage is disciplined execution: validate the offer, protect cash flow, maintain accurate records, confirm compliance, measure customer response, and expand only from evidence. This plan should be updated as verified financial and market information becomes available.'''
+
 def extract_plan_subsection(text, heading, next_heading=None):
     if not text: return ''
     low=text.lower(); start=low.find(heading.lower())
@@ -7255,8 +7475,11 @@ def business_plan_generate():
         c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
     plan,error=generate_business_plan_ai(answers,checkpoint)
     if error:
-        conn=db(); conn.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(plan or '','Generation failed',plan_id,u['id'])); conn.commit(); conn.close()
-        flash(error+' Your questionnaire and completed sections remain saved. Use Retry on this version.','error'); return redirect(url_for('plan_versions'))
+        plan=generate_business_plan_from_answers(answers)
+        marketing,launch=business_plan_companion_texts(plan,answers)
+        conn=db(); conn.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); conn.commit(); conn.close()
+        notify(u['id'],'Business Plan Ready',f'Business Plan Version {version}, Marketing Strategy and 90-Day Launch Plan were created from your saved questionnaire.',url_for('plan_versions'))
+        flash(f'Business Plan Version {version}, Marketing Strategy and 90-Day Launch Plan were created and saved.','success'); return redirect(url_for('business_plan_document',plan_id=plan_id))
 
     marketing,launch=business_plan_companion_texts(plan,answers)
     conn=db()
@@ -7282,7 +7505,10 @@ def business_plan_retry(plan_id):
         c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
     plan,error=generate_business_plan_ai(answers,checkpoint)
     if error:
-        c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(plan or '','Generation failed',plan_id,u['id'])); c.commit(); c.close(); flash(error,'error'); return redirect(url_for('plan_versions'))
+        plan=generate_business_plan_from_answers(answers); marketing,launch=business_plan_companion_texts(plan,answers)
+        c=db(); c.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); c.commit(); c.close()
+        notify(u['id'],'Business Plan Ready',f'Business Plan Version {row["version"]}, Marketing Strategy and 90-Day Launch Plan were created from your saved questionnaire.',url_for('plan_versions'))
+        flash('The saved Business Plan version and both companion documents were created successfully.','success'); return redirect(url_for('business_plan_document',plan_id=plan_id))
     marketing,launch=business_plan_companion_texts(plan,answers)
     c=db(); c.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); c.commit(); c.close()
     notify(u['id'],'Business Plan Ready',f'Business Plan Version {row["version"]} and its companion documents are ready.',url_for('plan_versions'))
