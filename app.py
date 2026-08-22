@@ -6925,6 +6925,300 @@ Key risk categories include demand, cash flow, capacity, compliance, technology,
 
 {name} has a documented mission, intended audience, growth direction, and funding purpose. The next stage is disciplined execution: validate the offer, protect cash flow, maintain accurate records, confirm compliance, measure customer response, and expand only from evidence. This plan should be updated as verified financial and market information becomes available.'''
 
+def generate_strategic_business_plan(answers):
+    """Derive a decision-ready plan from intake evidence instead of mirroring responses."""
+    def v(key,default='Not yet specified'):
+        return str(answers.get(key) or '').strip() or default
+    def bullets(text):
+        parts=re.split(r'[\n•;]+',text or '')
+        return [re.sub(r'^[-*\s]+','',p).strip() for p in parts if re.sub(r'^[-*\s]+','',p).strip()]
+    name=v('business_name',v('name','The member business')); industry=v('industry','service business'); stage=v('business_stage','early-stage')
+    mission=v('mission'); vision=v('vision'); audience=v('target_audience'); usp=v('usp'); challenges=v('challenges'); funding=v('funding_type'); revenue=v('revenue_sources')
+    combined=' '.join([industry,mission,vision,usp,revenue]).lower()
+    pillars=[]
+    if any(x in combined for x in ('platform','technology','app','membership')): pillars.append(('Platform Membership','Recurring access to organized tools, resources, coordination features, or a member network.','Recurring membership revenue and retention.'))
+    if any(x in combined for x in ('business','entrepreneur','professional','development')): pillars.append(('Business Development Services','Guided planning, professional development, visibility, and opportunity-readiness support.','One-time packages, premium services, and business membership upgrades.'))
+    if any(x in combined for x in ('retreat','wellness','experience','event')): pillars.append(('Experiences and Retreats','Scheduled experiences that translate the brand promise into an in-person or guided customer outcome.','Ticket, booking, host, sponsorship, or partner revenue.'))
+    if any(x in combined for x in ('content','creator','media','marketing')): pillars.append(('Content and Creator Services','Content, visibility, and promotional collaboration that strengthens participating brands.','Project fees, featured placements, sponsorships, or service packages.'))
+    if not pillars: pillars=[('Core Service Offer','A clearly scoped offer built around the customer problem and the company mission.','Direct service or package revenue.'),('Recurring Relationship Offer','An ongoing offer that provides continued value after the first purchase.','Membership, subscription, or repeat-service revenue.')]
+    offers='\n'.join(f'### {i+1}. {p[0]}\n**Customer value:** {p[1]}\n\n**Commercial role:** {p[2]}\n\n**Validation requirement:** Define scope, delivery cost, capacity, price, purchase path, and one measurable customer outcome before launch.' for i,p in enumerate(pillars))
+    nums=[float(x.replace(',','')) for x in re.findall(r'\$?([0-9][0-9,]*(?:\.[0-9]+)?)',v('budget','')+' '+funding)]
+    capital=(sum(nums[:2])/len(nums[:2])) if nums else None
+    allocations=[('Technology and product readiness',.28),('Launch marketing and customer acquisition',.22),('Legal, insurance and compliance',.12),('Operating systems and professional services',.13),('Experience or service delivery capacity',.15),('Working-capital reserve',.10)]
+    if capital:
+        allocation_rows='\n'.join(f'| {label} | {pct:.0%} | ${capital*pct:,.0f} |' for label,pct in allocations)
+        allocation_note=f'This working model uses ${capital:,.0f}, the midpoint or stated amount detected in the questionnaire. It is a planning allocation—not a quote or approved award—and must be replaced with verified costs.'
+    else:
+        allocation_rows='\n'.join(f'| {label} | {pct:.0%} | Enter verified amount |' for label,pct in allocations)
+        allocation_note='No reliable numeric capital amount was detected. Percentages provide a planning framework; dollar values must be completed from vendor quotes and operating forecasts.'
+    strengths=[]
+    if mission!='Not yet specified': strengths.append('A documented mission that connects business activity to a recognizable customer or community purpose.')
+    if len(pillars)>1: strengths.append('Multiple possible revenue pillars that can reduce dependence on one offer after each is validated.')
+    if any(x in combined for x in ('platform','app','technology')): strengths.append('A technology-enabled delivery model that can organize discovery, records, communication, and recurring engagement.')
+    strengths=strengths or ['An owner-defined concept that can now be tested through focused offers and customer evidence.']
+    risks=[('Offer sprawl','Launching too many audiences or services at once can weaken the message and strain delivery.','Choose one lead audience and one lead offer for the first 90-day validation cycle.'),('Cash-flow pressure','Development and marketing costs may occur before predictable revenue exists.','Use milestone-based spending, a rolling cash forecast, and a protected working-capital reserve.'),('Unverified demand','Interest does not automatically become paid demand.','Measure qualified inquiries, conversion, repeat use, and willingness to pay before expanding fixed costs.'),('Founder concentration','Too many functions may depend on one person.','Document recurring work, automate carefully, and identify the first tasks suitable for delegation.'),('Compliance and claims','A mixed wellness, business, event, or technology model can create different obligations.','Verify registrations, insurance, privacy, accessibility, professional boundaries, and funding eligibility with responsible authorities.')]
+    risk_rows='\n'.join(f'| {a} | {b} | {c} |' for a,b,c in risks)
+    return f'''# Executive Summary
+
+{name} is being developed as a {stage.lower()} company in {industry}. The strongest strategic interpretation of the intake is not a single isolated service. It is a connected business model in which a focused customer enters through useful content, community visibility, a business or wellness experience, or a professional-development need and can then move into a deeper paid relationship.
+
+The principal recommendation is to avoid launching every possible feature as an equal priority. The first commercial phase should validate one lead audience, one lead offer, one conversion path, and one repeat-revenue mechanism. Supporting features should strengthen that path rather than compete with it. This creates a business that can learn from real purchasing behavior before assuming larger technology, staffing, or marketing costs.
+
+The immediate funding case should therefore connect every requested dollar to a measurable readiness or revenue milestone: a completed operating platform, a launchable offer, verified compliance, customer acquisition activity, delivery capacity, and sufficient working capital to reach the next evidence point.
+
+# Strategic Foundation
+
+## Mission interpreted as an operating purpose
+{mission}
+
+The practical implication is that the company must coordinate several types of value without becoming confusing. Every product, partnership, page, and funding request should be able to answer three questions: who is being served, what becomes easier or better for them, and what the company can deliver consistently.
+
+## Vision translated into business direction
+{vision}
+
+The vision implies a staged growth path: establish credibility in the initial market, prove that customers use and pay for the core experience, build repeatable systems, and only then broaden geography or the number of programs. Recognition should be treated as an outcome of usefulness and consistency—not as the first operating objective.
+
+# Business Model and Offer Architecture
+
+The intake supports the following offer architecture. These are strategic groupings derived from the business activities; they are not a recommendation to launch everything simultaneously.
+
+{offers}
+
+## Recommended launch sequence
+
+1. **Lead offer:** Select the offer with the clearest urgent customer need and the shortest path to a paid decision.
+2. **Relationship offer:** Give successful customers or participating businesses a logical reason to remain connected through membership, recurring support, or repeat experiences.
+3. **Expansion offer:** Add retreats, creator services, sponsorships, or advanced professional support only after the lead path produces reliable demand and delivery evidence.
+
+# Customer and Market Strategy
+
+The stated target market is:
+
+{audience}
+
+This is still broader than a launch segment in most cases. The first segment should be selected using a four-part test: the need is visible, the group can be reached directly, the offer is affordable to deliver, and the customer has a credible reason to act now. For each candidate segment, conduct at least ten structured conversations and record the language customers use, existing alternatives, objections, desired outcomes, and willingness to pay.
+
+## Positioning
+
+The owner’s proposed distinction is:
+
+{usp}
+
+The positioning should be reduced to a repeatable market promise: **For [specific customer], {name} provides [specific experience or outcome] through [distinct delivery method], unlike [common alternative].** The final wording should be based on customer evidence, not only internal preference.
+
+# Competitive Analysis Method
+
+The business needs a documented comparison of at least five direct or indirect alternatives. Compare audience, core offer, price, purchasing process, customer experience, visibility, strengths, and unresolved gaps. The key competitive question is not whether another company looks identical; it is what customers currently do instead of paying {name}.
+
+The likely strategic advantage is integration: a customer or business can move between discovery, connection, planning, experiences, and ongoing participation inside one coordinated environment. The corresponding risk is complexity. The company must make each entry point simple even when the underlying network is broad.
+
+# Revenue Strategy
+
+The questionnaire identifies these current or proposed revenue ideas:
+
+{revenue}
+
+Rather than treating the list as one blended forecast, track each revenue stream separately. Every stream requires a unit definition, selling price, direct cost, delivery time, monthly capacity, conversion assumption, and collection timing. A revenue stream should remain experimental until actual results replace assumptions.
+
+## Revenue ladder
+
+- **Discovery:** Free or low-cost content and community visibility that attracts the correct audience and captures permission for follow-up.
+- **Entry purchase:** A clearly scoped event, service, listing, assessment, workshop, or starter product.
+- **Core purchase:** The primary offer that delivers the central customer outcome.
+- **Recurring relationship:** Membership, continued business support, repeat experiences, or subscription access.
+- **Premium or institutional work:** Retreat packages, professional services, sponsorships, partnerships, or larger business engagements.
+
+# Marketing and Customer Acquisition Strategy
+
+The saved marketing activity is:
+
+{v('marketing_strategy')}
+
+The recommended strategy is community-led but measurement-driven. Content should demonstrate useful expertise; partnerships should provide credible access to relevant audiences; events or experiences should create direct engagement; and every channel should lead to one clear next step. Visibility without a capture and follow-up process should not be counted as customer acquisition.
+
+## Core channel roles
+
+- **Owned platform and email:** Capture interest, explain offers, follow up, and build a durable audience the company can reach directly.
+- **Social content:** Demonstrate the business philosophy, show credible use cases, and direct qualified people toward one next action.
+- **Local and professional partnerships:** Reach existing trusted audiences through complementary businesses, organizations, and creators.
+- **Events and retreats:** Produce deeper experience, customer evidence, content, referrals, and premium-revenue possibilities.
+- **Referral system:** Give satisfied members, customers, and partners a clear, ethical way to introduce others.
+
+## Required marketing measures
+
+Track reach only as context. The operating measures are qualified inquiries, source, cost per qualified inquiry, consultation or landing-page conversion, purchase conversion, average sale, repeat rate, referral rate, cancellation/refund rate, and revenue by offer.
+
+# Operations and Delivery Plan
+
+Operations should be designed around one traceable customer journey: discovery, inquiry, qualification, purchase or booking, preparation, delivery, follow-up, recordkeeping, and repeat engagement. Each stage needs an owner, expected response time, standard communication, privacy rule, and exception process.
+
+The intake identifies these obstacles:
+
+{challenges}
+
+The management response is to turn each obstacle into a controlled project. Technology completion requires a defined minimum launch scope; brand awareness requires a measurable acquisition plan; business recruitment requires a repeatable outreach and onboarding process; content requires an editorial workflow; and funding requires a costed use-of-funds case rather than a general need statement.
+
+# Organization and Management Priorities
+
+Even if the founder currently performs most work, the company should manage distinct functions: executive direction, platform/product, customer experience, business partnerships, marketing/content, finance/compliance, and event or retreat operations. A weekly leadership review should cover cash, pipeline, delivery capacity, product issues, compliance concerns, and the next three priorities.
+
+The first delegation decisions should target repeatable administrative work that consumes founder time but does not require founder judgment. Procedures should be documented before delegation so growth does not reduce service quality.
+
+# Technology and Data Strategy
+
+The platform should be treated as operating infrastructure, not only as a visual product. The minimum viable system must reliably preserve member profiles, business records, plans, Journal information, messages, and permissions. New features should not be considered complete until data persistence, privacy, error handling, and recovery behavior have been tested.
+
+Technology milestones should be tied to customer and business outcomes: successful onboarding, completed profiles, published Hosted Business Apps, saved business documents, delivered messages, bookings, retained records, and repeat visits. This prevents development activity from becoming disconnected from commercial value.
+
+# Compliance and Certification Roadmap
+
+The owner identified these areas of interest:
+
+{v('certifications')}
+
+Create a compliance register containing the requirement, responsible authority, applicability, evidence needed, renewal date, owner, and status. Prioritize mandatory registration, tax, insurance, privacy, consumer protection, accessibility, event/location, professional-scope, and employment requirements before optional certifications. Never represent an application or area of interest as an active certification.
+
+# Funding Requirement and Use of Funds
+
+The stated funding objective is:
+
+{funding}
+
+{allocation_note}
+
+| Use of funds | Planning share | Working amount |
+|---|---:|---:|
+{allocation_rows}
+
+Release spending by milestone. For example, do not commit the full marketing allocation before the offer, tracking, follow-up, and delivery capacity are ready. Do not expand technology scope until persistence and core customer workflows are stable. Maintain evidence for every grant or loan use because restricted funding may require detailed reporting.
+
+# Financial Planning Framework
+
+The business should prepare three linked schedules:
+
+1. **Startup/use-of-funds budget:** verified one-time and pre-launch expenses.
+2. **Twelve-month operating forecast:** monthly sales units, price, direct costs, fixed expenses, owner compensation, debt service, and cash balance.
+3. **Scenario model:** conservative, expected, and growth cases driven by different conversion and retention assumptions.
+
+No unsupported revenue figure is inserted here. The forecast should calculate revenue as units sold × verified price for each offer. Break-even units should equal monthly fixed costs divided by contribution per sale. Loan affordability must be tested against the conservative case, not only the expected case.
+
+# Strengths, Risks and Strategic Responses
+
+## Evidence-supported strengths
+{chr(10).join('- '+s for s in strengths)}
+
+## Risk register
+
+| Risk | Why it matters | Required response |
+|---|---|---|
+{risk_rows}
+
+# Milestones and Key Performance Indicators
+
+## Product and operations
+- Core member and business records persist correctly across logout, restart, and deployment.
+- One complete customer journey is tested from discovery through follow-up.
+- Core policies, onboarding, payment/booking, and support procedures are documented.
+
+## Market validation
+- At least ten structured conversations are completed for the lead segment.
+- A defined number of qualified inquiries enter one tracked conversion path.
+- Actual conversion, average sale, direct cost, and delivery time are recorded.
+
+## Financial readiness
+- A verified use-of-funds budget and twelve-month cash forecast are complete.
+- Business banking and bookkeeping processes are separated and current.
+- Funding applications match official eligibility and are supported by consistent plan data.
+
+# 90-Day Launch Plan
+
+## Days 1–30: Narrow, verify, and stabilize
+- Select the lead customer segment and lead paid offer.
+- Freeze the minimum launch scope and test data persistence for profiles, Hosted Business Apps, plans, messages, and Journal records.
+- Complete ten customer or participating-business interviews.
+- Build the use-of-funds budget from quotes and classify mandatory compliance work.
+- Define the inquiry-to-purchase path, service policies, and five baseline KPIs.
+
+## Days 31–60: Pilot and measure
+- Recruit a controlled first group through direct outreach and aligned partnerships.
+- Run the lead offer or onboarding process at manageable capacity.
+- Track inquiry source, conversion, customer questions, delivery time, cost, and satisfaction.
+- Publish content that answers actual questions discovered during interviews and the pilot.
+- Correct operational failures before increasing acquisition spending.
+
+## Days 61–90: Improve and prepare for scale
+- Compare actual performance with the original assumptions.
+- Refine positioning, price, onboarding, and delivery based on evidence.
+- Document the repeatable workflow and identify the first delegation need.
+- Complete the conservative, expected, and growth cash scenarios.
+- Submit only funding applications for which eligibility, use of funds, documentation, and reporting capacity are confirmed.
+- Approve the next-quarter plan based on demand, cash, capacity, and product stability.
+
+# Implementation Workstreams
+
+## Workstream 1 — Product and Data Reliability
+
+The first workstream protects the value already created by members and businesses. Account authentication is not sufficient persistence if the related profile, Hosted Business App, Journal, plan, message, natal, calendar, or proposal records disappear. The production database must remain the authoritative source for those records, every write must commit successfully, and deployment must not silently switch the application to a new empty store.
+
+Acceptance criteria should be written from the member’s perspective: complete a profile, log out and return; publish a Hosted Business App, redeploy and return; save a questionnaire, generate documents and return; save an opportunity and proposal, then retrieve them later. Backup and recovery procedures should be documented before the volume of member-created information increases.
+
+## Workstream 2 — Offer and Customer Validation
+
+The second workstream turns the broad platform idea into a commercial learning cycle. Select one audience and one paid outcome. Create a small pilot with a defined start, delivery method, completion point, price, capacity, and feedback process. The pilot is successful only if it produces evidence about customer need, willingness to pay, delivery effort, and the reason customers continue or refer others.
+
+Customer interviews should not be sales presentations. Ask what the customer is currently trying to accomplish, what makes it difficult, what they have already tried, what an acceptable result looks like, how decisions are made, and what would prevent action. Summarize patterns without exposing confidential details. Those patterns should shape offer language, onboarding, policies, and future development priorities.
+
+## Workstream 3 — Business Network Development
+
+The business network needs a clear participation case for hosts, wellness providers, creators, entrepreneurs, retreat partners, and small businesses. Each participating business should understand what it receives, what it must maintain, how customers discover it, how inquiries are delivered, what information remains private, and what free or paid relationship applies.
+
+Recruitment should begin with a concentrated group whose services complement the launch audience. A smaller active network is more valuable than a large inactive directory. Track invited businesses, completed Hosted Apps, published offers, response time, inquiries received, collaborations, and retention. Use those results to refine onboarding before broader recruitment.
+
+## Workstream 4 — Financial Control
+
+Financial control begins before revenue becomes predictable. The company should maintain a twelve-month monthly cash schedule, a use-of-funds ledger, actual versus budget reporting, and separate tracking by revenue stream. One-time plan sales, memberships, professional services, retreats, sponsorships, hosted business upgrades, and content-related revenue have different delivery costs and timing; combining them into one total would hide which model is working.
+
+For each offer, calculate contribution before scaling: selling price minus payment fees, direct materials, venue or partner costs, contracted delivery, and other sale-specific expense. Then compare total monthly contribution with fixed operating costs. Founder time should be measured even when it is not yet fully paid because an offer that only works through unlimited unpaid labor is not operationally scalable.
+
+## Workstream 5 — Funding Readiness
+
+Funding search should begin from the plan’s verified evidence, not from a promise that every opportunity is suitable. Save the official notice, deadline, agency, eligibility, required registrations, matching requirements, restricted uses, reporting duties, and contact details. The “Why this matches” explanation is a screening aid; the official notice remains controlling.
+
+Proposal development should reuse stable company facts from the saved plan while separating opportunity-specific answers. Mission, business type, industry, stage, audience, goals, and standard organization details can be prefilled. Project design, requested amount, use of funds, measurable outcomes, partnerships, attachments, certifications, and narrative requirements must be completed for the specific opportunity. This prevents repeated intake without creating inaccurate boilerplate.
+
+# Measurement and Review Cadence
+
+## Weekly
+- Cash on hand, upcoming obligations, and outstanding receivables.
+- Qualified inquiries, follow-up status, purchases, cancellations, and delivery capacity.
+- Product or data failures affecting member trust or business operations.
+- The three highest-priority actions and any blocked decision.
+
+## Monthly
+- Revenue and contribution by offer.
+- Marketing source, acquisition cost where measurable, conversion, repeat use, and referrals.
+- Active members, published businesses, participating partners, and retained customers.
+- Actual spending versus the approved use-of-funds budget.
+- Compliance, privacy, technology, and operational incidents.
+
+## Quarterly
+- Continue, revise, pause, or retire each offer based on evidence.
+- Reforecast cash and capital requirements.
+- Review customer and business-partner feedback themes.
+- Approve the next product scope, hiring or delegation need, partnership targets, and funding priorities.
+
+# Documentation Required for Lenders, Grants and Partners
+
+The company should maintain an organized readiness folder containing formation documents, tax identification, ownership information, licenses and insurance, bank and bookkeeping records, current financial statements, projections and assumptions, use-of-funds budget, owner résumé or background, customer evidence, contracts or partnership letters, privacy and operating policies, and prior funding records where applicable.
+
+The business plan should be consistent with those documents. If a projection changes, update the assumption and all dependent totals. If an application asks for an active certification or verified customer count, supply it only when evidence exists. Accuracy and internal consistency are more persuasive than inflated claims.
+
+# Conclusion and Decision
+
+The strongest path for {name} is coordinated growth, not simultaneous expansion. The company should first prove that one audience will move through one clear offer into a repeatable relationship. Technology, community, professional development, content, and experiences can become a differentiated ecosystem, but only if the underlying data, customer journey, delivery system, and cash model are dependable.
+
+The next funding and development decisions should therefore be milestone-based. Capital should help the business reach verified readiness, market evidence, operating stability, and revenue—not simply add features. Once those milestones are visible, {name} will be in a stronger position to pursue grants, loans, partnerships, customers, and sustainable expansion.'''
+
 def extract_plan_subsection(text, heading, next_heading=None):
     if not text: return ''
     low=text.lower(); start=low.find(heading.lower())
@@ -7009,6 +7303,84 @@ Track qualified inquiries, conversion to paid offers, repeat participation, refe
             goals=(answers.get('short_goals') or 'Use the short-term goals saved in the completed questionnaire.'),
             challenges=(answers.get('challenges') or 'Monitor the constraints and risks identified in the completed business plan.')
         )
+    if len(marketing)<2200:
+        marketing+='''
+
+## Market Development System
+
+### Customer Segmentation
+Begin with one launch segment rather than addressing every possible member, creator, wellness professional, entrepreneur, retreat host, and business simultaneously. Score each segment for urgency of need, ease of direct access, ability to pay, fit with the first offer, and likelihood of referral or repeat participation. The highest-scoring segment becomes the lead market for the first 90-day cycle.
+
+### Message Architecture
+Use one primary message that states the customer, the situation being addressed, the useful outcome, and the distinct way the business delivers it. Supporting messages can explain platform membership, business development, community discovery, retreats, or creator services, but they should all lead toward one defined action rather than competing calls to action.
+
+### Content Plan
+Publish content in four recurring categories: practical education, customer or business use cases, the company’s coordination philosophy, and direct offer invitations. Each item should serve a stage of the customer journey—discovery, evaluation, decision, onboarding, or retention. A weekly editorial review should connect content to real customer questions and measurable business priorities.
+
+### Partnership Plan
+Prioritize complementary organizations that already serve the intended customer. Define the mutual value, the audience fit, the proposed activity, ownership, tracking method, and follow-up before beginning a partnership. Useful formats may include referral relationships, interviews, shared events, hosted experiences, content collaborations, business listings, or sponsorships.
+
+### Conversion and Follow-Up
+Every campaign needs a destination, a response standard, and a follow-up sequence. Record the source of each inquiry, the customer’s stated need, the relevant offer, decision timing, outcome, and next action. Follow-up should be useful and respectful; it should clarify fit rather than pressure an unsuitable customer.
+
+### 12-Week Marketing Rhythm
+- Weeks 1–2: finalize the lead segment, offer, message, landing destination, tracking, and outreach list.
+- Weeks 3–4: conduct direct conversations and publish problem-aware educational content.
+- Weeks 5–6: launch a controlled offer or event and capture objections and conversion data.
+- Weeks 7–8: strengthen partner outreach and publish evidence-informed use cases.
+- Weeks 9–10: repeat the best-performing channel and correct weak follow-up points.
+- Weeks 11–12: review cost, qualified inquiries, conversions, repeat activity, and revenue by offer; approve the next cycle from evidence.
+
+### Marketing Dashboard
+Review qualified inquiries, inquiry source, response time, consultation or landing-page conversion, purchase conversion, average sale, repeat rate, referral rate, cancellations, direct campaign cost, and revenue by offer. Reach and engagement remain supporting indicators, not the final measure of business progress.
+
+### Channel Decision Rules
+Continue a channel when it repeatedly produces qualified customers at a cost and workload the business can support. Revise a channel when the audience responds but the next step, offer, or follow-up is unclear. Pause a channel when it consumes regular time or money without producing useful conversations, applications, bookings, purchases, or partner activity. Do not judge a channel from one post or one event; use a defined test period, consistent message, and recorded results. Marketing expansion should follow demonstrated conversion and delivery capacity so acquisition does not create a service problem the business is not ready to manage.
+'''
+    if len(launch)<2200:
+        launch+='''
+
+## Weekly Execution Schedule
+
+### Weeks 1–2 — Scope and Evidence
+- Select the lead customer, lead offer, and one repeat-revenue path.
+- List every feature or service that is not required for the first launch and move it to a later-phase backlog.
+- Interview prospective customers or participating businesses using the same core questions.
+- Document the current system failures, compliance questions, vendor needs, and verified cost estimates.
+
+### Weeks 3–4 — Readiness
+- Complete the minimum customer journey from discovery through purchase, delivery, and follow-up.
+- Verify that profiles, business records, messages, Journal information, and generated documents persist correctly.
+- Finalize customer policies, offer scope, price assumptions, capacity, and response standards.
+- Establish the cash forecast, use-of-funds schedule, and baseline KPI dashboard.
+
+### Weeks 5–6 — Controlled Pilot
+- Invite a manageable first group through direct outreach and aligned partners.
+- Deliver the offer at a capacity that allows close observation.
+- Record customer questions, objections, conversion, delivery time, direct costs, and technical issues.
+- Resolve high-impact failures before increasing traffic or spending.
+
+### Weeks 7–8 — Market Expansion Test
+- Publish content based on the actual questions and outcomes observed in the pilot.
+- Begin two or three structured partnership tests with defined tracking.
+- Repeat the strongest acquisition path and discontinue activity that produces attention without qualified action.
+- Update the offer and onboarding materials from demonstrated customer needs.
+
+### Weeks 9–10 — Revenue and Retention
+- Introduce the appropriate recurring or next-step offer to successful customers.
+- Measure repeat use, referral behavior, average sale, and contribution by offer.
+- Review staffing, founder workload, delivery capacity, and the first delegation requirement.
+- Complete only funding applications for which the business can document eligibility and use of funds.
+
+### Weeks 11–12 — Review and Next-Quarter Decision
+- Compare actual results with conservative and expected assumptions.
+- Complete a written review of product readiness, demand, cash, capacity, compliance, and partner performance.
+- Keep, revise, or stop each major activity based on evidence.
+- Approve the next 90-day priorities, budget, owner, deadline, and success measure.
+
+## Launch Decision Gates
+Do not expand acquisition spending until the customer path works reliably. Do not increase fixed costs until demand and cash capacity are visible. Do not add major features until the core records persist and the launch offer can be delivered. Do not submit a funding request until the use of funds, official eligibility, required documents, and reporting responsibilities are understood.
+'''
     return marketing.strip(),launch.strip()
 
 def build_simple_pdf(title, text):
@@ -7475,7 +7847,7 @@ def business_plan_generate():
         c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
     plan,error=generate_business_plan_ai(answers,checkpoint)
     if error:
-        plan=generate_business_plan_from_answers(answers)
+        plan=generate_strategic_business_plan(answers)
         marketing,launch=business_plan_companion_texts(plan,answers)
         conn=db(); conn.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); conn.commit(); conn.close()
         notify(u['id'],'Business Plan Ready',f'Business Plan Version {version}, Marketing Strategy and 90-Day Launch Plan were created from your saved questionnaire.',url_for('plan_versions'))
@@ -7505,7 +7877,7 @@ def business_plan_retry(plan_id):
         c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
     plan,error=generate_business_plan_ai(answers,checkpoint)
     if error:
-        plan=generate_business_plan_from_answers(answers); marketing,launch=business_plan_companion_texts(plan,answers)
+        plan=generate_strategic_business_plan(answers); marketing,launch=business_plan_companion_texts(plan,answers)
         c=db(); c.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); c.commit(); c.close()
         notify(u['id'],'Business Plan Ready',f'Business Plan Version {row["version"]}, Marketing Strategy and 90-Day Launch Plan were created from your saved questionnaire.',url_for('plan_versions'))
         flash('The saved Business Plan version and both companion documents were created successfully.','success'); return redirect(url_for('business_plan_document',plan_id=plan_id))

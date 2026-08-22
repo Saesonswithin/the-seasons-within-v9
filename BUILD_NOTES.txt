@@ -34,8 +34,12 @@ Included functional corrections:
 - Business Plan generation is split into three checkpointed AI stages so Render worker
   timeouts do not erase the questionnaire or completed sections.
 - If the external AI service is unavailable or rejects its credential, the app still
-  creates and saves a complete evidence-based Business Plan from the questionnaire,
-  together with its Marketing Strategy and 90-Day Launch Plan.
+  creates and saves a complete strategic Business Plan from the questionnaire. The
+  plan derives an offer architecture, launch sequence, customer strategy, revenue
+  ladder, funding allocation, implementation workstreams, risks, KPIs, decision gates,
+  and documentation roadmap instead of merely rewriting questionnaire answers.
+- Marketing Strategy and 90-Day Launch Plan are substantial standalone documents with
+  their own channel rules, measurement systems, weekly execution, and decision gates.
 - Failed Business Plan versions show Retry instead of empty View/Download controls.
 - Marketing Strategy and 90-Day Launch Plan are displayed only from a verified,
   successfully generated and persisted Business Plan version.
