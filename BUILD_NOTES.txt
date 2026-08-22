@@ -1,5 +1,5 @@
 THE SEASONS WITHIN — SIMPLIFIED FUNCTIONAL UPDATE
-Packaged: 2026-08-20
+Packaged: 2026-08-22
 
 This is the complete existing application with its approved visual design preserved.
 
@@ -25,5 +25,18 @@ Included functional corrections:
 - Community, Journal, Journal Inbox, messaging, Notifications, Preferred Dates,
   Business, Retreat, Membership, affiliate, administrator, and database systems
   remain preserved.
+- Existing Business Journal extended in place with Licenses & Certifications,
+  Funding Opportunities, Grant & Loan Search, Saved Opportunities, and Proposal Builder.
+- Funding search reads current public Grants.gov listings and links to official notices.
+  Official SBA Lender Match and Microloan pathways are included without inventing awards.
+- Funding match explanations and proposal drafts reuse the member's saved Business Plan
+  intake, industry, stage, needs, audience, mission, and goals.
+- Business Plan generation is split into three checkpointed AI stages so Render worker
+  timeouts do not erase the questionnaire or completed sections.
+- Failed Business Plan versions show Retry instead of empty View/Download controls.
+- Marketing Strategy and 90-Day Launch Plan are displayed only from a verified,
+  successfully generated and persisted Business Plan version.
+- New Business Journal records persist through DATABASE_URL in the connected PostgreSQL
+  database. OPENAI_API_KEY remains an environment secret and is never packaged.
 
 Deploy the complete contents of this ZIP together.

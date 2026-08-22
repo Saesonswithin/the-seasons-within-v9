@@ -100,6 +100,7 @@ JOURNAL_CATEGORIES = ('Reflection','Business','Retreat','Conscious Coordination'
 PG_ID_TABLES = {
     'users','journal_entries','community_posts','messages','notifications','businesses',
     'business_media','business_calendar','business_plans','retreats','business_bookings',
+    'business_certifications','funding_searches','saved_funding_opportunities','business_proposals',
     'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
     'password_reset_tokens','astrology_reflections','compatibility_reports','coordination_video_requests',
     'natal_charts','planet_positions','natal_aspects','lunar_cycles','member_lunar_cycles',
@@ -331,6 +332,41 @@ def init_db():
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_certifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL, issuing_body TEXT DEFAULT '', status TEXT DEFAULT 'Considering',
+        renewal_date TEXT DEFAULT '', notes TEXT DEFAULT '', source_url TEXT DEFAULT '',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS funding_searches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL, keyword TEXT DEFAULT '', funding_type TEXT DEFAULT '',
+        state TEXT DEFAULT '', industry TEXT DEFAULT '', amount TEXT DEFAULT '',
+        result_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS saved_funding_opportunities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL, source TEXT NOT NULL, source_id TEXT NOT NULL,
+        title TEXT NOT NULL, agency TEXT DEFAULT '', opportunity_type TEXT DEFAULT '',
+        amount_text TEXT DEFAULT '', deadline TEXT DEFAULT '', eligibility TEXT DEFAULT '',
+        description TEXT DEFAULT '', source_url TEXT DEFAULT '', match_reason TEXT DEFAULT '',
+        raw_payload TEXT DEFAULT '{}', status TEXT DEFAULT 'Saved',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(user_id,source,source_id),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL, opportunity_id INTEGER,
+        version INTEGER NOT NULL DEFAULT 1, title TEXT NOT NULL,
+        payload TEXT DEFAULT '{}', document_text TEXT DEFAULT '', status TEXT DEFAULT 'Draft',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(opportunity_id) REFERENCES saved_funding_opportunities(id) ON DELETE SET NULL
     );
     CREATE TABLE IF NOT EXISTS retreats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6638,18 +6674,36 @@ def _openai_output_text(data):
             if isinstance(c,dict) and c.get('text'): chunks.append(c['text'])
     return '\n'.join(chunks).strip()
 
-def generate_business_plan_ai(answers):
-    if not OPENAI_API_KEY: return None, 'AI generation is not configured. Add OPENAI_API_KEY in Render environment settings.'
-    prompt='''You are a senior business-plan consultant. Create a REAL, professional, investor/lender-ready business plan using ONLY the member answers below. Do not invent factual revenue history, licenses, customer counts, addresses, funding commitments, certifications, or market research. Clearly label reasonable projections or assumptions as projections/assumptions. Target approximately 5,000–6,500 substantive words so the professionally formatted document is typically 10–15 pages. Use Markdown headings. Include: Executive Summary; Company Description; Founder/Business Background where supported; Mission; Vision; Core Values; Products & Services; Customer Problem & Business Solution; Target Market; Market Overview and Competitive Analysis (with careful assumptions if exact competitors were not supplied); Unique Selling Proposition; Marketing Strategy; Sales Strategy; Operations Plan; Management/Organization; Technology and Hosted App Strategy; Certifications & Compliance; Startup/Growth Requirements; Pricing and Revenue Model; Financial Strategy; Startup/Growth Budget; Cash Flow and Break-even Planning guidance; Funding Strategy; Short-Term Goals; Long-Term Goals; Risks & Challenges; 90-Day Action Priorities; and Conclusion. Also include a concise MARKETING STRATEGY section and a detailed 90-DAY LAUNCH PLAN section that can be extracted separately. Write in professional prose, not questionnaire format.\n\nMEMBER ANSWERS:\n'''+json.dumps(answers,indent=2)
-    payload=json.dumps({'model':BUSINESS_PLAN_AI_MODEL,'input':prompt}).encode('utf-8')
+def _business_ai_request(instructions, answers, max_output_tokens=5000):
+    if not OPENAI_API_KEY:
+        return None, 'AI generation is not configured. Add OPENAI_API_KEY in Render environment settings.'
+    payload=json.dumps({'model':BUSINESS_PLAN_AI_MODEL,'input':instructions+'\n\nVERIFIED MEMBER ANSWERS:\n'+json.dumps(answers,indent=2),'max_output_tokens':max_output_tokens}).encode('utf-8')
     req=urllib.request.Request('https://api.openai.com/v1/responses',data=payload,headers={'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},method='POST')
     try:
-        with urllib.request.urlopen(req,timeout=180) as resp: data=json.loads(resp.read().decode('utf-8'))
-        text=_openai_output_text(data)
-        if not text: return None,'AI returned no plan text.'
-        return text,None
-    except Exception as e:
-        return None,'AI generation failed. Check API configuration and try again.'
+        with urllib.request.urlopen(req,timeout=150) as resp:
+            text=_openai_output_text(json.loads(resp.read().decode('utf-8')))
+        return (text,None) if text else (None,'AI returned no plan text.')
+    except urllib.error.HTTPError as exc:
+        # Never expose a key or the provider response body to the member.
+        return None,f'AI generation could not complete (service status {exc.code}). Please retry this saved version.'
+    except Exception:
+        return None,'AI generation timed out before the document finished. Please retry this saved version.'
+
+def generate_business_plan_ai(answers, progress=None):
+    """Generate smaller, checkpointed sections instead of one worker-killing request."""
+    common='''You are a senior business-plan consultant. Use ONLY verified member answers. Do not invent revenue history, licenses, customers, addresses, commitments, certifications, statistics or market research. Label projections and assumptions. Write polished lender-ready Markdown prose, never questionnaire copy.'''
+    stages=[
+      common+''' Create Part 1 with these headings: # Executive Summary; # Company Description; # Founder and Business Background (only if supported); # Mission, Vision and Core Values; # Products and Services; # Customer Problem and Business Solution; # Target Market; # Market Overview and Competitive Analysis; # Unique Selling Proposition. Aim for 1,500–2,000 substantive words.''',
+      common+''' Create Part 2 with these headings: # Marketing Strategy; # Sales Strategy; # Operations Plan; # Management and Organization; # Technology and Hosted App Strategy; # Certifications and Compliance; # Pricing and Revenue Model. Aim for 1,500–2,000 substantive words.''',
+      common+''' Create Part 3 with these headings: # Startup and Growth Requirements; # Financial Strategy; # Startup or Growth Budget; # Cash Flow and Break-even Planning; # Funding Strategy; # Short-Term Goals; # Long-Term Goals; # Risks and Challenges; # 90-Day Launch Plan; # Conclusion. Make the 90-day plan specific, phased and actionable. Aim for 1,500–2,000 substantive words.'''
+    ]
+    sections=[]
+    for index,prompt in enumerate(stages,1):
+        text,error=_business_ai_request(prompt,answers)
+        if error: return '\n\n'.join(sections),error
+        sections.append(text.strip())
+        if progress: progress(index,'\n\n'.join(sections))
+    return '\n\n'.join(sections),None
 
 def extract_plan_subsection(text, heading, next_heading=None):
     if not text: return ''
@@ -7001,8 +7055,123 @@ def business_dashboard():
     plan_url=url_for('business_plan') if bool(u['business_dev_paid'] or u['is_admin']) else url_for('payment_info',product='business-development')
     plan_label='My Business Plan' if bool(u['business_dev_paid'] or u['is_admin']) else 'Professional Business Development — $79.99'
     plan_note='Questionnaire • Plan • Marketing • Launch • Versions' if bool(u['business_dev_paid'] or u['is_admin']) else 'One-time guided Business Plan • Marketing Strategy • 90-Day Launch Plan'
-    links=f'''<div class="grid"><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Journal Inbox<br><small>Business inquiries + private conversations</small></a><a class="moreitem" href="{url_for('notifications')}">Notifications<br><small>{unread} unread alerts</small></a><a class="moreitem" href="{url_for('business_calendar_page')}">Business Calendar<br><small>Classes • Retreats • availability • blocked time • bookings</small></a><a class="moreitem" href="{url_for('journal',category='Business')}">Business Journal<br><small>Private business notes and records</small></a><a class="moreitem" href="{plan_url}">{plan_label}<br><small>{plan_note}</small></a></div>'''
+    links=f'''<div class="grid"><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Journal Inbox<br><small>Business inquiries + private conversations</small></a><a class="moreitem" href="{url_for('notifications')}">Notifications<br><small>{unread} unread alerts</small></a><a class="moreitem" href="{url_for('business_calendar_page')}">Business Calendar<br><small>Classes • Retreats • availability • blocked time • bookings</small></a><a class="moreitem" href="{url_for('business_journal_workspace')}">Business Journal<br><small>Private records • funding • proposals</small></a><a class="moreitem" href="{plan_url}">{plan_label}<br><small>{plan_note}</small></a></div>'''
     return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Your Hosted Business App appears first, followed by the private tools used to manage inquiries, scheduling, Journal records, Retreat participation and professional business development.</p></div>{app_card}{links}''','business')
+
+def _business_plan_answers(user_id):
+    conn=db(); intake=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(user_id,)).fetchone()
+    plan=conn.execute("SELECT payload FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(user_id,)).fetchone(); conn.close()
+    row=plan or intake
+    try: return json.loads(row['payload']) if row else {}
+    except Exception: return {}
+
+def _funding_match_reason(opp,answers):
+    facts=[]; industry=(answers.get('industry') or '').strip(); stage=(answers.get('business_stage') or '').strip(); funding=(answers.get('funding_type') or '').strip(); location=(answers.get('state') or answers.get('location') or '').strip()
+    hay=' '.join(str(opp.get(k,'')) for k in ('title','agency','description','eligibility','opportunity_type')).lower()
+    if industry and any(word in hay for word in re.findall(r'[a-z]{4,}',industry.lower())[:5]): facts.append('its purpose overlaps your saved industry')
+    if funding: facts.append('your plan already identifies a funding need that can be compared with this award')
+    if stage: facts.append(f'your saved business stage is {stage}')
+    if location: facts.append(f'your saved location is {location}; confirm geographic eligibility')
+    return 'Why this matches your business: '+('; '.join(facts[:3]) if facts else 'it is a current official opportunity worth checking against your saved business plan')+'. Always confirm the official eligibility and deadline before applying.'
+
+def _grants_gov_search(keyword):
+    body={'keyword':keyword or 'small business','oppStatuses':'posted|forecasted','rows':25}
+    req=urllib.request.Request('https://api.grants.gov/v1/api/search2',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','User-Agent':'The-Seasons-Within/1.0'},method='POST')
+    with urllib.request.urlopen(req,timeout=25) as resp: data=json.loads(resp.read().decode('utf-8'))
+    root=data.get('data',data) if isinstance(data,dict) else {}; hits=root.get('oppHits') or root.get('opportunities') or root.get('results') or []
+    out=[]
+    for item in hits[:25]:
+        if not isinstance(item,dict): continue
+        oid=str(item.get('id') or item.get('opportunityId') or item.get('number') or item.get('opportunityNumber') or '')
+        title=str(item.get('title') or item.get('opportunityTitle') or 'Federal funding opportunity')
+        out.append({'source':'Grants.gov','source_id':oid or hashlib.sha256(title.encode()).hexdigest()[:20],'title':title,'agency':str(item.get('agencyName') or item.get('agency') or ''),'opportunity_type':str(item.get('opportunityCategory') or item.get('type') or 'Grant'),'amount_text':str(item.get('awardCeiling') or item.get('estimatedFunding') or ''),'deadline':str(item.get('closeDate') or item.get('closeDateDesc') or item.get('deadline') or ''),'eligibility':str(item.get('eligibilities') or item.get('eligibleApplicants') or ''),'description':str(item.get('synopsis') or item.get('description') or ''),'source_url':('https://www.grants.gov/search-results-detail/'+urllib.parse.quote(oid)) if oid else 'https://www.grants.gov/search-results'})
+    return out
+
+@app.route('/business-journal')
+@login_required
+def business_journal_workspace():
+    u=current_user(); answers=_business_plan_answers(u['id']); name=html.escape(answers.get('business_name') or 'Your business')
+    conn=db(); saved=conn.execute('SELECT COUNT(*) n FROM saved_funding_opportunities WHERE user_id=?',(u['id'],)).fetchone()['n']; proposals=conn.execute('SELECT COUNT(*) n FROM business_proposals WHERE user_id=?',(u['id'],)).fetchone()['n']; certs=conn.execute('SELECT COUNT(*) n FROM business_certifications WHERE user_id=?',(u['id'],)).fetchone()['n']; conn.close()
+    links=f'''<div class="grid"><a class="moreitem" href="{url_for('journal',category='Business')}">Business Notes & Records<br><small>Existing private Business Journal</small></a><a class="moreitem" href="{url_for('business_certifications')}">Licenses & Certifications<br><small>{certs} saved records</small></a><a class="moreitem" href="{url_for('funding_opportunities')}">Funding Opportunities<br><small>Matches for {name}</small></a><a class="moreitem" href="{url_for('funding_search')}">Grant & Loan Search<br><small>Current official sources</small></a><a class="moreitem" href="{url_for('saved_opportunities')}">Saved Opportunities<br><small>{saved} saved</small></a><a class="moreitem" href="{url_for('proposal_builder')}">Proposal Builder<br><small>{proposals} proposals</small></a></div>'''
+    return page('Business Journal',f'''<div class="hero"><span class="badge">BUSINESS JOURNAL</span><h1>Business Development</h1><p class="muted">These tools reuse your saved professional Business Plan. Your existing Business Journal notes, Inbox, Calendar and Hosted App remain unchanged.</p></div>{links}''','business')
+
+@app.route('/business-development/certifications',methods=['GET','POST'])
+@login_required
+def business_certifications():
+    u=current_user(); conn=db()
+    if request.method=='POST':
+        name=request.form.get('name','').strip()
+        if name: conn.execute('INSERT INTO business_certifications(user_id,name,issuing_body,status,renewal_date,notes,source_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],name,request.form.get('issuing_body','').strip(),request.form.get('status','Considering'),request.form.get('renewal_date',''),request.form.get('notes','').strip(),request.form.get('source_url','').strip(),now(),now())); conn.commit(); flash('License or certification saved.','success')
+    rows=conn.execute('SELECT * FROM business_certifications WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p class="muted">Renewal: {html.escape(r['renewal_date'] or 'Not set')}</p><p>{html.escape(r['notes'] or '')}</p></article>''' for r in rows) or '<div class="empty">No license or certification records yet.</div>'
+    form='''<form class="card" method="post"><h2>Add License or Certification</h2><label><b>Name</b></label><input class="input" name="name" required><label><b>Issuing body</b></label><input class="input" name="issuing_body"><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>In Progress</option><option>Active</option><option>Renewal Needed</option></select><label><b>Renewal date</b></label><input class="input" type="date" name="renewal_date"><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url"><button class="btn">Save Record</button></form>'''
+    return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Licenses & Certifications</h1></div>{form}<div class="grid">{cards}</div>''','business')
+
+@app.route('/business-development/funding')
+@login_required
+def funding_opportunities():
+    a=_business_plan_answers(current_user()['id']); keyword=(a.get('industry') or a.get('business_type') or 'small business').strip()
+    return redirect(url_for('funding_search',keyword=keyword,matched='1'))
+
+@app.route('/business-development/funding/search',methods=['GET','POST'])
+@login_required
+def funding_search():
+    u=current_user(); a=_business_plan_answers(u['id']); keyword=(request.form.get('keyword') if request.method=='POST' else request.args.get('keyword')) or a.get('industry') or 'small business'; keyword=keyword.strip()[:180]
+    results=[]; warning=''
+    try: results=_grants_gov_search(keyword)
+    except Exception: warning='Grants.gov could not be reached at this moment. The official SBA pathways below remain available.'
+    for o in results: o['match_reason']=_funding_match_reason(o,a)
+    conn=db(); conn.execute('INSERT INTO funding_searches(user_id,keyword,funding_type,state,industry,amount,result_count,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],keyword,a.get('funding_type',''),a.get('state',''),a.get('industry',''),a.get('budget',''),len(results),now())); conn.commit(); conn.close()
+    cards=[]
+    for o in results:
+        packed=html.escape(json.dumps(o),quote=True)
+        cards.append(f'''<article class="card"><span class="badge">GRANTS.GOV</span><h3>{html.escape(o['title'])}</h3><p><b>{html.escape(o['agency'])}</b></p><p class="muted">Deadline: {html.escape(o['deadline'] or 'See official notice')}</p><p>{html.escape(o['description'][:700])}</p><p>{html.escape(o['match_reason'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(o['source_url'],quote=True)}">Official Notice</a><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><button class="btn">Save Opportunity</button></form></div></article>''')
+    official='''<div class="grid"><article class="card"><span class="badge">SBA</span><h3>SBA Lender Match</h3><p class="muted">Connect with participating SBA-approved lenders. This is a loan pathway, not a guaranteed approval.</p><a class="out" target="_blank" rel="noopener" href="https://www.sba.gov/loans/lender-match/">Open Official SBA Page</a></article><article class="card"><span class="badge">SBA</span><h3>SBA Microloans</h3><p class="muted">Official information about smaller loans delivered through approved intermediary lenders.</p><a class="out" target="_blank" rel="noopener" href="https://www.sba.gov/loans/microloans/">Open Official SBA Page</a></article></div>'''
+    body=''.join(cards) or '<div class="empty">No federal grant results matched this search. Try broader business-purpose or industry words.</div>'
+    return page('Grant & Loan Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant & Loan Search</h1><p class="muted">Searches current Grants.gov listings and links only to official government notices. Loans are shown through official SBA pathways.</p></div><form class="card" method="post"><label><b>Search purpose, industry or program</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><button class="btn">Search Current Opportunities</button></form>{('<div class="notice">'+warning+'</div>') if warning else ''}{body}{official}''','business')
+
+@app.route('/business-development/funding/save',methods=['POST'])
+@login_required
+def save_funding_opportunity():
+    u=current_user()
+    try: o=json.loads(request.form.get('opportunity','{}'))
+    except Exception: abort(400)
+    if o.get('source') not in {'Grants.gov','SBA.gov','SAM.gov'}: abort(400)
+    conn=db(); conn.execute('''INSERT INTO saved_funding_opportunities(user_id,source,source_id,title,agency,opportunity_type,amount_text,deadline,eligibility,description,source_url,match_reason,raw_payload,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,source,source_id) DO UPDATE SET title=excluded.title,deadline=excluded.deadline,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at''',(u['id'],o.get('source',''),o.get('source_id',''),o.get('title',''),o.get('agency',''),o.get('opportunity_type',''),o.get('amount_text',''),o.get('deadline',''),o.get('eligibility',''),o.get('description',''),o.get('source_url',''),o.get('match_reason',''),json.dumps(o),'Saved',now(),now())); conn.commit(); conn.close(); flash('Funding opportunity saved.','success'); return redirect(url_for('saved_opportunities'))
+
+@app.route('/business-development/funding/saved')
+@login_required
+def saved_opportunities():
+    u=current_user(); conn=db(); rows=conn.execute('SELECT * FROM saved_funding_opportunities WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['source'])}</span><h3>{html.escape(r['title'])}</h3><p class="muted">Deadline: {html.escape(r['deadline'] or 'See official notice')}</p><p>{html.escape(r['match_reason'] or '')}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(r['source_url'],quote=True)}">Official Notice</a><a class="btn" href="{url_for('proposal_new',opportunity_id=r['id'])}">Start Proposal</a></div></article>''' for r in rows) or '<div class="empty">No saved opportunities yet.</div>'
+    return page('Saved Opportunities',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Saved Opportunities</h1></div><div class="grid">{cards}</div>''','business')
+
+@app.route('/business-development/proposals')
+@login_required
+def proposal_builder():
+    u=current_user(); conn=db(); rows=conn.execute('SELECT * FROM business_proposals WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['title'])}</h3><a class="btn" href="{url_for('proposal_view',proposal_id=r['id'])}">Open Proposal</a></article>''' for r in rows) or '<div class="empty">Save a funding opportunity, then select Start Proposal. Your saved Business Plan will pre-fill the proposal.</div>'
+    return page('Proposal Builder',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Proposal Builder</h1><p class="muted">Proposals reuse your saved business information and ask only for opportunity-specific details.</p></div><div class="grid">{cards}</div>''','business')
+
+@app.route('/business-development/proposal/new/<int:opportunity_id>',methods=['GET','POST'])
+@login_required
+def proposal_new(opportunity_id):
+    u=current_user(); conn=db(); opp=conn.execute('SELECT * FROM saved_funding_opportunities WHERE id=? AND user_id=?',(opportunity_id,u['id'])).fetchone()
+    if not opp: conn.close(); abort(404)
+    a=_business_plan_answers(u['id'])
+    if request.method=='POST':
+        payload=dict(a); payload.update({'opportunity_title':opp['title'],'request_amount':request.form.get('request_amount','').strip(),'project_period':request.form.get('project_period','').strip(),'use_of_funds':request.form.get('use_of_funds','').strip(),'outcomes':request.form.get('outcomes','').strip(),'opportunity_questions':request.form.get('opportunity_questions','').strip()})
+        title=f"{a.get('business_name') or 'Business'} — {opp['title']}"
+        doc=f'''# Proposal Working Draft\n\n## Applicant\n{a.get('business_name') or a.get('name') or ''}\n\n## Opportunity\n{opp['title']} — {opp['agency']}\n\n## Mission and Business Purpose\n{a.get('mission','')}\n\n## Project Need and Use of Funds\n{payload['use_of_funds']}\n\n## Requested Amount and Project Period\n{payload['request_amount']} — {payload['project_period']}\n\n## Expected Outcomes\n{payload['outcomes']}\n\n## Existing Business Goals\n{a.get('short_goals','')}\n\n## Opportunity-Specific Requirements\n{payload['opportunity_questions']}'''
+        cur=conn.execute('INSERT INTO business_proposals(user_id,opportunity_id,version,title,payload,document_text,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],opportunity_id,1,title,json.dumps(payload),doc,'Draft',now(),now())); pid=cur.lastrowid; conn.commit(); conn.close(); flash('Proposal draft saved.','success'); return redirect(url_for('proposal_view',proposal_id=pid))
+    conn.close(); return page('Start Proposal',f'''<div class="hero"><span class="badge">PROPOSAL BUILDER</span><h1>{html.escape(opp['title'])}</h1><p class="muted">Business name, mission, audience, goals, industry and stage will come from your saved plan.</p></div><form class="card" method="post"><label><b>Amount requested</b></label><input class="input" name="request_amount" value="{html.escape(a.get('budget',''),quote=True)}"><label><b>Project period</b></label><input class="input" name="project_period"><label><b>Specific use of these funds</b></label><textarea class="input" name="use_of_funds">{html.escape(a.get('funding_type',''))}</textarea><label><b>Measurable outcomes for this opportunity</b></label><textarea class="input" name="outcomes"></textarea><label><b>Opportunity-specific questions or requirements</b></label><textarea class="input" name="opportunity_questions"></textarea><button class="btn">Create Proposal Draft</button></form>''','business')
+
+@app.route('/business-development/proposal/<int:proposal_id>')
+@login_required
+def proposal_view(proposal_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_proposals WHERE id=? AND user_id=?',(proposal_id,u['id'])).fetchone(); conn.close()
+    if not row: abort(404)
+    return page('Proposal Draft',f'''<div class="hero"><span class="badge">{html.escape(row['status'])}</span><h1>{html.escape(row['title'])}</h1></div>{plan_text_to_html(row['document_text'])}''','business')
 
 @app.route('/business/calendar', methods=['GET','POST'])
 @login_required
@@ -7082,10 +7251,12 @@ def business_plan_generate():
     plan_id=cursor.lastrowid
     conn.commit(); conn.close()
 
-    plan,error=generate_business_plan_ai(answers)
+    def checkpoint(stage,partial):
+        c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
+    plan,error=generate_business_plan_ai(answers,checkpoint)
     if error:
-        conn=db(); conn.execute('UPDATE business_plans SET status=? WHERE id=? AND user_id=?',('Generation failed',plan_id,u['id'])); conn.commit(); conn.close()
-        flash(error+' Your questionnaire remains saved and you may generate a new version.','error'); return redirect(url_for('plan_versions'))
+        conn=db(); conn.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(plan or '','Generation failed',plan_id,u['id'])); conn.commit(); conn.close()
+        flash(error+' Your questionnaire and completed sections remain saved. Use Retry on this version.','error'); return redirect(url_for('plan_versions'))
 
     marketing,launch=business_plan_companion_texts(plan,answers)
     conn=db()
@@ -7099,12 +7270,30 @@ def business_plan_generate():
     flash(f'Professional Business Plan Version {version}, Marketing Strategy and 90-Day Launch Plan generated and saved.','success')
     return redirect(url_for('business_plan'))
 
+@app.route('/business-plan/retry/<int:plan_id>',methods=['POST'])
+@login_required
+@business_development_required
+def business_plan_retry(plan_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_plans WHERE id=? AND user_id=?',(plan_id,u['id'])).fetchone(); conn.close()
+    if not row: abort(404)
+    answers=json.loads(row['payload'] or '{}')
+    conn=db(); conn.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',('','','','Generating',plan_id,u['id'])); conn.commit(); conn.close()
+    def checkpoint(stage,partial):
+        c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(partial,f'Generating {stage} of 3',plan_id,u['id'])); c.commit(); c.close()
+    plan,error=generate_business_plan_ai(answers,checkpoint)
+    if error:
+        c=db(); c.execute('UPDATE business_plans SET document_text=?,status=? WHERE id=? AND user_id=?',(plan or '','Generation failed',plan_id,u['id'])); c.commit(); c.close(); flash(error,'error'); return redirect(url_for('plan_versions'))
+    marketing,launch=business_plan_companion_texts(plan,answers)
+    c=db(); c.execute('UPDATE business_plans SET document_text=?,marketing_text=?,launch_text=?,status=? WHERE id=? AND user_id=?',(plan,marketing,launch,'Generated',plan_id,u['id'])); c.commit(); c.close()
+    notify(u['id'],'Business Plan Ready',f'Business Plan Version {row["version"]} and its companion documents are ready.',url_for('plan_versions'))
+    flash('The saved Business Plan version was generated successfully.','success'); return redirect(url_for('business_plan_document',plan_id=plan_id))
+
 @app.route('/business-plan/document/<int:plan_id>')
 @login_required
 @business_development_required
 def business_plan_document(plan_id):
     u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_plans WHERE id=? AND user_id=?',(plan_id,u['id'])).fetchone(); conn.close()
-    if not row: abort(404)
+    if not row or row['status']!='Generated' or not (row['document_text'] or '').strip(): abort(404)
     return page(f'Business Plan Version {row["version"]}',f'''<div class="hero"><span class="badge">VIEW DOCUMENT</span><h1>Business Plan — Version {row['version']}</h1><p class="muted">This is the complete generated Business Plan. The PDF download contains the same plan.</p><a class="btn" href="{url_for('business_plan_pdf',plan_id=row['id'])}">Download PDF</a></div>{plan_text_to_html(row['document_text'])}''','business')
 
 @app.route('/business-plan/pdf/<int:plan_id>')
@@ -7112,7 +7301,7 @@ def business_plan_document(plan_id):
 @business_development_required
 def business_plan_pdf(plan_id):
     u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_plans WHERE id=? AND user_id=?',(plan_id,u['id'])).fetchone(); conn.close()
-    if not row: abort(404)
+    if not row or row['status']!='Generated' or not (row['document_text'] or '').strip(): abort(404)
     answers=json.loads(row['payload']); title=(answers.get('business_name') or 'Business')+f' Business Plan — Version {row["version"]}'
     pdf=build_simple_pdf(title,row['document_text']); resp=app.response_class(pdf,mimetype='application/pdf'); resp.headers['Content-Disposition']=f'attachment; filename="business-plan-version-{row["version"]}.pdf"'; return resp
 
@@ -7120,7 +7309,7 @@ def business_plan_pdf(plan_id):
 @login_required
 @business_development_required
 def business_plan():
-    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM business_plans WHERE user_id=? ORDER BY version DESC LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    u=current_user(); conn=db(); row=conn.execute("SELECT * FROM business_plans WHERE user_id=? AND status='Generated' AND document_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close()
     if not row:
         content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Create Your First Professional Business Plan</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a></div><div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a></div>'''
     else:
@@ -7131,15 +7320,21 @@ def business_plan():
 @login_required
 @business_development_required
 def plan_versions():
-    u=current_user(); conn=db(); rows=conn.execute('SELECT id,version,created_at,status FROM business_plans WHERE user_id=? ORDER BY version DESC',(u['id'],)).fetchall(); conn.close()
-    html=''.join(f'''<article class="card"><span class="badge">{r['status'] or 'Generated'}</span><h3>Business Plan — Version {r['version']}</h3><p class="muted">Saved {r['created_at']}</p><div class="actions"><a class="btn" href="{url_for('business_plan_document',plan_id=r['id'])}">View Document</a><a class="out" href="{url_for('business_plan_pdf',plan_id=r['id'])}">Download PDF</a></div></article>''' for r in rows) or '<div class="empty">No saved Business Plan versions yet.</div>'
-    return page('Plan Versions',f'''<div class="hero"><span class="badge">PLAN VERSIONS</span><h1>Business Plan Library</h1><p class="muted">Every generated plan is preserved. New versions never erase older plans.</p></div><div class="grid">{html}</div>''','business')
+    u=current_user(); conn=db(); rows=conn.execute('SELECT id,version,created_at,status,document_text FROM business_plans WHERE user_id=? ORDER BY version DESC',(u['id'],)).fetchall(); conn.close()
+    cards=[]
+    for r in rows:
+        complete=r['status']=='Generated' and bool((r['document_text'] or '').strip())
+        actions=f'''<a class="btn" href="{url_for('business_plan_document',plan_id=r['id'])}">View Document</a><a class="out" href="{url_for('business_plan_pdf',plan_id=r['id'])}">Download PDF</a>''' if complete else f'''<form method="post" action="{url_for('business_plan_retry',plan_id=r['id'])}"><button class="btn">Retry This Saved Version</button></form>'''
+        note='' if complete else '<p class="muted">Your questionnaire is saved. No empty document is offered for download.</p>'
+        cards.append(f'''<article class="card"><span class="badge">{html.escape(r['status'] or 'Pending')}</span><h3>Business Plan — Version {r['version']}</h3><p class="muted">Saved {r['created_at']}</p>{note}<div class="actions">{actions}</div></article>''')
+    version_cards=''.join(cards) or '<div class="empty">No saved Business Plan versions yet.</div>'
+    return page('Plan Versions',f'''<div class="hero"><span class="badge">PLAN VERSIONS</span><h1>Business Plan Library</h1><p class="muted">Every generated plan is preserved. New versions never erase older plans.</p></div><div class="grid">{version_cards}</div>''','business')
 
 @app.route('/marketing')
 @login_required
 @business_development_required
 def marketing():
-    u=current_user(); conn=db(); row=conn.execute('SELECT marketing_text FROM business_plans WHERE user_id=? ORDER BY version DESC LIMIT 1',(u['id'],)).fetchone(); conn.close(); text=row['marketing_text'] if row else ''
+    u=current_user(); conn=db(); row=conn.execute("SELECT marketing_text FROM business_plans WHERE user_id=? AND status='Generated' AND marketing_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close(); text=row['marketing_text'] if row else ''
     body=plan_text_to_html(text) if text else '<div class="empty"><h3>No generated Marketing Strategy yet</h3><p class="muted">Generate a Business Plan first. The Marketing Strategy is created from the same member answers.</p></div>'
     return page('Marketing Strategy',f'''<div class="hero"><span class="badge">BUSINESS PLAN WORKSPACE</span><h1>Marketing Strategy</h1></div>{body}''','business')
 
@@ -7147,7 +7342,7 @@ def marketing():
 @login_required
 @business_development_required
 def launch_plan():
-    u=current_user(); conn=db(); row=conn.execute('SELECT launch_text FROM business_plans WHERE user_id=? ORDER BY version DESC LIMIT 1',(u['id'],)).fetchone(); conn.close(); text=row['launch_text'] if row else ''
+    u=current_user(); conn=db(); row=conn.execute("SELECT launch_text FROM business_plans WHERE user_id=? AND status='Generated' AND launch_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close(); text=row['launch_text'] if row else ''
     body=plan_text_to_html(text) if text else '<div class="empty"><h3>No generated 90-Day Launch Plan yet</h3><p class="muted">Generate a Business Plan first. The launch plan will be created from the same business answers.</p></div>'
     return page('90-Day Launch Plan',f'''<div class="hero"><span class="badge">BUSINESS PLAN WORKSPACE</span><h1>90-Day Launch Plan</h1></div>{body}''','business')
 
