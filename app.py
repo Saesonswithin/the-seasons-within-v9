@@ -7657,14 +7657,84 @@ def _business_plan_answers(user_id):
     try: return json.loads(row['payload']) if row else {}
     except Exception: return {}
 
+def _business_evidence(answers):
+    """Normalize only saved plan facts used by business-development matching."""
+    text=lambda *keys: next((str(answers.get(k) or '').strip() for k in keys if str(answers.get(k) or '').strip()),'')
+    combined=' '.join(str(answers.get(k) or '') for k in ('industry','business_type','mission','usp','short_goals','long_goals','target_audience','funding_type','additional_info')).lower()
+    state=text('state','business_state')
+    location=text('location','city')
+    if not state:
+        m=re.search(r'\b(Michigan|Ohio|Illinois|Indiana|Wisconsin|California|New York|Texas|Florida)\b',location,re.I)
+        state=m.group(1) if m else ''
+    ownership=[]
+    for label,terms in [('Woman-owned',('woman-owned','women-owned','wbe')),('Minority-owned',('minority-owned','mbe')),('Veteran-owned',('veteran-owned','veteran owned')),('Nonprofit',('nonprofit','non-profit','501(c)(3)'))]:
+        if any(t in combined for t in terms): ownership.append(label)
+    budget=text('budget','startup_budget'); funding=text('funding_type')
+    amount=''
+    nums=[float(x.replace(',','')) for x in re.findall(r'\$?([0-9][0-9,]*(?:\.[0-9]+)?)',budget+' '+funding)]
+    if nums: amount=f'${max(nums):,.0f}'
+    return {'name':text('business_name','name') or 'Your business','industry':text('industry'),'entity':text('business_type'),'stage':text('business_stage'),'state':state,'location':location,'ownership':ownership,'funding':funding,'amount':amount,'audience':text('target_audience'),'goals':text('short_goals','long_goals'),'combined':combined}
+
+def _opportunity_identity(opp):
+    return (str(opp.get('source','')).lower().strip(),str(opp.get('source_id') or opp.get('source_url') or opp.get('title','')).lower().strip())
+
+def _funding_match_analysis(opp,answers):
+    """Return a distinct evidence-based score and explanation; never assert eligibility."""
+    e=_business_evidence(answers)
+    fields={k:str(opp.get(k,'') or '') for k in ('title','agency','description','eligibility','opportunity_type','amount_text','deadline')}
+    hay=' '.join(fields.values()).lower(); score=0; reasons=[]; cautions=[]
+    industry_words=[w for w in re.findall(r'[a-z]{4,}',e['industry'].lower()) if w not in {'business','services','development'}][:10]
+    overlaps=[w for w in industry_words if w in hay]
+    if overlaps:
+        score+=28+min(12,len(overlaps)*4); reasons.append('The official notice overlaps your saved industry in '+', '.join(overlaps[:3])+'.')
+    funding_words=[w for w in re.findall(r'[a-z]{5,}',e['funding'].lower()) if w not in {'funding','capital','seeking'}][:10]
+    use_hits=[w for w in funding_words if w in hay]
+    if use_hits:
+        score+=22; reasons.append('Its stated purpose aligns with your saved use of funds: '+', '.join(use_hits[:3])+'.')
+    if e['state'] and e['state'].lower() in hay:
+        score+=18; reasons.append(f'The notice references your saved state, {e["state"]}.')
+    if e['ownership']:
+        owner_hits=[x for x in e['ownership'] if any(t in hay for t in x.lower().replace('-owned','').split())]
+        if owner_hits: score+=15; reasons.append('The applicant focus may correspond to your saved ownership profile ('+', '.join(owner_hits)+').')
+    stage=e['stage'].lower()
+    if stage and (('startup' in stage or 'idea' in stage) and any(x in hay for x in ('startup','early stage','entrepreneur','small business'))):
+        score+=12; reasons.append(f'The program focus is compatible with your saved stage: {e["stage"]}.')
+    if any(x in hay for x in ('small business','entrepreneur','microenterprise')): score+=8
+    eligibility=fields['eligibility'].lower()
+    if eligibility and any(x in eligibility for x in ('government','institution of higher education','state governments')) and not any(x in eligibility for x in ('small business','for profit','nonprofit')):
+        score-=35; cautions.append('The listed applicant types may not include an ordinary for-profit small business.')
+    if not reasons: cautions.append('No strong plan-to-notice overlap was detected; treat this as a manual screening result, not a recommended match.')
+    cautions.append('Confirm applicant eligibility, deadline, registrations, matching requirements and allowed costs in the official notice.')
+    label='Strong potential match' if score>=55 else ('Possible match' if score>=28 else 'Low-confidence match')
+    return {'score':max(0,min(100,score)),'label':label,'reason':' '.join(reasons),'caution':' '.join(cautions)}
+
 def _funding_match_reason(opp,answers):
-    facts=[]; industry=(answers.get('industry') or '').strip(); stage=(answers.get('business_stage') or '').strip(); funding=(answers.get('funding_type') or '').strip(); location=(answers.get('state') or answers.get('location') or '').strip()
-    hay=' '.join(str(opp.get(k,'')) for k in ('title','agency','description','eligibility','opportunity_type')).lower()
-    if industry and any(word in hay for word in re.findall(r'[a-z]{4,}',industry.lower())[:5]): facts.append('its purpose overlaps your saved industry')
-    if funding: facts.append('your plan already identifies a funding need that can be compared with this award')
-    if stage: facts.append(f'your saved business stage is {stage}')
-    if location: facts.append(f'your saved location is {location}; confirm geographic eligibility')
-    return 'Why this matches your business: '+('; '.join(facts[:3]) if facts else 'it is a current official opportunity worth checking against your saved business plan')+'. Always confirm the official eligibility and deadline before applying.'
+    m=_funding_match_analysis(opp,answers)
+    return f"{m['label']} ({m['score']}% evidence match). {m['reason']} {m['caution']}".strip()
+
+def _certification_recommendations(answers):
+    """Personalized compliance leads. Required means verify applicability, never legal certainty."""
+    e=_business_evidence(answers); hay=e['combined']; items=[]
+    def add(priority,name,body,url,why):
+        key=(priority,name)
+        if key not in {(x['priority'],x['name']) for x in items}: items.append({'priority':priority,'name':name,'body':body,'url':url,'why':why})
+    add('REQUIRED — VERIFY','State business registration and annual filings','Confirm entity status, assumed-name filings and recurring reports with the state where the business is formed.','https://www.sba.gov/business-guide/launch-your-business/register-your-business',f'Your plan identifies the entity as {e["entity"] or "not yet confirmed"} and the location as {e["state"] or e["location"] or "not yet confirmed"}.')
+    add('REQUIRED — VERIFY','Federal and state tax registration','Confirm EIN, sales/payroll tax and other registrations that apply to the entity, products, workers and location.','https://www.irs.gov/businesses/small-businesses-self-employed/employer-id-numbers',f'This is foundational for a {e["stage"] or "developing"} business before funding, banking or hiring.')
+    add('REQUIRED — VERIFY','Local licenses, zoning and permits','Check city, county and state requirements for the actual services, events, premises and sales activity.','https://www.sba.gov/business-guide/launch-your-business/apply-licenses-permits',f'Your saved industry is {e["industry"] or "not yet specified"}; requirements depend on activity and location, not the business name alone.')
+    if any(x in hay for x in ('retreat','wellness','food','massage','therapy','health','beauty','child','event')):
+        add('REQUIRED — VERIFY','Activity-specific professional, health or event permits','Verify scope-of-practice, venue, food, health, safety and professional rules for each service actually offered.','https://www.sba.gov/business-guide/launch-your-business/apply-licenses-permits','Your plan includes regulated or location-sensitive activities, so each offer needs its own official applicability check.')
+    if any(x in hay for x in ('technology','platform','online','membership','community','app','website')):
+        add('RECOMMENDED','Privacy, data-security and website compliance review','Document privacy practices, data retention, account security, consumer terms and accessibility for digital services.','https://www.ftc.gov/business-guidance/privacy-security', 'Your plan includes a digital platform, online service or member-data workflow.')
+    if any(x in hay for x in ('government','contract','award','grant')) or str(answers.get('certification_need','')).lower() in ('yes','unsure'):
+        add('RECOMMENDED','SAM.gov entity registration','Register only through the official no-cost federal system when pursuing eligible federal awards or contracts.','https://sam.gov/content/entity-registration','Your plan expresses interest in grants, awards or government opportunities.')
+    if 'Woman-owned' in e['ownership'] or any(x in hay for x in ('wbe','woman-owned','women-owned')):
+        add('OPTIONAL — ELIGIBILITY BASED','Women-Owned Small Business certification','Review ownership, control, size and documentation rules before applying.','https://www.sba.gov/federal-contracting/contracting-assistance-programs/women-owned-small-business-federal-contract-program','Your saved plan indicates interest in or possible relevance to woman-owned business certification.')
+    if 'Minority-owned' in e['ownership'] or any(x in hay for x in ('mbe','minority-owned')):
+        add('OPTIONAL — ELIGIBILITY BASED','Minority Business Enterprise certification','Review the certifier, ownership/control rules, market purpose, fees and renewal requirements.','https://nmsdc.org/mbes/mbe-certification/','Your saved plan indicates interest in or possible relevance to minority-business certification.')
+    if not any(x['priority'].startswith('OPTIONAL') for x in items):
+        add('OPTIONAL','Industry credentials with demonstrated customer value','Compare any voluntary credential with customer demand, cost, renewal obligations and permitted marketing claims.','https://www.careeronestop.org/Toolkit/Training/find-certifications.aspx',f'Use the saved target audience ({e["audience"] or "not yet defined"}) to decide whether a voluntary credential improves trust or eligibility.')
+    order={'REQUIRED — VERIFY':0,'RECOMMENDED':1,'OPTIONAL — ELIGIBILITY BASED':2,'OPTIONAL':3}
+    return sorted(items,key=lambda x:(order.get(x['priority'],9),x['name']))
 
 def _grants_gov_search(keyword):
     body={'keyword':keyword or 'small business','oppStatuses':'posted|forecasted','rows':25}
@@ -7690,28 +7760,66 @@ def business_journal_workspace():
 @app.route('/business-development/certifications',methods=['GET','POST'])
 @login_required
 def business_certifications():
-    u=current_user(); conn=db()
+    u=current_user(); answers=_business_plan_answers(u['id']); recommendations=_certification_recommendations(answers); conn=db()
     if request.method=='POST':
         name=request.form.get('name','').strip()
         if name: conn.execute('INSERT INTO business_certifications(user_id,name,issuing_body,status,renewal_date,notes,source_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],name,request.form.get('issuing_body','').strip(),request.form.get('status','Considering'),request.form.get('renewal_date',''),request.form.get('notes','').strip(),request.form.get('source_url','').strip(),now(),now())); conn.commit(); flash('License or certification saved.','success')
     rows=conn.execute('SELECT * FROM business_certifications WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); conn.close()
-    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p class="muted">Renewal: {html.escape(r['renewal_date'] or 'Not set')}</p><p>{html.escape(r['notes'] or '')}</p></article>''' for r in rows) or '<div class="empty">No license or certification records yet.</div>'
-    form='''<form class="card" method="post"><h2>Add License or Certification</h2><label><b>Name</b></label><input class="input" name="name" required><label><b>Issuing body</b></label><input class="input" name="issuing_body"><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>In Progress</option><option>Active</option><option>Renewal Needed</option></select><label><b>Renewal date</b></label><input class="input" type="date" name="renewal_date"><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url"><button class="btn">Save Record</button></form>'''
-    return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Licenses & Certifications</h1></div>{form}<div class="grid">{cards}</div>''','business')
+    saved_names={str(r['name']).lower() for r in rows}
+    rec_cards=[]
+    for x in recommendations:
+        already=x['name'].lower() in saved_names
+        rec_cards.append(f'''<article class="card"><span class="badge">{html.escape(x['priority'])}</span><h3>{html.escape(x['name'])}</h3><p>{html.escape(x['body'])}</p><p><b>Why this applies:</b> {html.escape(x['why'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(x['url'],quote=True)}">Official Information</a>{'<span class="badge">SAVED</span>' if already else f'''<form method="post"><input type="hidden" name="name" value="{html.escape(x['name'],quote=True)}"><input type="hidden" name="issuing_body" value="Official authority — verify applicability"><input type="hidden" name="status" value="Considering"><input type="hidden" name="notes" value="{html.escape(x['why'],quote=True)}"><input type="hidden" name="source_url" value="{html.escape(x['url'],quote=True)}"><button class="btn">Track This</button></form>'''}</div></article>''')
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p class="muted">Renewal: {html.escape(r['renewal_date'] or 'Not set')}</p><p>{html.escape(r['notes'] or '')}</p>{f'<a class="out" target="_blank" rel="noopener" href="{html.escape(r["source_url"],quote=True)}">Official Information</a>' if r['source_url'] else ''}</article>''' for r in rows) or '<div class="empty">No tracked license or certification records yet.</div>'
+    form='''<details class="card"><summary><b>Add another license or certification manually</b></summary><form method="post"><label><b>Name</b></label><input class="input" name="name" required><label><b>Issuing body</b></label><input class="input" name="issuing_body"><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>In Progress</option><option>Active</option><option>Renewal Needed</option></select><label><b>Renewal date</b></label><input class="input" type="date" name="renewal_date"><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url"><button class="btn">Save Record</button></form></details>'''
+    return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Licenses & Certifications</h1><p class="muted">Personalized starting points from your saved business plan. “Required — Verify” means confirm applicability with the responsible authority; it is not a legal determination.</p></div><div class="topspace"><h2>Recommended for {html.escape(_business_evidence(answers)['name'])}</h2></div><div class="grid">{''.join(rec_cards)}</div><div class="topspace"><h2>Your Tracked Records</h2></div>{form}<div class="grid">{cards}</div>''','business')
 
 @app.route('/business-development/funding')
 @login_required
 def funding_opportunities():
-    a=_business_plan_answers(current_user()['id']); keyword=(a.get('industry') or a.get('business_type') or 'small business').strip()
-    return redirect(url_for('funding_search',keyword=keyword,matched='1'))
+    u=current_user(); a=_business_plan_answers(u['id']); e=_business_evidence(a)
+    queries=[]
+    for q in (e['industry'],e['funding'],e['state']+' small business' if e['state'] else '', 'small business '+('startup' if 'startup' in e['stage'].lower() or 'idea' in e['stage'].lower() else 'growth')):
+        q=' '.join(q.split())[:180]
+        if q and q.lower() not in {x.lower() for x in queries}: queries.append(q)
+    opportunities=[]; warning=''
+    try:
+        for q in queries[:4]: opportunities.extend(_grants_gov_search(q))
+    except Exception: warning='Grants.gov could not be reached at this moment. Return later or use the manual search and official SBA pathways.'
+    unique={}
+    for o in opportunities:
+        key=_opportunity_identity(o)
+        if key not in unique: unique[key]=o
+    ranked=[]
+    for o in unique.values():
+        m=_funding_match_analysis(o,a); o['match_reason']=_funding_match_reason(o,a); o['_match']=m
+        if m['score']>=18: ranked.append(o)
+    ranked.sort(key=lambda o:(-o['_match']['score'],o.get('deadline') or '9999',o.get('title','')))
+    conn=db(); conn.execute('INSERT INTO funding_searches(user_id,keyword,funding_type,state,industry,amount,result_count,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],'AUTO: '+' | '.join(queries),e['funding'],e['state'],e['industry'],e['amount'],len(ranked),now())); conn.commit(); conn.close()
+    cards=[]
+    for o in ranked[:30]:
+        packed=html.escape(json.dumps({k:v for k,v in o.items() if k!='_match'}),quote=True); m=o['_match']
+        cards.append(f'''<article class="card"><span class="badge">{html.escape(m['label'])} • {m['score']}%</span><h3>{html.escape(o['title'])}</h3><p><b>{html.escape(o['agency'])}</b></p><p class="muted">Deadline: {html.escape(o['deadline'] or 'See official notice')}</p><p><b>Why this matches your plan:</b> {html.escape(m['reason'] or 'No strong overlap detected.')}</p><p class="muted"><b>Eligibility check:</b> {html.escape(m['caution'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(o['source_url'],quote=True)}">Official Notice</a><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><button class="btn">Save Opportunity</button></form></div></article>''')
+    evidence=f'''<div class="card"><h2>Matching profile</h2><div class="grid"><div class="fact"><small>Industry</small><b>{html.escape(e['industry'] or 'Not provided')}</b></div><div class="fact"><small>Stage</small><b>{html.escape(e['stage'] or 'Not provided')}</b></div><div class="fact"><small>Location</small><b>{html.escape(e['state'] or e['location'] or 'Not provided')}</b></div><div class="fact"><small>Funding need</small><b>{html.escape(e['amount'] or e['funding'][:120] or 'Not provided')}</b></div></div><p class="muted small">Matches are screening aids, not eligibility decisions. Official notices control.</p></div>'''
+    body=''.join(cards) or '<div class="empty"><h3>No reliable automatic matches yet</h3><p>Add more industry, funding-purpose, location and ownership information to the saved plan, or use Grant & Loan Search.</p></div>'
+    return page('Funding Opportunities',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Funding Opportunities for {html.escape(e['name'])}</h1><p class="muted">Automatically ranked from your saved industry, stage, location, ownership indicators, funding purpose and goals.</p></div>{evidence}{('<div class="notice">'+warning+'</div>') if warning else ''}<div class="topspace"><h2>Ranked Potential Matches</h2><a class="out" href="{url_for('funding_search')}">Open Manual Grant & Loan Search</a></div><div class="grid">{body}</div>''','business')
 
 @app.route('/business-development/funding/search',methods=['GET','POST'])
 @login_required
 def funding_search():
-    u=current_user(); a=_business_plan_answers(u['id']); keyword=(request.form.get('keyword') if request.method=='POST' else request.args.get('keyword')) or a.get('industry') or 'small business'; keyword=keyword.strip()[:180]
+    u=current_user(); a=_business_plan_answers(u['id']); keyword=(request.form.get('keyword') if request.method=='POST' else request.args.get('keyword')) or ''; keyword=keyword.strip()[:180]
+    funding_type=(request.form.get('funding_type') or request.args.get('funding_type') or 'All').strip(); agency_filter=(request.form.get('agency') or request.args.get('agency') or '').strip(); deadline_filter=(request.form.get('deadline') or request.args.get('deadline') or '').strip()
     results=[]; warning=''
-    try: results=_grants_gov_search(keyword)
+    try: results=_grants_gov_search(keyword or 'small business')
     except Exception: warning='Grants.gov could not be reached at this moment. The official SBA pathways below remain available.'
+    if agency_filter: results=[o for o in results if agency_filter.lower() in str(o.get('agency','')).lower()]
+    if funding_type!='All': results=[o for o in results if funding_type.lower() in (' '.join(str(o.get(k,'')) for k in ('opportunity_type','title','description'))).lower()]
+    if deadline_filter: results=[o for o in results if not o.get('deadline') or str(o.get('deadline'))>=deadline_filter]
+    deduped=[]; seen=set()
+    for o in results:
+        key=_opportunity_identity(o)
+        if key not in seen: seen.add(key); deduped.append(o)
+    results=deduped
     for o in results: o['match_reason']=_funding_match_reason(o,a)
     conn=db(); conn.execute('INSERT INTO funding_searches(user_id,keyword,funding_type,state,industry,amount,result_count,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],keyword,a.get('funding_type',''),a.get('state',''),a.get('industry',''),a.get('budget',''),len(results),now())); conn.commit(); conn.close()
     cards=[]
@@ -7720,7 +7828,7 @@ def funding_search():
         cards.append(f'''<article class="card"><span class="badge">GRANTS.GOV</span><h3>{html.escape(o['title'])}</h3><p><b>{html.escape(o['agency'])}</b></p><p class="muted">Deadline: {html.escape(o['deadline'] or 'See official notice')}</p><p>{html.escape(o['description'][:700])}</p><p>{html.escape(o['match_reason'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(o['source_url'],quote=True)}">Official Notice</a><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><button class="btn">Save Opportunity</button></form></div></article>''')
     official='''<div class="grid"><article class="card"><span class="badge">SBA</span><h3>SBA Lender Match</h3><p class="muted">Connect with participating SBA-approved lenders. This is a loan pathway, not a guaranteed approval.</p><a class="out" target="_blank" rel="noopener" href="https://www.sba.gov/loans/lender-match/">Open Official SBA Page</a></article><article class="card"><span class="badge">SBA</span><h3>SBA Microloans</h3><p class="muted">Official information about smaller loans delivered through approved intermediary lenders.</p><a class="out" target="_blank" rel="noopener" href="https://www.sba.gov/loans/microloans/">Open Official SBA Page</a></article></div>'''
     body=''.join(cards) or '<div class="empty">No federal grant results matched this search. Try broader business-purpose or industry words.</div>'
-    return page('Grant & Loan Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant & Loan Search</h1><p class="muted">Searches current Grants.gov listings and links only to official government notices. Loans are shown through official SBA pathways.</p></div><form class="card" method="post"><label><b>Search purpose, industry or program</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><button class="btn">Search Current Opportunities</button></form>{('<div class="notice">'+warning+'</div>') if warning else ''}{body}{official}''','business')
+    return page('Grant & Loan Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant & Loan Search</h1><p class="muted">Manual search of current official sources. This is separate from automatic plan-based Funding Opportunities.</p></div><form class="card" method="post"><div class="grid"><div><label><b>Keyword, purpose, industry or program</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}" placeholder="child care, technology, rural business..."></div><div><label><b>Opportunity type</b></label><select class="input" name="funding_type">{''.join(f'<option {"selected" if funding_type==x else ""}>{x}</option>' for x in ['All','Grant','Cooperative Agreement','Loan'])}</select></div><div><label><b>Agency contains</b></label><input class="input" name="agency" value="{html.escape(agency_filter,quote=True)}" placeholder="Department of Agriculture"></div><div><label><b>Deadline on or after</b></label><input class="input" type="date" name="deadline" value="{html.escape(deadline_filter,quote=True)}"></div></div><button class="btn">Search Current Opportunities</button><a class="out" href="{url_for('funding_opportunities')}">View My Automatic Matches</a></form>{('<div class="notice">'+warning+'</div>') if warning else ''}{body}{official}''','business')
 
 @app.route('/business-development/funding/save',methods=['POST'])
 @login_required
@@ -7750,13 +7858,14 @@ def proposal_builder():
 def proposal_new(opportunity_id):
     u=current_user(); conn=db(); opp=conn.execute('SELECT * FROM saved_funding_opportunities WHERE id=? AND user_id=?',(opportunity_id,u['id'])).fetchone()
     if not opp: conn.close(); abort(404)
-    a=_business_plan_answers(u['id'])
+    a=_business_plan_answers(u['id']); e=_business_evidence(a)
     if request.method=='POST':
-        payload=dict(a); payload.update({'opportunity_title':opp['title'],'request_amount':request.form.get('request_amount','').strip(),'project_period':request.form.get('project_period','').strip(),'use_of_funds':request.form.get('use_of_funds','').strip(),'outcomes':request.form.get('outcomes','').strip(),'opportunity_questions':request.form.get('opportunity_questions','').strip()})
+        payload=dict(a); payload.update({'opportunity_title':opp['title'],'opportunity_agency':opp['agency'],'opportunity_deadline':opp['deadline'],'opportunity_eligibility':opp['eligibility'],'request_amount':request.form.get('request_amount','').strip(),'project_period':request.form.get('project_period','').strip(),'use_of_funds':request.form.get('use_of_funds','').strip(),'outcomes':request.form.get('outcomes','').strip(),'partnerships':request.form.get('partnerships','').strip(),'attachments':request.form.get('attachments','').strip(),'opportunity_questions':request.form.get('opportunity_questions','').strip()})
         title=f"{a.get('business_name') or 'Business'} — {opp['title']}"
-        doc=f'''# Proposal Working Draft\n\n## Applicant\n{a.get('business_name') or a.get('name') or ''}\n\n## Opportunity\n{opp['title']} — {opp['agency']}\n\n## Mission and Business Purpose\n{a.get('mission','')}\n\n## Project Need and Use of Funds\n{payload['use_of_funds']}\n\n## Requested Amount and Project Period\n{payload['request_amount']} — {payload['project_period']}\n\n## Expected Outcomes\n{payload['outcomes']}\n\n## Existing Business Goals\n{a.get('short_goals','')}\n\n## Opportunity-Specific Requirements\n{payload['opportunity_questions']}'''
+        doc=f'''# Proposal Working Draft\n\n## Applicant\n{a.get('business_name') or a.get('name') or ''}\n\n## Opportunity\n{opp['title']} — {opp['agency']}\n\n## Mission and Business Purpose\n{a.get('mission','')}\n\n## Project Need and Use of Funds\n{payload['use_of_funds']}\n\n## Requested Amount and Project Period\n{payload['request_amount']} — {payload['project_period']}\n\n## Expected Outcomes\n{payload['outcomes']}\n\n## Existing Business Goals\n{a.get('short_goals','')}\n\n## Target Audience and Market Need\n{a.get('target_audience','')}\n\n## Business Stage and Industry\n{a.get('business_stage','')} — {a.get('industry','')}\n\n## Partnerships and Supporting Evidence\n{payload['partnerships']}\n\n## Required Attachments and Readiness Items\n{payload['attachments']}\n\n## Opportunity-Specific Requirements\n{payload['opportunity_questions']}'''
         cur=conn.execute('INSERT INTO business_proposals(user_id,opportunity_id,version,title,payload,document_text,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],opportunity_id,1,title,json.dumps(payload),doc,'Draft',now(),now())); pid=cur.lastrowid; conn.commit(); conn.close(); flash('Proposal draft saved.','success'); return redirect(url_for('proposal_view',proposal_id=pid))
-    conn.close(); return page('Start Proposal',f'''<div class="hero"><span class="badge">PROPOSAL BUILDER</span><h1>{html.escape(opp['title'])}</h1><p class="muted">Business name, mission, audience, goals, industry and stage will come from your saved plan.</p></div><form class="card" method="post"><label><b>Amount requested</b></label><input class="input" name="request_amount" value="{html.escape(a.get('budget',''),quote=True)}"><label><b>Project period</b></label><input class="input" name="project_period"><label><b>Specific use of these funds</b></label><textarea class="input" name="use_of_funds">{html.escape(a.get('funding_type',''))}</textarea><label><b>Measurable outcomes for this opportunity</b></label><textarea class="input" name="outcomes"></textarea><label><b>Opportunity-specific questions or requirements</b></label><textarea class="input" name="opportunity_questions"></textarea><button class="btn">Create Proposal Draft</button></form>''','business')
+    prefill=f'''<div class="card"><h2>Prefilled from your saved plan</h2><div class="grid"><div class="fact"><small>Business</small><b>{html.escape(e['name'])}</b></div><div class="fact"><small>Industry</small><b>{html.escape(e['industry'] or 'Not provided')}</b></div><div class="fact"><small>Stage</small><b>{html.escape(e['stage'] or 'Not provided')}</b></div><div class="fact"><small>Location</small><b>{html.escape(e['state'] or e['location'] or 'Not provided')}</b></div></div><p><b>Mission:</b> {html.escape(str(a.get('mission',''))[:700])}</p><p><b>Audience:</b> {html.escape(str(a.get('target_audience',''))[:700])}</p><p class="muted small">These stable facts are copied into the draft. Complete only the opportunity-specific information below.</p></div>'''
+    conn.close(); return page('Start Proposal',f'''<div class="hero"><span class="badge">PROPOSAL BUILDER</span><h1>{html.escape(opp['title'])}</h1><p class="muted">{html.escape(opp['agency'] or '')} • Deadline: {html.escape(opp['deadline'] or 'See official notice')}</p></div>{prefill}<form class="card" method="post"><h2>Opportunity-Specific Information</h2><label><b>Amount requested</b></label><input class="input" name="request_amount" value="{html.escape(e['amount'] or a.get('budget',''),quote=True)}"><label><b>Project period</b></label><input class="input" name="project_period"><label><b>Specific use of these funds</b></label><textarea class="input" name="use_of_funds">{html.escape(a.get('funding_type',''))}</textarea><label><b>Measurable outcomes for this opportunity</b></label><textarea class="input" name="outcomes"></textarea><label><b>Partners or supporting organizations</b></label><textarea class="input" name="partnerships"></textarea><label><b>Required attachments and readiness items</b></label><textarea class="input" name="attachments" placeholder="Budget, formation documents, financial statements, letters of support..."></textarea><label><b>Opportunity-specific questions or requirements</b></label><textarea class="input" name="opportunity_questions"></textarea><button class="btn">Create Proposal Draft</button></form>''','business')
 
 @app.route('/business-development/proposal/<int:proposal_id>')
 @login_required
