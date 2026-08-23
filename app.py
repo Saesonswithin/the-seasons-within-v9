@@ -4580,18 +4580,8 @@ def earn_while_you_grow():
     return page('Earn While You Grow',content,'membership')
 
 
-@app.route('/')
-
-def home():
-    q=request.args.get('q','').strip()
-    conn=db()
-    businesses=conn.execute("SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 AND lower(b.name)<>lower('Galaxy Eve') ORDER BY b.name").fetchall()
-    conn.close()
-    if q:
-        needle=q.lower()
-        businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
-    other=regular_business_cards(businesses)
-
+def _current_sky_card():
+    """Render the one public current-sky reflection from live sky data."""
     sky=current_sky_data()
     planets=sky.get('planets') or {}
     moon=planets.get('Moon') or {}
@@ -4628,10 +4618,23 @@ def home():
     else:
         sky_reflection="Use today as a conscious check-in: notice what deserves your attention, where communication could be clearer, and what kind of connection or rest would support you."
 
+    return f'''<article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">CURRENT SKY</span><h2>{sky_heading}</h2><p><b>Reflection, not prediction.</b> {html.escape(sky_reflection)}</p>{f'<div class="chips">{sky_chips}</div>' if sky_chips else ''}</div></article>'''
+
+
+@app.route('/')
+def home():
+    q=request.args.get('q','').strip()
+    conn=db()
+    businesses=conn.execute("SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 AND lower(b.name)<>lower('Galaxy Eve') ORDER BY b.name").fetchall()
+    conn.close()
+    if q:
+        needle=q.lower()
+        businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
+    other=regular_business_cards(businesses)
+
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
-    <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">CURRENT SKY</span><h2>{sky_heading}</h2><p><b>Reflection, not prediction.</b> {html.escape(sky_reflection)}</p>{f'<div class="chips">{sky_chips}</div>' if sky_chips else ''}</div></article>
     <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Professional questionnaire + editable plan content + Marketing Strategy + 90-Day Launch Plan.</p><a class="btn" href="{url_for('startup')}">Start My Business Plan</a></article></div>'''
     return page('Home',content,'home')
 
@@ -4816,8 +4819,8 @@ def community():
         author_badge='<span class="badge gold">GALAXY EVE</span>' if p['name'].strip().lower()=='galaxy eve' else f'<span class="badge">{html.escape(p["category"])}</span>'
         cards.append(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div style="width:100%">{author_badge}<h3 style="margin:6px 0">{html.escape(p['title'])}</h3><p class="muted small"><a class="out" href="{url_for('member_profile',user_id=p['user_id'])}">{html.escape(p['name'])}</a> • {p['created_at']}</p><p>{html.escape(p['body'])}</p>{community_media_html(p)}<div class="actions">{controls}</div></div></div></article>''')
     post_html=''.join(cards) or '<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
-    sky=current_sky_data(); planets=sky.get('planets',{}); lunar=planets.get('Moon',{}); sky_chips=''.join('<span class="chip">%s %s %s°</span>'%(('Lunar' if name=='Moon' else name),p.get('sign',''),p.get('degree','')) for name,p in planets.items() if name in PLANET_NAMES); sky_title=('Lunar position: %s %s° • %s'%(lunar.get('sign',''),lunar.get('degree',''),sky.get('lunar_phase',''))) if lunar else 'Current Sky'
-    content=f'''{community_switch}<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The shared social, wellness and business network. Member responses stay private through Journal Inbox rather than public comment threads.</p></div>{galaxy_feature}<article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">CURRENT LUNAR SEASON</span><h2>{sky_title}</h2><p class="muted">Current planetary positions support reflection, not prediction.</p><div class="chips">{sky_chips or '<span class="chip">Current sky</span>'}</div></div></article><div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">LUNAR SEASON REFLECTION</span><h3>What may deserve your attention during this lunar period?</h3><a class="out" href="{url_for('astrology_reflections')}">Open My Lunar Season Reflection</a></article></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Title</b></label><input class="input" name="title" placeholder="Title your Community post" required><label><b>Category</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select><textarea class="input" name="body" placeholder="Share with the Community..." required></textarea><label class="small"><b>Add Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post to Community</button></form>{post_html}'''
+    current_sky_html=_current_sky_card()
+    content=f'''{community_switch}<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The shared social, wellness and business network. Member responses stay private through Journal Inbox rather than public comment threads.</p></div>{galaxy_feature}{current_sky_html}<div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">LUNAR SEASON REFLECTION</span><h3>What may deserve your attention during this lunar period?</h3><a class="out" href="{url_for('astrology_reflections')}">Open My Lunar Season Reflection</a></article></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Title</b></label><input class="input" name="title" placeholder="Title your Community post" required><label><b>Category</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select><textarea class="input" name="body" placeholder="Share with the Community..." required></textarea><label class="small"><b>Add Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post to Community</button></form>{post_html}'''
     return page('Community',content,'community')
 
 @app.route('/community/post/<int:post_id>/edit', methods=['GET','POST'])
@@ -4869,6 +4872,31 @@ def community_post_delete(post_id):
     flash('Community post deleted. Your private Journal copy remains.','success')
     return redirect(url_for('community'))
 
+def _planetary_coordination_cards(user):
+    """Render the seven changing Journal reports without changing natal data."""
+    chart=member_chart_data(user)
+    monthly_snapshot=_personal_monthly_coordination_snapshot(user['id'])
+    planet_cards=[]
+    planet_domains={'Sun':'Self & Direction','Moon':'Emotional Safety & Regulation','Mercury':'Communication & Interpretation','Venus':'Connection, Affection & Values','Mars':'Action, Boundaries & Conflict','Jupiter':'Growth, Possibility & Meaning','Saturn':'Structure, Responsibility & Stability'}
+    if chart.get('ready'):
+        for name in PLANET_NAMES:
+            placement=(chart.get('planets') or {}).get(name)
+            if not placement:
+                continue
+            display_name='LUNAR' if name=='Moon' else name.upper()
+            spoken_name='Lunar' if name=='Moon' else name.title()
+            glyph=PLANET_GLYPHS.get(name,'')
+            month_item=((monthly_snapshot.get('planetary') or {}).get(name) or {}) if monthly_snapshot.get('ready') else {}
+            coord_score=month_item.get('coordination_score')
+            score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
+            report_url=url_for('planet_interpretation',user_id=user['id'],planet=name.lower())
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(score_note)}</small></span><span class="muted small">Read reflection ⌄</span></summary><div class="actions topspace"><a class="btn" href="{html.escape(report_url,quote=True)}">Read My {html.escape(spoken_name)} Reflection</a></div></details>''')
+    else:
+        chart_reason=chart.get('reason') or 'The planetary calculation could not be completed.'
+        planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
+    return f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate your permanent natal chart.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div>'''
+
+
 @app.route('/profile')
 @login_required
 def profile():
@@ -4903,26 +4931,9 @@ def profile():
     meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>') if experience.get('meditation') else ''
     meditation_section=(f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘🏿‍♀️ Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>''' if meditation_html else '')
 
-    # The seven changing planetary Journal reports are interpretation layers only.
-    # They may use permitted private Journal themes, but they never write to or
-    # recalculate the member's permanent natal chart.
-    chart=member_chart_data(u); monthly_snapshot=_personal_monthly_coordination_snapshot(u['id'])
-    planet_cards=[]
-    planet_domains={'Sun':'Self & Direction','Moon':'Emotional Safety & Regulation','Mercury':'Communication & Interpretation','Venus':'Connection, Affection & Values','Mars':'Action, Boundaries & Conflict','Jupiter':'Growth, Possibility & Meaning','Saturn':'Structure, Responsibility & Stability'}
-    if chart.get('ready'):
-        for name in PLANET_NAMES:
-            placement=(chart.get('planets') or {}).get(name)
-            if not placement: continue
-            display_name='LUNAR' if name=='Moon' else name.upper(); spoken_name='Lunar' if name=='Moon' else name.title(); glyph=PLANET_GLYPHS.get(name,'')
-            month_item=((monthly_snapshot.get('planetary') or {}).get(name) or {}) if monthly_snapshot.get('ready') else {}
-            coord_score=month_item.get('coordination_score')
-            score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
-            report_url=url_for('planet_interpretation',user_id=u['id'],planet=name.lower())
-            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(score_note)}</small></span><span class="muted small">Read reflection ⌄</span></summary><div class="actions topspace"><a class="btn" href="{html.escape(report_url,quote=True)}">Read My {html.escape(spoken_name)} Reflection</a></div></details>''')
-    else:
-        chart_reason=chart.get('reason') or 'The planetary calculation could not be completed.'
-        planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
-    planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate your permanent natal chart.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
+    # The seven reports now live on My Conscious Coordination Profile. Keep the
+    # existing Journal shortcut exactly where members already expect it.
+    planetary_section=f'''<div class="actions topspace"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
 
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
@@ -5796,7 +5807,7 @@ def connection_profile(user_id):
         overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Complete both profiles</span></div>'''
     overall_html=(f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}</a>''' if can_open_details and overall_value is not None else overall_inner+('' if is_self else '<p class="muted small">The shared percentage appears when both member profiles have enough coordination information.</p>'))
     if is_self:
-        top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('community')}">Enter Community</a>'''
+        top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
         top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
@@ -5812,8 +5823,10 @@ def connection_profile(user_id):
     profile_interpretation_html=(f'<div style="line-height:1.8;margin-top:20px">{html.escape(profile_interpretation).replace(chr(10),"<br>")}</div>' if profile_interpretation else '')
     wheel_title=('My Natal Astrology Wheel' if is_self else 'Our Natal Astrology Wheels')
     wheel_note=('This is your permanent birth chart, calculated from your saved birth date, time, place, coordinates and historical timezone. It changes only when that source information changes.' if is_self else 'These are two separate permanent natal charts. Neither person’s planets are moved or merged for compatibility.')
+    planetary_profile_html=_planetary_coordination_cards(user) if is_self else ''
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
     <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{html.escape(wheel_note)}</p>{wheel}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
+    {planetary_profile_html}
     <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'Every percentage on this view belongs to the coordination between you and this member. It combines actual chart-to-chart relationships with the two permitted psychological/behavioral profiles. Private Journal content is never used in another member’s coordination.'}</p></article>
     {access_note}{business_html}'''
     return page('Conscious Coordination Profile',content,'more')
