@@ -4722,7 +4722,7 @@ def community():
         session.pop('user_id',None); return redirect(url_for('login',next=request.path))
     cp=safe_connection_profile(u['id'])
     if not conscious_coordination_ready(u,cp):
-        content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Your Profile</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
+        content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Your Profile</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
         return page('Join the Community',content,'community')
     community_switch=f'''<div class="actions"><a class="btn" href="{url_for('community')}">Community</a><a class="out" href="{url_for('business_network')}">Businesses</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div>'''
     if request.method=='POST':
@@ -4819,8 +4819,9 @@ def profile():
         except Exception: app.logger.exception('Could not sync profile city to My Journal')
     member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if (u['conscious_paid'] or u['is_admin']) else 'FREE MEMBER'
     header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article>'''
+    shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     if not ready:
-        content=header+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article><div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
+        content=header+shortcuts+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article>'''
         return page('My Journal',content,'profile')
 
     try:
@@ -4835,7 +4836,7 @@ def profile():
     journal_link=url_for('journal',category='Conscious Coordination',title='Lunar Season Reflection',prompt=report[-900:])
     season_section=f'''<article class="card" id="season-within"><span class="badge heart">YOUR LUNAR SEASON REFLECTION</span><h2>{info['emoji']} Current Season Within: {html.escape(season)} — {html.escape(info['subtitle'])}</h2><p class="muted small">{html.escape(moon_note)}. This reflection remains active until the Moon actually enters its next zodiac sign.</p><div style="line-height:1.8;margin-top:16px">{report_html}</div><div class="actions"><a class="out" href="{journal_link}#new-entry">Journal About This Reflection</a></div></article>'''
     meditation_html=html.escape(experience.get('meditation','')).replace(chr(10),'<br>') if experience.get('meditation') else ''
-    meditation_section=(f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘 Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>''' if meditation_html else '')
+    meditation_section=(f'''<details class="card" id="meditation"><summary style="cursor:pointer;font-weight:800">🧘🏿‍♀️ Your Meditation</summary><div class="topspace" style="line-height:1.8">{meditation_html}</div></details>''' if meditation_html else '')
 
     # The seven changing planetary Journal reports are interpretation layers only.
     # They may use permitted private Journal themes, but they never write to or
@@ -4858,10 +4859,9 @@ def profile():
         planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
     planetary_section=f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate your permanent natal chart.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div><div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
 
-    shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
-    content=''.join([header,season_section,shortcuts,planetary_section,meditation_section,public_section])
+    content=''.join([header,shortcuts,planetary_section,meditation_section,season_section,public_section])
     return page('My Journal',content,'profile')
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -5276,7 +5276,7 @@ def connections():
         business_note=''
         if business:
             business_note=f'''<article class="card"><span class="badge gold">BUSINESS CONSCIOUS COORDINATION</span><h2>{html.escape(business['name'])}</h2><p class="muted">Your business tools remain available while you complete your profile.</p><div class="actions"><a class="out" href="{url_for('business_dashboard')}">Open My Business Dashboard</a></div></article>'''
-        content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Join the Community</a><a class="out" href="{url_for('profile')}">View My Journal</a></div></div>
+        content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Join the Community</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('profile')}">View My Journal</a></div></div>
         <article class="card"><span class="badge heart">COMPLETE YOUR PROFILE</span><h2>Complete Your Profile</h2><p class="muted">Your required birth information and connection answers are completed together in this setup. Once saved, Community access opens automatically.</p><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p></article>{business_note}'''
         return page('Conscious Coordination',content,'more')
 

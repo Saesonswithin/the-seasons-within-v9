@@ -59,3 +59,12 @@ LATEST BUSINESS JOURNAL AND NAVIGATION UPDATE
 - Business Development opens private records, licenses and certifications, funding opportunities, grant and loan search, saved opportunities and proposals.
 - Earn While You Grow remains a top action on the main Home page.
 - Business-plan generation, saved versions, payment logic and existing app systems were not redesigned or replaced.
+
+LATEST JOURNAL AND COMMUNITY PLACEMENT UPDATE
+
+- Join the Community includes an Earn While You Grow action.
+- My Private Journal, Journal Inbox, Conscious Coordination and My Business Dashboard shortcuts appear directly beneath Edit My Profile.
+- Conscious Coordination appears before the Lunar Season Reflection.
+- The Lunar Season Reflection appears immediately before the Public Journal.
+- The meditation label uses a Black woman meditation symbol.
+- Report calculations and report-generation behavior were not changed by these placement updates.
