@@ -45,20 +45,17 @@ Included functional corrections:
   successfully generated and persisted Business Plan version.
 - New Business Journal records persist through DATABASE_URL in the connected PostgreSQL
   database. OPENAI_API_KEY remains an environment secret and is never packaged.
-- Licenses & Certifications now begins with plan-based Required — Verify,
-  Recommended, and Optional recommendations. Each recommendation explains why it
-  applies, links to official information, and can be added to the existing renewal
-  tracker. The language does not falsely certify legal applicability.
-- Funding Opportunities is a separate automatic-matching page. It searches from the
-  saved industry, funding purpose, state, stage and ownership indicators, removes
-  duplicate notices, ranks evidence overlap, and gives a distinct explanation and
-  eligibility caution for each result.
-- Grant & Loan Search remains a separate manual official-source search with keyword,
-  opportunity-type, agency and deadline filters. It no longer masquerades as the
-  automatic match page.
-- Save Opportunity, Saved Opportunities and Start Proposal form one continuous
-  PostgreSQL-backed workflow. Proposal Builder pre-fills stable business facts from
-  the saved plan and requests only opportunity-specific amounts, project period,
-  uses, outcomes, partnerships, attachments and notice requirements.
 
 Deploy the complete contents of this ZIP together.
+LATEST BUSINESS JOURNAL AND NAVIGATION UPDATE
+
+- Members without a Hosted Business App see both the free hosting option and the separate $79.99 Professional Business Development package.
+- The $79.99 package uses the existing purchase/access flow and does not require a Hosted Business App.
+- Logged-out navigation shows Sign In and Join Free; logged-in navigation shows the member name and Sign Out.
+- The separate Business Journal dashboard card was removed.
+- My Business Plan is now labeled My Business Journal on the Business Dashboard.
+- The former Business Plan page is now the Business Development Workspace inside My Business Journal.
+- The workspace keeps Plan Versions, Marketing Strategy, 90-Day Launch Plan and Business Inquiries, and adds Business Development.
+- Business Development opens private records, licenses and certifications, funding opportunities, grant and loan search, saved opportunities and proposals.
+- Earn While You Grow remains a top action on the main Home page.
+- Business-plan generation, saved versions, payment logic and existing app systems were not redesigned or replaced.
