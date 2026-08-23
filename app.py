@@ -4590,8 +4590,6 @@ def home():
     if q:
         needle=q.lower()
         businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
-    galaxy_match=(not q) or (q.lower() in 'galaxy eve conscious coordinator content creator content collaborations creator experiences'.lower())
-    galaxy=galaxy_eve_card() if galaxy_match else ''
     other=regular_business_cards(businesses)
 
     sky=current_sky_data()
@@ -4632,7 +4630,6 @@ def home():
 
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
-    <div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
     <article class="card moonrow"><div class="moonorb">☾</div><div><span class="badge">CURRENT SKY</span><h2>{sky_heading}</h2><p><b>Reflection, not prediction.</b> {html.escape(sky_reflection)}</p>{f'<div class="chips">{sky_chips}</div>' if sky_chips else ''}</div></article>
     <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Professional questionnaire + editable plan content + Marketing Strategy + 90-Day Launch Plan.</p><a class="btn" href="{url_for('startup')}">Start My Business Plan</a></article></div>'''
@@ -5412,9 +5409,8 @@ def connections():
         if host:
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
-    feed=''.join(feed_cards) or '<div class="empty"><h3>Galaxy Eve posts will appear here</h3></div>'
     content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
-    {host_form}<div class="topspace"><span class="badge">HOST FEED</span><h2>Galaxy Eve • Conscious Coordinator</h2></div>{feed}
+    {host_form}
     <div class="topspace"><h2>Discover Members</h2></div><div class="chips">{filters}</div><div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
 
@@ -7510,11 +7506,9 @@ def business_network():
     if q:
         needle=q.lower()
         rows=[b for b in rows if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
-    galaxy_match=(not q) or (q.lower() in 'galaxy eve conscious coordinator content creator content collaborations creator experiences'.lower())
-    galaxy=galaxy_eve_card() if galaxy_match else ''
     cards=regular_business_cards(rows)
     create=url_for('business_builder',step=1) if session.get('user_id') else url_for('join')
-    return page('Community — Businesses',f'''<div class="actions"><a class="out" href="{url_for('community')}">Community</a><span class="btn">Businesses</span></div><div class="hero"><span class="badge">BUSINESS NETWORK</span><h1>Discover Wellness Within the Community</h1><p class="muted">Businesses join free and receive one Hosted Business App structure after completing the builder.</p><div class="actions"><a class="btn" href="{create}">Create My FREE Hosted App</a><a class="out" href="{url_for('startup')}">Professional Business Development • $79.99</a>{f'<a class="out" href="{url_for("business_dashboard")}">My Business Dashboard</a>' if session.get('user_id') else ''}</div></div><form method="get" class="card"><input class="input" name="q" value="{q}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form><div class="topspace"><div><span class="badge gold">★ FEATURED HOSTED APP</span><h2>Galaxy Eve</h2></div></div><div class="grid">{galaxy}</div><div class="topspace"><h2>Community Businesses</h2></div><div class="grid">{cards}</div>''','community')
+    return page('Community — Businesses',f'''<div class="actions"><a class="out" href="{url_for('community')}">Community</a><span class="btn">Businesses</span></div><div class="hero"><span class="badge">BUSINESS NETWORK</span><h1>Discover Wellness Within the Community</h1><p class="muted">Businesses join free and receive one Hosted Business App structure after completing the builder.</p><div class="actions"><a class="btn" href="{create}">Create My FREE Hosted App</a><a class="out" href="{url_for('startup')}">Professional Business Development • $79.99</a>{f'<a class="out" href="{url_for("business_dashboard")}">My Business Dashboard</a>' if session.get('user_id') else ''}</div></div><form method="get" class="card"><input class="input" name="q" value="{q}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form><div class="topspace"><h2>Community Businesses</h2></div><div class="grid">{cards}</div>''','community')
 
 @app.route('/business/galaxy-eve')
 def galaxy_eve_app():

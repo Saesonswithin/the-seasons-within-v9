@@ -82,3 +82,9 @@ HOSTED BUSINESS APP EDITOR CORRECTION — 2026-08-23
 - The built-in calendar uses responsive seven-column sizing and does not intentionally create horizontal page overflow.
 - Published Hosted Apps remain editable through Edit My Hosted App.
 - Databases, uploaded member media, API keys and deployment credentials are not included in this package.
+
+COMMUNITY DISPLAY CLEANUP — 2026-08-23
+
+- Removed the Host Feed heading, Galaxy Eve host-feed heading and empty “Galaxy Eve posts will appear here” block from Conscious Coordination.
+- Removed the Galaxy Eve Featured Hosted App promotion from Home and the Business Network listing.
+- Preserved the Conscious Coordinator posting form, Discover Members, business search, Community Businesses and all unrelated systems.
