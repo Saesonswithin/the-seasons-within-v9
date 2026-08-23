@@ -405,6 +405,8 @@ def init_db():
         ("businesses","cover_crop","ALTER TABLE businesses ADD COLUMN cover_crop TEXT DEFAULT '{}'"),
         ("businesses","enabled_modules","ALTER TABLE businesses ADD COLUMN enabled_modules TEXT DEFAULT 'home,about,contact,booking'"),
         ("businesses","section_order","ALTER TABLE businesses ADD COLUMN section_order TEXT DEFAULT 'home,about,services,classes,courses,events,videos,gallery,retreats,booking,contact,media_kit,affiliate'"),
+        ("businesses","booking_method","ALTER TABLE businesses ADD COLUMN booking_method TEXT DEFAULT 'seasons_calendar'"),
+        ("businesses","booking_settings","ALTER TABLE businesses ADD COLUMN booking_settings TEXT DEFAULT '{}'"),
         ("business_media","sort_order","ALTER TABLE business_media ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"),
         ("business_media","crop_data","ALTER TABLE business_media ADD COLUMN crop_data TEXT DEFAULT '{}'"),
         ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
@@ -7545,6 +7547,8 @@ def _hosted_media_builder_html(b):
 @login_required
 def business_builder(step):
     if step<1 or step>9: abort(404)
+    if step>=7 and request.method=='GET':
+        return redirect(url_for('hosted_app_editor'))
     u=current_user(); draft=session.get('business_draft',{})
     conn=db(); existing_business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close()
     if not draft and existing_business:
@@ -7648,6 +7652,10 @@ def business_builder(step):
                 cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,contact_email,contact_phone,retreat_service_area,retreat_delivery_mode,retreat_travel_radius,retreat_price_range,retreat_group_size,retreat_availability,retreat_accessibility,retreat_booking_requirements,retreat_participating,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,retreat,now(),now())); bid=cur.lastrowid
             conn.execute('UPDATE businesses SET enabled_modules=?,section_order=?,updated_at=? WHERE id=?',(draft.get('enabled_modules','home,about,contact,booking'),draft.get('section_order',''),now(),bid))
             conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your FREE Hosted Business App is published.','success'); return redirect(url_for('business_app',business_id=bid))
+        if step==6 and existing_business:
+            conn=db()
+            conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,contact_email=?,contact_phone=?,retreat_service_area=?,retreat_delivery_mode=?,retreat_travel_radius=?,retreat_price_range=?,retreat_group_size=?,retreat_availability=?,retreat_accessibility=?,retreat_booking_requirements=?,retreat_participating=?,enabled_modules=?,active=1,updated_at=? WHERE id=?''',(draft.get('name',''),draft.get('owner_title',''),draft.get('category',''),draft.get('location',''),draft.get('tagline',''),draft.get('description',''),draft.get('story',''),draft.get('offers',''),draft.get('features',''),draft.get('website',''),draft.get('instagram',''),draft.get('tiktok',''),draft.get('youtube',''),draft.get('facebook',''),draft.get('booking_url',''),draft.get('store_url',''),draft.get('podcast_url',''),draft.get('affiliate_links',''),draft.get('contact_email',''),draft.get('contact_phone',''),draft.get('retreat_service_area',''),draft.get('retreat_delivery_mode',''),draft.get('retreat_travel_radius',''),draft.get('retreat_price_range',''),draft.get('retreat_group_size',''),draft.get('retreat_availability',''),draft.get('retreat_accessibility',''),draft.get('retreat_booking_requirements',''),1 if draft.get('retreat_participating') else 0,draft.get('enabled_modules','home,about,contact,booking'),now(),existing_business['id']))
+            conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your Hosted App is ready. Continue editing directly from one screen.','success'); return redirect(url_for('hosted_app_editor'))
         if step<9: return redirect(url_for('business_builder',step=step+1))
     titles={1:'Identity',2:'About',3:'What Do You Offer?',4:'App Features',5:'Branding & Media',6:'Business Links & Contact',7:'Preview Your App',8:'Final Review & Edit',9:'Publish My App'}
     def val(k): return draft.get(k,'') or ''
@@ -7668,7 +7676,7 @@ def business_builder(step):
         current_order=[x for x in (val('section_order') or ','.join(k for k,_ in HOSTED_APP_MODULES)).split(',') if x]
         labels=dict(HOSTED_APP_MODULES)
         rows=''.join(f'''<div class="hosted-section-control" data-key="{key}"><label><input type="checkbox" name="module_{key}" {'checked' if key in enabled else ''}> <b>{labels[key]}</b></label><span><button class="out move-up" type="button">Up</button> <button class="out move-down" type="button">Down</button></span></div>''' for key in current_order if key in labels)
-        form=f'''<p class="muted">Show, hide and reorder the sections of your app. Return to the matching builder step when content needs editing.</p><input type="hidden" id="section-order" name="section_order" value="{','.join(current_order)}"><div id="section-controls">{rows}</div><div class="actions"><a class="out" href="{url_for('business_builder',step=1)}">Edit Identity</a><a class="out" href="{url_for('business_builder',step=2)}">Edit About</a><a class="out" href="{url_for('business_builder',step=3)}">Edit Services</a><a class="out" href="{url_for('business_builder',step=5)}">Edit Media</a><a class="out" href="{url_for('business_builder',step=6)}">Edit Contact</a></div><script>(function(){{var box=document.getElementById('section-controls'),out=document.getElementById('section-order');function sync(){{out.value=[].map.call(box.children,function(x){{return x.dataset.key}}).join(',')}}box.addEventListener('click',function(e){{var row=e.target.closest('.hosted-section-control');if(!row)return;if(e.target.classList.contains('move-up')&&row.previousElementSibling)box.insertBefore(row,row.previousElementSibling);if(e.target.classList.contains('move-down')&&row.nextElementSibling)box.insertBefore(row.nextElementSibling,row);sync()}})}})();</script>'''
+        form=f'''<p class="muted">This legacy screen is retired. Use Edit My Hosted App for direct section editing.</p><input type="hidden" id="section-order" name="section_order" value="{','.join(current_order)}"><div id="section-controls">{rows}</div>'''
     else: form=f'''<h2>Ready to Publish?</h2><div class="fact">✓ Business information</div><div class="fact">✓ Branding</div><div class="fact">✓ Contact information</div><div class="fact">✓ App sections</div><div class="fact">✓ Mobile preview</div><p class="muted">Publishing activates <b>{val('name') or 'your business'}</b>. You can edit it after publication.</p><a class="out" href="{url_for('business_builder',step=7)}">Preview Again</a>'''
     enctype=' enctype="multipart/form-data"' if step==5 else ''
     back=f'<a class="out" href="{url_for("business_builder",step=step-1)}">Back</a>' if step>1 else ''
@@ -7793,7 +7801,8 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     for label,key in [('Website','website'),('Instagram','instagram'),('TikTok','tiktok'),('YouTube','youtube'),('Facebook','facebook'),('Store','store_url'),('Podcast','podcast_url')]:
         if get(key): external.append(f'<a class="out" href="{html.escape(str(get(key)))}" target="_blank" rel="noopener">{label}</a>')
     ext_html='<div class="actions">'+''.join(external)+'</div>' if external else ''
-    edit=lambda step: (f'<a class="out" href="{url_for("business_builder",step=step)}">Edit</a>' if owner else '')
+    step_sections={1:'branding',2:'about',3:'services',4:'booking',5:'gallery',6:'contact'}
+    edit=lambda step: (f'<a class="out" href="{url_for("hosted_app_edit_section",section=step_sections.get(step,"sections"))}">Edit</a>' if owner else '')
     sections={}
     description=html.escape(str(get('description',''))); story=html.escape(str(get('story',''))); offers=html.escape(str(get('offers','')))
     sections['home']=f'''<section id="home"><div class="crop-stage cover-crop">{cover_html}</div><article class="card"><div class="splitlabel"><span class="badge">HOME</span>{edit(1)}</div><div class="profilehero"><div><h1>{name}</h1><h3>{html.escape(str(get('owner_title') or get('category')))}</h3><p class="muted">{html.escape(str(get('location')))} • {html.escape(str(get('tagline')))}</p></div><div class="crop-stage logo-crop" style="width:110px;margin:0">{logo_html}</div></div>{ext_html}</article></section>'''
@@ -7821,16 +7830,159 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     if get('contact_email') or get('contact_phone') or external:
         sections['contact']=f'''<section id="contact"><article class="card"><div class="splitlabel"><span class="badge">CONTACT</span>{edit(6)}</div><h2>Contact {name}</h2>{f'<p><b>Email:</b> {html.escape(str(get("contact_email")))}</p>' if get('contact_email') else ''}{f'<p><b>Phone:</b> {html.escape(str(get("contact_phone")))}</p>' if get('contact_phone') else ''}{ext_html}</article></section>'''
     open_events=[e for e in events if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
-    if business_id and (open_events or get('booking_url')) and not preview:
+    booking_method=get('booking_method','seasons_calendar') or 'seasons_calendar'
+    if business_id and booking_method=='seasons_calendar':
         month=request.args.get('month',''); selected=request.args.get('date',''); calendar_html=business_calendar_grid(events,business_id,selected,month,False)
         slots=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{html.escape(e['title'])}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><a class="btn" href="{url_for('business_book',business_id=business_id,calendar_id=e['id'])}">Book / Request</a></article>''' for e in open_events[:8])
         sections['booking']=f'''<section id="booking"><div class="splitlabel"><h2>Booking</h2>{edit(4)}</div>{calendar_html}{f'<div class="grid">{slots}</div>' if slots else ''}</section>'''
-    elif 'booking' in enabled:
+    elif booking_method=='external' and get('booking_url'):
+        sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Book with {name}</h2><a class="btn" href="{html.escape(str(get('booking_url')))}" target="_blank" rel="noopener">Open Booking Website</a></article></section>'''
+    elif booking_method!='none' and 'booking' in enabled:
         sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Booking</h2><p class="muted">Booking will display here when availability or a booking link is added.</p></article></section>'''
     if get('affiliate_links'): sections['affiliate']=f'''<section id="affiliate"><article class="card"><div class="splitlabel"><span class="badge">AFFILIATE LINKS</span>{edit(6)}</div><p>{html.escape(str(get('affiliate_links')))}</p></article></section>'''
     visible=[key for key in order if key in enabled and key in sections]
     nav=''.join(f'<a class="chip" href="#{key}">{dict(HOSTED_APP_MODULES).get(key,key.title())}</a>' for key in visible)
     return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
+
+def _owner_business_bundle(user_id):
+    conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(user_id,)).fetchone()
+    if not b: conn.close(); return None,[],[]
+    media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(b['id'],)).fetchall()
+    events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(b['id'],)).fetchall(); conn.close()
+    return b,media,events
+
+def _touch_crop_form(kind,title,current='',media_id=0,accept='image/*'):
+    guide='logo-guide' if kind=='logo' else ('cover-guide' if kind=='cover' else 'gallery-guide')
+    source=f'<img src="{current}" alt="Current {html.escape(title)}">' if current else '<img alt="Selected photo">'
+    return f'''<form class="card touch-crop-form" method="post" enctype="multipart/form-data" action="{url_for('hosted_app_media_save')}"><h2>{html.escape(title)}</h2><input type="hidden" name="kind" value="{kind}"><input type="hidden" name="media_id" value="{media_id}"><input type="hidden" name="crop_x" value="50"><input type="hidden" name="crop_y" value="50"><input type="hidden" name="crop_zoom" value="1"><input type="hidden" name="crop_rotate" value="0"><div class="touch-crop {guide}">{source}</div><label><b>Choose Photo</b><input class="input photo-input" type="file" name="media_file" accept="{accept}" {'required' if not current else ''}></label><label>Zoom<input class="input zoom-only" type="range" min="1" max="3" step=".05" value="1"></label><p class="muted small">Drag the actual photo with your finger. Pinch or use the one zoom control.</p><div class="actions"><a class="out" href="{url_for('hosted_app_editor')}">Cancel</a><button class="btn">Save Photo</button>{('<button class="out danger" name="remove" value="1">Remove</button>' if current else '')}</div></form>'''
+
+_HOSTED_EDITOR_STYLE='''<style>.app-editor-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:17px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow);margin:12px 0}.editor-thumbs{display:flex;gap:8px;flex-wrap:wrap}.editor-thumb{width:72px;height:72px;border-radius:13px;object-fit:cover}.editor-cover{width:140px;height:78px;border-radius:13px;object-fit:cover}.touch-crop{position:relative;width:100%;overflow:hidden;background:#e9deef;touch-action:none;display:grid;place-items:center}.touch-crop.logo-guide{aspect-ratio:1}.touch-crop.cover-guide{aspect-ratio:16/9}.touch-crop.gallery-guide{aspect-ratio:4/3}.touch-crop img{position:absolute;width:100%;height:100%;object-fit:cover;transform-origin:center;user-select:none;pointer-events:none}.touch-crop.logo-guide:after{content:"";position:absolute;inset:8%;border:3px solid white;border-radius:50%;box-shadow:0 0 0 999px rgba(30,18,36,.25)}.touch-crop.cover-guide:after,.touch-crop.gallery-guide:after{content:"";position:absolute;inset:5%;border:3px solid white;border-radius:10px;box-shadow:0 0 0 999px rgba(30,18,36,.2)}.section-menu{position:relative}.section-menu summary{font-size:24px;cursor:pointer;list-style:none}.section-menu form{position:absolute;right:0;z-index:8;display:grid;min-width:145px;padding:8px;background:white;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.section-menu button{border:0;background:white;text-align:left;padding:9px;color:var(--plum)}</style>'''
+
+_TOUCH_CROP_SCRIPT='''<script>(function(){document.querySelectorAll('.touch-crop-form').forEach(function(f){var box=f.querySelector('.touch-crop'),im=box.querySelector('img'),inp=f.querySelector('.photo-input'),zoom=f.querySelector('.zoom-only'),x=f.querySelector('[name=crop_x]'),y=f.querySelector('[name=crop_y]'),z=f.querySelector('[name=crop_zoom]'),drag=false,sx=0,sy=0,px=50,py=50;function draw(){im.style.objectPosition=px+'% '+py+'%';im.style.transform='scale('+zoom.value+')';x.value=px;y.value=py;z.value=zoom.value}inp.addEventListener('change',function(){var file=this.files&&this.files[0];if(file){im.src=URL.createObjectURL(file);draw()}});zoom.addEventListener('input',draw);box.addEventListener('pointerdown',function(e){drag=true;sx=e.clientX;sy=e.clientY;box.setPointerCapture(e.pointerId)});box.addEventListener('pointermove',function(e){if(!drag)return;px=Math.max(0,Math.min(100,px+(e.clientX-sx)/box.clientWidth*100));py=Math.max(0,Math.min(100,py+(e.clientY-sy)/box.clientHeight*100));sx=e.clientX;sy=e.clientY;draw()});box.addEventListener('pointerup',function(){drag=false});draw()})})();</script>'''
+
+@app.route('/business/app/edit')
+@login_required
+def hosted_app_editor():
+    u=current_user(); b,media,events=_owner_business_bundle(u['id'])
+    if not b: return redirect(url_for('business_builder',step=1))
+    galleries=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
+    thumbs=''.join(f'<img class="editor-thumb" src="{business_media_src(m["file_name"])}">' for m in galleries[:4])
+    video_thumbs=''.join(f'<video class="editor-thumb" src="{business_media_src(m["file_name"])}"></video>' for m in videos[:3])
+    logo=f'<img class="editor-thumb" src="{business_media_src(b["logo_name"])}">' if b['logo_name'] else '<span class="badge">Add logo</span>'
+    cover=f'<video class="editor-cover" src="{business_media_src(b["cover_name"])}"></video>' if b['cover_name'] and b['cover_type']=='video' else (f'<img class="editor-cover" src="{business_media_src(b["cover_name"])}">' if b['cover_name'] else '<span class="badge">Add cover</span>')
+    enabled=set(_module_list(b)); optional=[]
+    for key,label in HOSTED_APP_MODULES:
+        if key in {'home','about','services','gallery','videos','booking','contact'} or key not in enabled: continue
+        optional.append(f'<div class="app-editor-card"><div><h3>{label}</h3><p class="muted">Visible in your app</p></div><a class="out" href="{url_for("hosted_app_edit_section",section="sections")}">Edit</a></div>')
+    card=lambda title,summary,section,visual='': f'''<div class="app-editor-card"><div><h2>{title}</h2><p class="muted">{summary}</p><div class="editor-thumbs">{visual}</div></div><a class="out" href="{url_for('hosted_app_edit_section',section=section)}">Edit</a></div>'''
+    body=f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">HOSTED BUSINESS APP OWNER</span><h1>Edit My Hosted App</h1><p class="muted">Create once. Edit directly forever.</p><div class="actions"><a class="btn" href="{url_for('hosted_app_preview')}">Preview My App</a>{f'<a class="out" href="{url_for("business_app",business_id=b["id"])}">View Published App</a>' if b['active'] else ''}</div></div>{card('Header & Branding','Current logo and cover','branding',logo+cover)}{card('About',(b['description'] or 'Add your business description')[:180],'about')}{card('Services',(b['offers'] or 'No services added yet')[:180],'services')}{card('Gallery',f'{len(galleries)} photos','gallery',thumbs)}{card('Videos',f'{len(videos)} of 3 videos','videos',video_thumbs)}{card('Booking',{'seasons_calendar':'The Seasons Within Calendar','external':'Existing booking link','none':'No booking'}.get(b['booking_method'] or 'seasons_calendar'),'booking')}{card('Contact','Email, phone, website and social links','contact')}{''.join(optional)}<a class="btn" href="{url_for('hosted_app_edit_section',section='sections')}">+ Add Section</a>'''
+    return page('Edit My Hosted App',body,'business')
+
+@app.route('/business/app/preview')
+@login_required
+def hosted_app_preview():
+    u=current_user(); b,media,events=_owner_business_bundle(u['id'])
+    if not b: return redirect(url_for('business_builder',step=1))
+    return page('Preview My App',f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">VIEW MODE</span><h1>Preview My App</h1><div class="actions"><a class="btn" href="{url_for('hosted_app_editor')}">Close Preview</a></div></div><div class="hosted-preview">{_hosted_app_render(b,media,events,preview=True)}</div>''','business')
+
+@app.route('/business/app/edit/<section>',methods=['GET','POST'])
+@login_required
+def hosted_app_edit_section(section):
+    u=current_user(); b,media,events=_owner_business_bundle(u['id'])
+    if not b: return redirect(url_for('business_builder',step=1))
+    if section not in {'branding','about','services','gallery','videos','booking','contact','sections'}: abort(404)
+    if request.method=='POST':
+        conn=db()
+        if section=='about': conn.execute('UPDATE businesses SET description=?,story=?,tagline=?,updated_at=? WHERE id=?',(request.form.get('description','').strip(),request.form.get('story','').strip(),request.form.get('tagline','').strip(),now(),b['id']))
+        elif section=='services': conn.execute('UPDATE businesses SET offers=?,updated_at=? WHERE id=?',(request.form.get('offers','').strip(),now(),b['id']))
+        elif section=='contact':
+            fields=['contact_email','contact_phone','website','instagram','tiktok','youtube','facebook']; vals=[request.form.get(x,'').strip() for x in fields]
+            conn.execute('UPDATE businesses SET contact_email=?,contact_phone=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,updated_at=? WHERE id=?',(*vals,now(),b['id']))
+        elif section=='booking':
+            method=request.form.get('booking_method','seasons_calendar'); method=method if method in {'seasons_calendar','external','none'} else 'seasons_calendar'
+            settings={k:request.form.get(k,'').strip() for k in ('available_days','available_times','duration','buffer','blocked_dates')}
+            conn.execute('UPDATE businesses SET booking_method=?,booking_url=?,booking_settings=?,updated_at=? WHERE id=?',(method,request.form.get('booking_url','').strip(),json.dumps(settings),now(),b['id']))
+        elif section=='sections':
+            selected=[k for k,_ in HOSTED_APP_MODULES if request.form.get('module_'+k)]; selected=list(dict.fromkeys(['home','about','contact']+selected))
+            conn.execute('UPDATE businesses SET enabled_modules=?,updated_at=? WHERE id=?',(','.join(selected),now(),b['id']))
+        conn.commit(); conn.close(); flash('Changes saved.','success'); return redirect(url_for('hosted_app_editor'))
+    if section=='branding':
+        logo=_touch_crop_form('logo','Business Logo / Profile Image',business_media_src(b['logo_name']) if b['logo_name'] else '')
+        cover=_touch_crop_form('cover','Cover Photo',business_media_src(b['cover_name']) if b['cover_name'] and b['cover_type']!='video' else '')
+        video=f'''<form class="card" method="post" enctype="multipart/form-data" action="{url_for('hosted_app_media_save')}"><h2>Cover Video</h2>{f'<video controls src="{business_media_src(b["cover_name"])}"></video>' if b['cover_name'] and b['cover_type']=='video' else ''}<input type="hidden" name="kind" value="cover_video"><input class="input" type="file" name="media_file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v"><div class="actions"><a class="out" href="{url_for('hosted_app_editor')}">Cancel</a><button class="btn">Save Video</button></div></form>'''
+        content=logo+cover+video+_TOUCH_CROP_SCRIPT
+    elif section=='gallery':
+        rows=[m for m in media if m['media_kind']=='gallery']; cards=''.join(f'''<article class="card"><img class="editor-cover" src="{business_media_src(m['file_name'])}"><div class="actions"><form method="post" action="{url_for('hosted_app_media_save')}"><input type="hidden" name="kind" value="gallery"><input type="hidden" name="media_id" value="{m['id']}"><button class="out danger" name="remove" value="1">Remove</button></form></div></article>''' for m in rows)
+        editors=''.join(_touch_crop_form('gallery','Edit / Replace Photo',business_media_src(m['file_name']),m['id']) for m in rows)
+        content=f'<div class="grid">{cards}</div>{editors}'+_touch_crop_form('gallery','+ Add Photo')+_TOUCH_CROP_SCRIPT
+    elif section=='videos':
+        rows=[m for m in media if m['media_kind']=='video']; cards=''.join(f'''<article class="card"><video controls src="{business_media_src(m['file_name'])}"></video><form method="post" enctype="multipart/form-data" action="{url_for('hosted_app_media_save')}"><input type="hidden" name="kind" value="video"><input type="hidden" name="media_id" value="{m['id']}"><label>Title<input class="input" name="title" value="{html.escape(m['title'] or '')}"></label><label>Description<textarea class="input" name="description">{html.escape(m['description'] or '')}</textarea></label><label>Replace video<input class="input" type="file" name="media_file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v"></label><div class="actions"><button class="btn">Save Changes</button><button class="out danger" name="remove" value="1">Remove</button></div></form></article>''' for m in rows)
+        add='' if len(rows)>=3 else f'''<form class="card" method="post" enctype="multipart/form-data" action="{url_for('hosted_app_media_save')}"><h2>+ Add Video</h2><input type="hidden" name="kind" value="video"><input class="input" type="file" name="media_file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required><input class="input" name="title" placeholder="Video title"><textarea class="input" name="description" placeholder="Description"></textarea><p class="muted small">Maximum 3 minutes.</p><button class="btn">Save Video</button></form>'''
+        content=f'<p><b>{len(rows)} of 3 videos uploaded</b></p><div class="grid">{cards}</div>{add}'
+    elif section=='about': content=f'''<form class="card" method="post"><label>Tagline<input class="input" name="tagline" value="{html.escape(b['tagline'] or '')}"></label><label>About<textarea class="input" name="description">{html.escape(b['description'] or '')}</textarea></label><label>Our Story<textarea class="input" name="story">{html.escape(b['story'] or '')}</textarea></label><button class="btn">Save</button></form>'''
+    elif section=='services': content=f'''<form class="card" method="post"><label>Services / What We Offer<textarea class="input" name="offers">{html.escape(b['offers'] or '')}</textarea></label><button class="btn">Save</button></form>'''
+    elif section=='contact': content='<form class="card" method="post">'+''.join(f'<label>{label}<input class="input" name="{key}" value="{html.escape(b[key] or "")}"></label>' for key,label in [('contact_email','Email'),('contact_phone','Phone'),('website','Website'),('instagram','Instagram'),('tiktok','TikTok'),('youtube','YouTube'),('facebook','Facebook')])+'<button class="btn">Save</button></form>'
+    elif section=='booking':
+        try: settings=json.loads(b['booking_settings'] or '{}')
+        except Exception: settings={}
+        radio=lambda value,label: f'<label class="fact"><input type="radio" name="booking_method" value="{value}" {"checked" if (b["booking_method"] or "seasons_calendar")==value else ""}> {label}</label>'
+        content=f'''<form class="card" method="post"><h2>Booking Method</h2>{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Booking')}<label>Existing Booking Link<input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label>Available days<input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Wednesday, Friday"></label><label>Available times<input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM–4:00 PM"></label><label>Appointment duration<input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label>Time between appointments<input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label>Blocked dates<input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}"></label><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form>'''
+    else:
+        enabled=set(_module_list(b)); content='<form class="card" method="post"><h2>+ Add Section</h2>'+''.join(f'<label class="fact"><input type="checkbox" name="module_{k}" {"checked" if k in enabled else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k not in {'home','about','contact'})+'<button class="btn">Save Sections</button></form>'
+    return page('Edit '+section.title(),f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">EDIT MY HOSTED APP</span><h1>{section.title()}</h1><a class="out" href="{url_for('hosted_app_editor')}">Back to Editor</a></div>{content}''','business')
+
+@app.route('/business/app/edit/media',methods=['POST'])
+@login_required
+def hosted_app_media_save():
+    u=current_user(); b,media,_=_owner_business_bundle(u['id'])
+    if not b: abort(404)
+    kind=request.form.get('kind',''); media_id=request.form.get('media_id',type=int); remove=bool(request.form.get('remove')); incoming=request.files.get('media_file')
+    conn=db()
+    row=None
+    if kind in {'gallery','video'} and media_id:
+        row=conn.execute('SELECT * FROM business_media WHERE id=? AND business_id=?',(media_id,b['id'])).fetchone()
+        if row and remove:
+            conn.execute('DELETE FROM business_media WHERE id=?',(media_id,)); conn.commit(); conn.close(); (UPLOAD_DIR/row['file_name']).unlink(missing_ok=True); flash('Media removed.','success'); return redirect(url_for('hosted_app_edit_section',section='gallery' if kind=='gallery' else 'videos'))
+    if remove and kind in {'logo','cover'}:
+        old=b['logo_name'] if kind=='logo' else b['cover_name']; field='logo_name' if kind=='logo' else 'cover_name'
+        conn.execute(f"UPDATE businesses SET {field}='',updated_at=? WHERE id=?",(now(),b['id'])); conn.commit(); conn.close();
+        if old: (UPLOAD_DIR/old).unlink(missing_ok=True)
+        flash('Media removed.','success'); return redirect(url_for('hosted_app_editor'))
+    if not incoming or not incoming.filename:
+        if kind in {'logo','cover'}:
+            conn.execute(f'UPDATE businesses SET {kind}_crop=?,updated_at=? WHERE id=?',(_crop_payload(request.form),now(),b['id']))
+        elif kind=='gallery' and row:
+            conn.execute('UPDATE business_media SET crop_data=? WHERE id=?',(_crop_payload(request.form),row['id']))
+        elif kind=='video' and row:
+            conn.execute('UPDATE business_media SET title=?,description=? WHERE id=?',(request.form.get('title','').strip(),request.form.get('description','').strip(),row['id']))
+        else:
+            conn.close(); flash('Choose a file to upload.','error'); return redirect(url_for('hosted_app_editor'))
+        conn.commit(); conn.close(); flash('Changes saved.','success'); return redirect(url_for('hosted_app_edit_section',section='branding' if kind in {'logo','cover'} else ('gallery' if kind=='gallery' else 'videos')))
+    allowed=BUSINESS_VIDEO_EXT if kind in {'video','cover_video'} else BUSINESS_IMAGE_EXT
+    stored=_store_business_upload(incoming,b['id'],kind,allowed)
+    if not stored: conn.close(); flash('We could not upload this file. Please choose a supported file and try again.','error'); return redirect(url_for('hosted_app_editor'))
+    if kind in {'video','cover_video'}:
+        seconds=_video_duration_seconds(UPLOAD_DIR/stored)
+        if seconds and seconds>180: (UPLOAD_DIR/stored).unlink(missing_ok=True); conn.close(); flash('Video must be 3 minutes or shorter.','error'); return redirect(url_for('hosted_app_edit_section',section='videos' if kind=='video' else 'branding'))
+    if kind=='logo':
+        old=b['logo_name']; conn.execute('UPDATE businesses SET logo_name=?,logo_crop=?,updated_at=? WHERE id=?',(stored,_crop_payload(request.form),now(),b['id']))
+    elif kind in {'cover','cover_video'}:
+        old=b['cover_name']; conn.execute('UPDATE businesses SET cover_name=?,cover_type=?,cover_crop=?,updated_at=? WHERE id=?',(stored,'video' if kind=='cover_video' else 'image',_crop_payload(request.form),now(),b['id']))
+    elif kind=='gallery':
+        if row:
+            old=row['file_name']; conn.execute('UPDATE business_media SET file_name=?,crop_data=? WHERE id=?',(stored,_crop_payload(request.form),row['id']))
+        else:
+            old=''; order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 n FROM business_media WHERE business_id=? AND media_kind='gallery'",(b['id'],)).fetchone()['n']; conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,title,description,sort_order,crop_data,created_at) VALUES(?,?,?,?,?,?,?,?)',(b['id'],'gallery',stored,'','',order,_crop_payload(request.form),now()))
+    elif kind=='video':
+        old=row['file_name'] if row else ''; count=conn.execute("SELECT COUNT(*) n FROM business_media WHERE business_id=? AND media_kind='video'",(b['id'],)).fetchone()['n']
+        if row:
+            conn.execute('UPDATE business_media SET file_name=?,title=?,description=? WHERE id=?',(stored,request.form.get('title','').strip(),request.form.get('description','').strip(),row['id']))
+        else:
+            if count>=3: (UPLOAD_DIR/stored).unlink(missing_ok=True); conn.close(); flash('Maximum 3 videos.','error'); return redirect(url_for('hosted_app_edit_section',section='videos'))
+            conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,title,description,sort_order,crop_data,created_at) VALUES(?,?,?,?,?,?,?,?)',(b['id'],'video',stored,request.form.get('title','').strip(),request.form.get('description','').strip(),count,'{}',now()))
+    conn.commit(); conn.close()
+    if old and old!=stored: (UPLOAD_DIR/old).unlink(missing_ok=True)
+    flash('Upload complete ✓','success'); return redirect(url_for('hosted_app_edit_section',section={'logo':'branding','cover':'branding','cover_video':'branding','gallery':'gallery','video':'videos'}[kind]))
 
 @app.route('/business/app/<int:business_id>')
 def business_app(business_id):
@@ -7839,7 +7991,7 @@ def business_app(business_id):
     media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(business_id,)).fetchall()
     events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(business_id,)).fetchall(); conn.close()
     viewer=current_user(); owner=bool(viewer and viewer['id']==b['owner_id'])
-    owner_bar=(f'''<div class="actions"><a class="btn" href="{url_for('business_builder',step=7)}">Preview / Edit My App</a><a class="out" href="{url_for('business_dashboard')}">Business Dashboard</a></div>''' if owner else '')
+    owner_bar=(f'''<div class="actions"><a class="btn" href="{url_for('hosted_app_editor')}">Edit My Hosted App</a><a class="out" href="{url_for('hosted_app_preview')}">Preview My App</a><a class="out" href="{url_for('business_dashboard')}">Business Dashboard</a></div>''' if owner else '')
     return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>{html.escape(b['name'])}</h1><p class="muted">{html.escape(b['category'] or b['owner_title'] or '')} • {html.escape(b['location'] or '')}</p>{owner_bar}</div>{_hosted_app_render(b,media,events,owner=owner)}''','business')
     logo=business_media_src(b['logo_name'])
     if b['cover_name']:
@@ -7907,7 +8059,7 @@ def business_dashboard():
         plan_button='Open My Business Journal' if bool(u['business_dev_paid'] or u['is_admin']) else 'Start My Business Plan — $79.99'
         return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business Dashboard</h1><p class="muted">You do not have a Hosted Business App. You can create a free Hosted Business App, or begin Professional Business Development without hosting a business.</p></div><div class="grid"><article class="card paid"><span class="badge gold">FREE HOSTED BUSINESS APP</span><h2>Do you host a business?</h2><p class="muted">Create your Hosted Business App to unlock your Business Journal, Inbox, Calendar and bookings.</p><a class="btn" href="{url_for('business_builder',step=1)}">Create My FREE Hosted App</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>$79.99 Business Plan Package</h2><p class="muted">Create a professional Business Plan, Marketing Strategy and 90-Day Launch Plan without creating or hosting a business app.</p><a class="btn" href="{plan_url}">{plan_button}</a></article></div>''','community')
     logo=business_media_src(b['logo_name'])
-    app_actions=(f'<a class="btn" href="{url_for("business_app",business_id=b["id"])}">Open Hosted App</a>' if b['active'] else '')+f'<a class="out" href="{url_for("business_builder",step=1)}">Edit Hosted App</a>'
+    app_actions=(f'<a class="btn" href="{url_for("business_app",business_id=b["id"])}">Open Hosted App</a>' if b['active'] else '')+f'<a class="out" href="{url_for("hosted_app_editor")}">Edit My Hosted App</a>'
     app_card=f'''<article class="card paid"><div class="profilehero"><div><span class="badge gold">MY HOSTED BUSINESS APP</span><h2>{b['name']}</h2><p class="muted">{b['category']} • {b['location']} • {'Published' if b['active'] else 'Draft'}</p><div class="actions">{app_actions}</div></div><img src="{logo}" style="width:105px;height:105px;object-fit:cover;border-radius:50%"></div></article>'''
     plan_url=url_for('business_plan') if bool(u['business_dev_paid'] or u['is_admin']) else url_for('payment_info',product='business-development')
     plan_label='My Business Journal' if bool(u['business_dev_paid'] or u['is_admin']) else 'Professional Business Development — $79.99'

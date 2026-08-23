@@ -68,3 +68,17 @@ LATEST JOURNAL AND COMMUNITY PLACEMENT UPDATE
 - The Lunar Season Reflection appears immediately before the Public Journal.
 - The meditation label uses a Black woman meditation symbol.
 - Report calculations and report-generation behavior were not changed by these placement updates.
+
+HOSTED BUSINESS APP EDITOR CORRECTION — 2026-08-23
+
+- The numbered wizard is used only for initial Hosted App creation.
+- Existing Hosted Apps open in one permanent Edit My Hosted App workspace.
+- Header, About, Services, Gallery, Videos, Booking, Contact and optional sections open directly for editing.
+- Preview is a view mode available from the editor rather than a required builder step.
+- Uploaded logo, cover, gallery and video media use persistent database/storage references in the editor, preview and published app.
+- Photo editing uses an actual-image touch crop with drag/pinch and one zoom control instead of member-facing X/Y/rotation sliders.
+- Gallery photos and business videos upload, replace and remove individually; videos remain limited to three and three minutes each.
+- Booking supports The Seasons Within calendar, an existing booking link or no booking.
+- The built-in calendar uses responsive seven-column sizing and does not intentionally create horizontal page overflow.
+- Published Hosted Apps remain editable through Edit My Hosted App.
+- Databases, uploaded member media, API keys and deployment credentials are not included in this package.
