@@ -401,6 +401,12 @@ def init_db():
         ("businesses","cover_name","ALTER TABLE businesses ADD COLUMN cover_name TEXT DEFAULT ''"),
         ("businesses","cover_type","ALTER TABLE businesses ADD COLUMN cover_type TEXT DEFAULT ''"),
         ("businesses","gallery_enabled","ALTER TABLE businesses ADD COLUMN gallery_enabled INTEGER NOT NULL DEFAULT 0"),
+        ("businesses","logo_crop","ALTER TABLE businesses ADD COLUMN logo_crop TEXT DEFAULT '{}'"),
+        ("businesses","cover_crop","ALTER TABLE businesses ADD COLUMN cover_crop TEXT DEFAULT '{}'"),
+        ("businesses","enabled_modules","ALTER TABLE businesses ADD COLUMN enabled_modules TEXT DEFAULT 'home,about,contact,booking'"),
+        ("businesses","section_order","ALTER TABLE businesses ADD COLUMN section_order TEXT DEFAULT 'home,about,services,classes,courses,events,videos,gallery,retreats,booking,contact,media_kit,affiliate'"),
+        ("business_media","sort_order","ALTER TABLE business_media ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"),
+        ("business_media","crop_data","ALTER TABLE business_media ADD COLUMN crop_data TEXT DEFAULT '{}'"),
         ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
         ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
         ("users","birth_time_unknown","ALTER TABLE users ADD COLUMN birth_time_unknown INTEGER NOT NULL DEFAULT 0"),
@@ -983,8 +989,8 @@ def init_astrology_tables():
 BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{{ title }} — The Seasons Within</title>
 <style>
 :root{--plum:#34204f;--purple:#8f63ba;--purple2:#a978c7;--lav:#f2e9f8;--blush:#fff1ef;--line:#eadff1;--muted:#75677f;--gold:#ddc26f;--white:#fff;--shadow:0 14px 38px rgba(70,45,95,.09)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--plum);background:linear-gradient(180deg,#fcf9fd,#fffaf8 56%,#faf6fc);min-height:100vh}a{text-decoration:none;color:inherit}button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3{font-family:Georgia,"Times New Roman",serif}h1{font-size:clamp(30px,5vw,48px);line-height:1.05;margin:8px 0 12px}h2{font-size:clamp(22px,3vw,30px);margin:6px 0 12px}.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.96);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}.topin{width:min(1220px,94vw);min-height:76px;margin:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:20px}.brand{display:flex;align-items:center;gap:11px}.logo{width:49px;height:49px;border-radius:50%;padding:4px;background:#fff}.brand strong{display:block;font:700 19px Georgia}.brand small{display:block;font-size:9px;letter-spacing:1.25px;color:var(--muted);text-transform:uppercase;margin-top:3px}.desktopnav{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.desktopnav a,.acct a{border:0;background:transparent;color:#5e5068;padding:10px 12px;border-radius:999px;font-weight:800}.desktopnav a.on{background:var(--lav);color:#68418c}.acct{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}.page{width:min(1120px,92vw);margin:26px auto 110px}.hero,.card{border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:var(--shadow)}.hero{padding:27px;background:linear-gradient(135deg,#f0e2fa,#fff1ed)}.card{padding:20px;margin:15px 0}.paid{border:2px solid var(--gold)}.badge,.chip{display:inline-flex;align-items:center;padding:7px 10px;border-radius:999px;background:var(--lav);font-size:10px;font-weight:900}.badge.gold{background:#fff8df;border:1px solid var(--gold);color:#765615}.badge.heart{background:#fff0f3;color:#96526b}.actions,.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.btn,.out{display:inline-flex;align-items:center;justify-content:center;border-radius:11px;min-height:41px;padding:9px 14px;font-weight:800;border:1px solid var(--purple)}.btn{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff}.out{background:#fff;color:#68418c;border-color:#cdb7dc}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:15px}.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.media{height:220px;border-radius:16px;background:linear-gradient(135deg,#e4d2f0,#f8ded8);display:grid;place-items:center;overflow:hidden}.muted{color:var(--muted);line-height:1.55}.small{font-size:12px}.fact{padding:13px;border:1px solid var(--line);border-radius:14px;background:#fcf9fd;margin:7px 0}.fact small{display:block;color:var(--muted);margin-bottom:4px}.meter{height:10px;background:#eee6f1;border-radius:999px;overflow:hidden;margin:7px 0}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),#c992c4)}.moonrow{display:grid;grid-template-columns:115px 1fr;gap:20px;align-items:center}.moonorb{width:98px;height:98px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff,#d9c4e7 48%,#b795cb);font-size:48px}.post{display:grid;grid-template-columns:52px 1fr;gap:12px}.avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#c89de1,#efbcc6);color:#fff;font-weight:900;overflow:hidden}.profilehero{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.portrait{width:118px;height:118px;border-radius:50%;background:linear-gradient(135deg,#d4b9e7,#f0c2cb);display:grid;place-items:center;color:#fff;font-weight:900;font-size:28px}.input{width:100%;padding:12px;border:1px solid #dfd1e8;border-radius:12px;background:#fff;margin:5px 0 12px}textarea.input{min-height:110px}.appcard{padding:0;overflow:hidden}.appcard .body{padding:18px}.locked{background:linear-gradient(135deg,#fffaf0,#fff);border:1px dashed var(--gold)}.topspace{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:24px 0 10px}.moregrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.moreitem{display:block;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--shadow);font-weight:800}.bottom{display:none}.flash{padding:12px 16px;border-radius:13px;background:#fff8df;border:1px solid var(--gold);margin:12px 0}.empty{padding:22px;text-align:center;border:1px dashed #cdb7dc;border-radius:18px;background:#fff}.steps{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.step{padding:7px 9px;border-radius:999px;background:#eee6f1;font-size:10px;font-weight:900}.step.on{background:var(--purple);color:#fff}.splitlabel{display:flex;justify-content:space-between;gap:10px;align-items:center}.danger{border-color:#b95767;color:#9b3c4c}.checkboxes label{display:block;padding:7px 0}
-@media(max-width:820px){body{padding-bottom:82px}.topin{min-height:68px;display:flex;justify-content:center}.desktopnav,.acct{display:none}.page{width:94vw;margin-top:18px;margin-bottom:22px}.two,.three{grid-template-columns:1fr}.profilehero{grid-template-columns:1fr}.portrait{width:96px;height:96px}.moonrow{grid-template-columns:82px 1fr}.moonorb{width:76px;height:76px;font-size:38px}.bottom{position:fixed;left:50%;bottom:9px;transform:translateX(-50%);z-index:50;width:95vw;display:grid;grid-template-columns:repeat(5,1fr);padding:7px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.97);backdrop-filter:blur(18px);box-shadow:0 15px 45px rgba(70,45,95,.18)}.bottom a{border:0;background:transparent;padding:7px 4px;border-radius:13px;color:#75677f;font-size:9px;font-weight:900;text-align:center}.bottom a b{display:block;font-size:18px;line-height:1.1}.bottom a.on{background:var(--lav);color:#68418c}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--plum);background:linear-gradient(180deg,#fcf9fd,#fffaf8 56%,#faf6fc);min-height:100vh}a{text-decoration:none;color:inherit}button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3{font-family:Georgia,"Times New Roman",serif}h1{font-size:clamp(30px,5vw,48px);line-height:1.05;margin:8px 0 12px}h2{font-size:clamp(22px,3vw,30px);margin:6px 0 12px}.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.96);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}.topin{width:min(1220px,94vw);min-height:76px;margin:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:20px}.brand{display:flex;align-items:center;gap:11px}.logo{width:49px;height:49px;border-radius:50%;padding:4px;background:#fff}.brand strong{display:block;font:700 19px Georgia}.brand small{display:block;font-size:9px;letter-spacing:1.25px;color:var(--muted);text-transform:uppercase;margin-top:3px}.desktopnav{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.desktopnav a,.acct a{border:0;background:transparent;color:#5e5068;padding:10px 12px;border-radius:999px;font-weight:800}.desktopnav a.on{background:var(--lav);color:#68418c}.acct{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}.page{width:min(1120px,92vw);margin:26px auto 110px}.hero,.card{border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:var(--shadow)}.hero{padding:27px;background:linear-gradient(135deg,#f0e2fa,#fff1ed)}.card{padding:20px;margin:15px 0}.paid{border:2px solid var(--gold)}.badge,.chip{display:inline-flex;align-items:center;padding:7px 10px;border-radius:999px;background:var(--lav);font-size:10px;font-weight:900}.badge.gold{background:#fff8df;border:1px solid var(--gold);color:#765615}.badge.heart{background:#fff0f3;color:#96526b}.actions,.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.btn,.out{display:inline-flex;align-items:center;justify-content:center;border-radius:11px;min-height:41px;padding:9px 14px;font-weight:800;border:1px solid var(--purple)}.btn{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff}.out{background:#fff;color:#68418c;border-color:#cdb7dc}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:15px}.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.media{height:220px;border-radius:16px;background:linear-gradient(135deg,#e4d2f0,#f8ded8);display:grid;place-items:center;overflow:hidden}.muted{color:var(--muted);line-height:1.55}.small{font-size:12px}.fact{padding:13px;border:1px solid var(--line);border-radius:14px;background:#fcf9fd;margin:7px 0}.fact small{display:block;color:var(--muted);margin-bottom:4px}.meter{height:10px;background:#eee6f1;border-radius:999px;overflow:hidden;margin:7px 0}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),#c992c4)}.moonrow{display:grid;grid-template-columns:115px 1fr;gap:20px;align-items:center}.moonorb{width:98px;height:98px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff,#d9c4e7 48%,#b795cb);font-size:48px}.post{display:grid;grid-template-columns:52px 1fr;gap:12px}.avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#c89de1,#efbcc6);color:#fff;font-weight:900;overflow:hidden}.profilehero{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.portrait{width:118px;height:118px;border-radius:50%;background:linear-gradient(135deg,#d4b9e7,#f0c2cb);display:grid;place-items:center;color:#fff;font-weight:900;font-size:28px}.input{width:100%;padding:12px;border:1px solid #dfd1e8;border-radius:12px;background:#fff;margin:5px 0 12px}textarea.input{min-height:110px}.appcard{padding:0;overflow:hidden}.appcard .body{padding:18px}.locked{background:linear-gradient(135deg,#fffaf0,#fff);border:1px dashed var(--gold)}.topspace{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:24px 0 10px}.moregrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.moreitem{display:block;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--shadow);font-weight:800}.bottom{display:none}.flash{padding:12px 16px;border-radius:13px;background:#fff8df;border:1px solid var(--gold);margin:12px 0}.empty{padding:22px;text-align:center;border:1px dashed #cdb7dc;border-radius:18px;background:#fff}.steps{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.step{padding:7px 9px;border-radius:999px;background:#eee6f1;font-size:10px;font-weight:900}.step.on{background:var(--purple);color:#fff}.splitlabel{display:flex;justify-content:space-between;gap:10px;align-items:center}.danger{border-color:#b95767;color:#9b3c4c}.checkboxes label{display:block;padding:7px 0}.media-editor{padding:16px;border:1px solid var(--line);border-radius:18px;background:#fff;min-width:0;overflow:hidden}.crop-stage{position:relative;overflow:hidden;display:grid;place-items:center;background:linear-gradient(135deg,#eadcf3,#f9e1df);border-radius:16px;width:100%}.crop-stage img,.crop-stage video{width:100%;height:100%;object-fit:cover}.logo-crop{aspect-ratio:1/1;max-width:260px;margin:10px auto}.cover-crop{aspect-ratio:16/9}.gallery-crop{aspect-ratio:4/3}.branded-placeholder{color:#75677f;text-align:center;padding:18px;font-weight:800}.hosted-preview{width:min(430px,100%);margin:18px auto;border:1px solid var(--line);border-radius:28px;padding:12px;background:#fcf9fd;box-shadow:var(--shadow);overflow:hidden}.hosted-preview .page{width:100%;margin:0}.hosted-section-control{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;margin:8px 0}.calendar-card{width:100%;max-width:100%;overflow:hidden}.calendar-head{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:center}.calendar-head .out{min-width:0;padding:7px}.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;width:100%;max-width:100%}.calendar-cell,.calendar-label{min-width:0;text-align:center}.calendar-cell{min-height:72px;border:1px solid var(--line);background:white;border-radius:10px;padding:5px;overflow:hidden}.calendar-cell .badge{font-size:7px;padding:3px;max-width:100%;white-space:normal}
+@media(max-width:820px){body{padding-bottom:82px}.topin{min-height:68px;display:flex;justify-content:center}.desktopnav,.acct{display:none}.page{width:94vw;margin-top:18px;margin-bottom:22px}.two,.three{grid-template-columns:1fr}.profilehero{grid-template-columns:1fr}.portrait{width:96px;height:96px}.moonrow{grid-template-columns:82px 1fr}.moonorb{width:76px;height:76px;font-size:38px}.bottom{position:fixed;left:50%;bottom:9px;transform:translateX(-50%);z-index:50;width:95vw;display:grid;grid-template-columns:repeat(5,1fr);padding:7px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.97);backdrop-filter:blur(18px);box-shadow:0 15px 45px rgba(70,45,95,.18)}.bottom a{border:0;background:transparent;padding:7px 4px;border-radius:13px;color:#75677f;font-size:9px;font-weight:900;text-align:center}.bottom a b{display:block;font-size:18px;line-height:1.1}.bottom a.on{background:var(--lav);color:#68418c}.calendar-head h2{font-size:20px;text-align:center}.calendar-head .out{font-size:11px}.calendar-label{font-size:10px;padding:5px 0!important}.calendar-cell{min-height:54px;padding:3px;font-size:12px}.calendar-cell .badge{display:none}.card,.hero{padding:16px}.hosted-section-control{grid-template-columns:1fr auto}}
 </style><style>html,body{max-width:100%;overflow-x:hidden}img,video{max-width:100%;height:auto}.page,.card,.hero,form{box-sizing:border-box;max-width:100%}.input,select,textarea,button{max-width:100%;box-sizing:border-box}@media(max-width:700px){.grid,.two,.profilehero{grid-template-columns:1fr!important}.actions{display:flex;flex-wrap:wrap;gap:8px}.actions .btn,.actions .out{max-width:100%}}</style></head><body>
 <header class="top"><div class="topin"><a class="brand" href="{{ url_for('home') }}"><svg class="logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="#f4ebf9"/><path d="M50 6A44 44 0 0 1 94 50H50Z" fill="#d6b8e5"/><path d="M94 50A44 44 0 0 1 50 94V50Z" fill="#efc4cb"/><path d="M50 94A44 44 0 0 1 6 50H50Z" fill="#ead7ad"/><path d="M6 50A44 44 0 0 1 50 6V50Z" fill="#c9b7df"/><circle cx="50" cy="50" r="18" fill="#fff"/></svg><div><strong>The Seasons Within</strong><small>Conscious Coordination</small></div></a><nav class="desktopnav"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}">Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}">Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}">My Journal</a><a class="{{'on' if active=='retreats'}}" href="{{url_for('retreats')}}">Retreats</a><a class="{{'on' if active=='membership'}}" href="{{url_for('membership')}}">Membership</a></nav><div class="acct">{% if user %}<a href="{{url_for('inbox')}}">Inbox</a><a href="{{url_for('notifications')}}">Notifications</a><span>{{user['name'].split()[0]}}</span><a href="{{url_for('logout')}}">Sign Out</a>{% else %}<a href="{{url_for('login')}}">Sign In</a><a href="{{url_for('join')}}">Join Free</a>{% endif %}</div></div></header>
 <main class="page">{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="flash">{{msg}}</div>{% endfor %}{% endwith %}{{ content|safe }}</main>
@@ -1074,6 +1080,66 @@ def _video_duration_seconds(path):
 
 def business_media_src(name):
     return url_for('business_media_file',filename=name) if name else ''
+
+HOSTED_APP_MODULES=[
+    ('home','Home'),('about','About'),('services','Services'),('classes','Classes'),
+    ('courses','Courses'),('events','Events'),('videos','Videos'),('gallery','Gallery'),
+    ('retreats','Retreats'),('booking','Booking'),('contact','Contact'),
+    ('media_kit','Media Kit'),('affiliate','Affiliate Links')
+]
+
+def _safe_json(value, default=None):
+    try:
+        parsed=json.loads(value or '')
+        return parsed if isinstance(parsed,dict) else (default if default is not None else {})
+    except Exception:
+        return default if default is not None else {}
+
+def _crop_payload(form):
+    def number(name, default, low, high):
+        try: return max(low,min(high,float(form.get(name,default))))
+        except Exception: return default
+    return json.dumps({'x':number('crop_x',50,0,100),'y':number('crop_y',50,0,100),'zoom':number('crop_zoom',1,1,3),'rotate':number('crop_rotate',0,-180,180)})
+
+def _crop_css(payload):
+    data=_safe_json(payload,{'x':50,'y':50,'zoom':1,'rotate':0})
+    try:
+        x=float(data.get('x',50)); y=float(data.get('y',50)); zoom=float(data.get('zoom',1)); rotate=float(data.get('rotate',0))
+    except Exception:
+        x,y,zoom,rotate=50,50,1,0
+    return f'object-position:{x:.2f}% {y:.2f}%;transform:scale({max(1,min(3,zoom)):.3f}) rotate({max(-180,min(180,rotate)):.2f}deg)'
+
+def _module_list(b):
+    raw=(b['enabled_modules'] if 'enabled_modules' in b.keys() else '') or ''
+    enabled=[x.strip() for x in raw.split(',') if x.strip()]
+    return enabled or ['home','about','contact','booking']
+
+def _module_order(b):
+    raw=(b['section_order'] if 'section_order' in b.keys() else '') or ''
+    chosen=[x.strip() for x in raw.split(',') if x.strip()]
+    known=[x for x,_ in HOSTED_APP_MODULES]
+    return [x for x in chosen if x in known]+[x for x in known if x not in chosen]
+
+def _plan_prefill_for_user(user_id):
+    conn=db(); row=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(user_id,)).fetchone(); conn.close()
+    if not row: return {}
+    payload=_safe_json(row['payload'])
+    aliases={
+        'name':['business_name','business name','name'], 'category':['industry','industry_sector','industry / sector'],
+        'owner_title':['type_of_business','business_type','type of business'],
+        'description':['business_description','mission_statement','mission statement'],
+        'story':['business_story','additional_information'], 'offers':['products_services','products/services','unique_selling_proposition'],
+        'location':['location','service_area','state'], 'contact_email':['email'], 'contact_phone':['phone'],
+        'website':['website'], 'tagline':['tagline','unique_selling_proposition']
+    }
+    normalized={str(k).strip().lower().replace('-','_'):v for k,v in payload.items()}
+    result={}
+    for target,names in aliases.items():
+        for name in names:
+            key=name.strip().lower().replace('-','_')
+            value=normalized.get(key)
+            if value not in (None,'',[]): result[target]=str(value); break
+    return result
 
 @app.route('/business-media/<path:filename>')
 def business_media_file(filename):
@@ -7452,6 +7518,29 @@ def business_network():
 def galaxy_eve_app():
     return page('Galaxy Eve',f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>Galaxy Eve</h1><h3>Conscious Coordinator • Content Creator</h3><p class="muted">Content • Collaborations • Creator Experiences</p></div><div class="chips"><span class="chip">Home</span><span class="chip">About</span><span class="chip">Watch</span><span class="chip">Events</span><span class="chip">Retreats</span><span class="chip">Media Kit</span><span class="chip">Collaborations</span><span class="chip">Social Links</span><span class="chip">Contact</span></div><div class="grid"><article class="card"><h2>Creator Media</h2><div class="media"><div style="text-align:center"><div class="avatar" style="width:100px;height:100px;margin:auto">GE</div><p class="muted">Authorized Galaxy Eve photos and videos appear here when added.</p></div></div></article><article class="card"><h2>Creator Experiences</h2><p class="muted">Content, collaborations, events, Retreat invitations and creator experiences.</p></article></div>''','business')
 
+def _media_crop_controls(prefix=''):
+    return f'''<div class="crop-controls grid"><label>Horizontal position<input class="input crop-x" type="range" name="crop_x" min="0" max="100" value="50"></label><label>Vertical position<input class="input crop-y" type="range" name="crop_y" min="0" max="100" value="50"></label><label>Zoom<input class="input crop-zoom" type="range" name="crop_zoom" min="1" max="3" step="0.05" value="1"></label><label>Rotate<input class="input crop-rotate" type="range" name="crop_rotate" min="-180" max="180" step="1" value="0"></label></div>'''
+
+def _hosted_media_builder_html(b):
+    if not b: return '<div class="empty">Save your business identity first.</div>'
+    conn=db(); media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(b['id'],)).fetchall(); conn.close()
+    galleries=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
+    logo_preview=(f'''<div class="crop-stage logo-crop"><img src="{business_media_src(b['logo_name'])}" style="{_crop_css(b['logo_crop'] if 'logo_crop' in b.keys() else '{}')}"></div><form method="post" action="{url_for('business_builder_core_media')}"><input type="hidden" name="kind" value="logo">{_media_crop_controls()}<div class="actions"><button class="out" name="action" value="update">Re-crop</button><button class="out danger" name="action" value="remove">Remove</button></div></form>''' if b['logo_name'] else '<div class="crop-stage logo-crop branded-placeholder">Business Logo</div>')
+    if b['cover_name']:
+        cover_src=business_media_src(b['cover_name'])
+        media_view=(f'<video controls playsinline src="{cover_src}"></video>' if b['cover_type']=='video' else f'<img src="{cover_src}" style="{_crop_css(b["cover_crop"] if "cover_crop" in b.keys() else "{}")}">')
+        cover_controls='' if b['cover_type']=='video' else _media_crop_controls()
+        cover_preview=f'''<div class="crop-stage cover-crop">{media_view}</div><form method="post" action="{url_for('business_builder_core_media')}"><input type="hidden" name="kind" value="cover">{cover_controls}<div class="actions">{('<button class="out" name="action" value="update">Re-crop</button>' if cover_controls else '')}<button class="out danger" name="action" value="remove">Remove</button></div></form>'''
+    else: cover_preview='<div class="crop-stage cover-crop branded-placeholder">Cover photo or video preview</div>'
+    gallery_cards=[]
+    for m in galleries:
+        gallery_cards.append(f'''<article class="media-editor"><div class="crop-stage gallery-crop"><img src="{business_media_src(m['file_name'])}" style="{_crop_css(m['crop_data'] if 'crop_data' in m.keys() else '{}')}"></div><form method="post" enctype="multipart/form-data" action="{url_for('business_builder_media',media_id=m['id'])}">{_media_crop_controls()}<label>Replacement photo<input class="input" type="file" name="replacement" accept="image/*"></label><div class="actions"><button class="out" name="action" value="update">Crop</button><button class="out" name="action" value="replace">Replace</button><button class="out" name="action" value="up">Move Up</button><button class="out" name="action" value="down">Move Down</button><button class="out danger" name="action" value="remove">Remove</button></div></form></article>''')
+    video_cards=[]
+    for idx,m in enumerate(videos,1):
+        video_cards.append(f'''<article class="media-editor"><span class="badge">VIDEO {idx}</span><video controls playsinline src="{business_media_src(m['file_name'])}"></video><form method="post" enctype="multipart/form-data" action="{url_for('business_builder_media',media_id=m['id'])}"><label>Title<input class="input" name="title" value="{html.escape(m['title'] or '')}"></label><label>Description<textarea class="input" name="description">{html.escape(m['description'] or '')}</textarea></label><label>Replacement video<input class="input" type="file" name="replacement" accept="video/mp4,video/quicktime,video/webm,video/x-m4v"></label><div class="actions"><button class="out" name="action" value="update">Edit</button><button class="out" name="action" value="replace">Replace</button><button class="out" name="action" value="up">Move Up</button><button class="out" name="action" value="down">Move Down</button><button class="out danger" name="action" value="remove">Remove</button></div></form></article>''')
+    script='''<script>(function(){function wire(form,input,stage){if(!input||!stage)return;input.addEventListener('change',function(){var f=this.files&&this.files[0];if(!f)return;var u=URL.createObjectURL(f),el;if(f.type.indexOf('video/')===0){el=document.createElement('video');el.controls=true;el.playsInline=true}else{el=document.createElement('img')}el.src=u;stage.innerHTML='';stage.appendChild(el)});form.querySelectorAll('.crop-controls input').forEach(function(c){c.addEventListener('input',function(){var im=stage.querySelector('img');if(!im)return;var x=form.querySelector('.crop-x').value,y=form.querySelector('.crop-y').value,z=form.querySelector('.crop-zoom').value,r=form.querySelector('.crop-rotate').value;im.style.objectPosition=x+'% '+y+'%';im.style.transform='scale('+z+') rotate('+r+'deg)'})});form.addEventListener('submit',function(){var b=form.querySelector('button[type=submit],button:not([type])');if(b){b.disabled=true;b.textContent='Uploading...'}})}document.querySelectorAll('[data-upload-preview]').forEach(function(f){wire(f,f.querySelector('input[type=file]'),f.querySelector('.crop-stage'))})})();</script>'''
+    return f'''<p class="muted">Upload each item separately. Images appear immediately for positioning, then remain saved when you return, preview, publish, sign out or edit later.</p><div class="two"><article class="media-editor"><h3>Business Logo / Profile Image</h3>{logo_preview}<form method="post" enctype="multipart/form-data" data-upload-preview><div class="crop-stage logo-crop branded-placeholder">Selected logo preview</div><input class="input" type="file" name="logo" accept="image/*" required>{_media_crop_controls()}<button class="btn" name="media_action" value="upload_logo">Upload / Replace Logo</button></form></article><article class="media-editor"><h3>Cover Photo / Cover Video</h3>{cover_preview}<form method="post" enctype="multipart/form-data" data-upload-preview><div class="crop-stage cover-crop branded-placeholder">Selected cover preview</div><input class="input" type="file" name="cover" accept="image/*,video/*" required>{_media_crop_controls()}<button class="btn" name="media_action" value="upload_cover">Upload / Replace Cover</button></form></article></div><h2>Business Photo Gallery</h2><div class="grid">{''.join(gallery_cards) or '<div class="empty">No gallery photos yet.</div>'}</div><form class="media-editor" method="post" enctype="multipart/form-data" data-upload-preview><h3>+ Add Photo</h3><div class="crop-stage gallery-crop branded-placeholder">Selected photo preview</div><input class="input" type="file" name="gallery_photo" accept="image/*" required>{_media_crop_controls()}<button class="btn" name="media_action" value="add_gallery">Upload Photo</button></form><h2>Business Videos</h2><p><b>{len(videos)} of 3 videos uploaded</b></p><div class="grid">{''.join(video_cards) or '<div class="empty">No business videos yet.</div>'}</div>{(f'''<form class="media-editor" method="post" enctype="multipart/form-data" data-upload-preview><h3>+ Add Another Video</h3><div class="crop-stage cover-crop branded-placeholder">Selected video preview</div><input class="input" type="file" name="business_video" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required><label>Title<input class="input" name="title"></label><label>Description<textarea class="input" name="description"></textarea></label><p class="muted small">Maximum 3 minutes. Supported formats: MP4, MOV, WEBM and M4V.</p><button class="btn" name="media_action" value="add_video">Upload Video</button></form>''' if len(videos)<3 else '')}{script}'''
+
 @app.route('/business/builder/<int:step>', methods=['GET','POST'])
 @login_required
 def business_builder(step):
@@ -7462,18 +7551,70 @@ def business_builder(step):
         keys=['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements']
         draft={k:(existing_business[k] if k in existing_business.keys() else '') for k in keys}
         draft['retreat_participating']='1' if existing_business['retreat_participating'] else ''
+        draft['enabled_modules']=(existing_business['enabled_modules'] if 'enabled_modules' in existing_business.keys() else '') or 'home,about,contact,booking'
+        draft['section_order']=(existing_business['section_order'] if 'section_order' in existing_business.keys() else '') or ''
         session['business_draft']=draft
+    elif not draft:
+        plan_prefill=_plan_prefill_for_user(u['id'])
+        if plan_prefill:
+            draft.update(plan_prefill); draft['_plan_prefill_available']='1'; session['business_draft']=draft
     fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements'],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone']}
     if request.method=='POST':
         for k in fields.get(step,[]): draft[k]=request.form.get(k,'').strip()
-        if step==4: draft['retreat_participating']='1' if request.form.get('retreat_participating') else ''
+        if step==4:
+            draft['retreat_participating']='1' if request.form.get('retreat_participating') else ''
+            selected=[key for key,_ in HOSTED_APP_MODULES if request.form.get('module_'+key)]
+            draft['enabled_modules']=','.join(selected or ['home'])
+        if step==8:
+            selected=[key for key,_ in HOSTED_APP_MODULES if request.form.get('module_'+key)]
+            draft['enabled_modules']=','.join(selected or ['home'])
+            requested_order=[x.strip() for x in request.form.get('section_order','').split(',') if x.strip()]
+            valid=[x for x,_ in HOSTED_APP_MODULES]
+            draft['section_order']=','.join([x for x in requested_order if x in valid]+[x for x in valid if x not in requested_order])
         session['business_draft']=draft; session.modified=True
         if step==5:
             if not existing_business:
                 name=draft.get('name','').strip()
                 if not name: flash('Business Name is required before media can be uploaded.','error'); return redirect(url_for('business_builder',step=1))
                 conn=db(); cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,active,created_at,updated_at,retreat_participating,retreat_service_area,retreat_delivery_mode,retreat_travel_radius,retreat_price_range,retreat_group_size,retreat_availability,retreat_accessibility,retreat_booking_requirements) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)''',(u['id'],name,draft.get('owner_title',''),draft.get('category',''),draft.get('location',''),draft.get('tagline',''),draft.get('description',''),draft.get('story',''),draft.get('offers',''),draft.get('features',''),now(),now(),1 if draft.get('retreat_participating') else 0,draft.get('retreat_service_area',''),draft.get('retreat_delivery_mode',''),draft.get('retreat_travel_radius',''),draft.get('retreat_price_range',''),draft.get('retreat_group_size',''),draft.get('retreat_availability',''),draft.get('retreat_accessibility',''),draft.get('retreat_booking_requirements',''))); bid=cur.lastrowid; conn.commit(); existing_business=conn.execute('SELECT * FROM businesses WHERE id=?',(bid,)).fetchone(); conn.close()
-            bid=existing_business['id']; logo=_store_business_upload(request.files.get('logo'),bid,'logo',BUSINESS_IMAGE_EXT)
+            bid=existing_business['id']
+            media_action=request.form.get('media_action','').strip()
+            if media_action=='continue':
+                return redirect(url_for('business_builder',step=6))
+            if media_action in {'upload_logo','upload_cover','add_gallery','add_video'}:
+                file_field={'upload_logo':'logo','upload_cover':'cover','add_gallery':'gallery_photo','add_video':'business_video'}[media_action]
+                incoming=request.files.get(file_field)
+                allowed=BUSINESS_VIDEO_EXT if media_action=='add_video' else (BUSINESS_IMAGE_EXT|BUSINESS_VIDEO_EXT if media_action=='upload_cover' else BUSINESS_IMAGE_EXT)
+                stored=_store_business_upload(incoming,bid,file_field,allowed)
+                if not stored:
+                    flash('We could not upload this file. Please choose a supported file and try again.','error'); return redirect(url_for('business_builder',step=5))
+                conn=db()
+                if media_action=='upload_logo':
+                    old=conn.execute('SELECT logo_name FROM businesses WHERE id=?',(bid,)).fetchone()['logo_name']
+                    conn.execute('UPDATE businesses SET logo_name=?,logo_crop=?,updated_at=? WHERE id=?',(stored,_crop_payload(request.form),now(),bid))
+                    if old and old!=stored: (UPLOAD_DIR/old).unlink(missing_ok=True)
+                elif media_action=='upload_cover':
+                    ext=Path(stored).suffix.lower(); kind='video' if ext in BUSINESS_VIDEO_EXT else 'image'
+                    old=conn.execute('SELECT cover_name FROM businesses WHERE id=?',(bid,)).fetchone()['cover_name']
+                    conn.execute('UPDATE businesses SET cover_name=?,cover_type=?,cover_crop=?,updated_at=? WHERE id=?',(stored,kind,_crop_payload(request.form),now(),bid))
+                    if old and old!=stored: (UPLOAD_DIR/old).unlink(missing_ok=True)
+                elif media_action=='add_gallery':
+                    order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 n FROM business_media WHERE business_id=? AND media_kind='gallery'",(bid,)).fetchone()['n']
+                    conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,sort_order,crop_data,created_at) VALUES(?,?,?,?,?,?)',(bid,'gallery',stored,order,_crop_payload(request.form),now()))
+                    conn.execute('UPDATE businesses SET gallery_enabled=1,updated_at=? WHERE id=?',(now(),bid))
+                else:
+                    count=conn.execute("SELECT COUNT(*) n FROM business_media WHERE business_id=? AND media_kind='video'",(bid,)).fetchone()['n']
+                    if count>=3:
+                        conn.close(); (UPLOAD_DIR/stored).unlink(missing_ok=True); flash('You already have 3 business videos. Remove one before adding another.','error'); return redirect(url_for('business_builder',step=5))
+                    duration=_video_duration_seconds(UPLOAD_DIR/stored)
+                    if duration is None:
+                        conn.close(); (UPLOAD_DIR/stored).unlink(missing_ok=True); flash('We could not verify this video. Please upload MP4, MOV, WEBM or M4V up to 3 minutes.','error'); return redirect(url_for('business_builder',step=5))
+                    if duration>180:
+                        conn.close(); (UPLOAD_DIR/stored).unlink(missing_ok=True); flash('This video is longer than 3 minutes and was not saved.','error'); return redirect(url_for('business_builder',step=5))
+                    order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 n FROM business_media WHERE business_id=? AND media_kind='video'",(bid,)).fetchone()['n']
+                    conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,title,description,sort_order,created_at) VALUES(?,?,?,?,?,?,?)',(bid,'video',stored,request.form.get('title','').strip(),request.form.get('description','').strip(),order,now()))
+                conn.commit(); conn.close(); flash('Upload complete ✓','success'); return redirect(url_for('business_builder',step=5))
+            logo=_store_business_upload(request.files.get('logo'),bid,'logo',BUSINESS_IMAGE_EXT)
             cover_file=request.files.get('cover'); cover=''; cover_type=''
             if cover_file and cover_file.filename:
                 ext=Path(secure_filename(cover_file.filename)).suffix.lower(); cover=_store_business_upload(cover_file,bid,'cover',BUSINESS_IMAGE_EXT|BUSINESS_VIDEO_EXT); cover_type='video' if ext in BUSINESS_VIDEO_EXT else 'image'
@@ -7505,22 +7646,82 @@ def business_builder(step):
                 conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,contact_email=?,contact_phone=?,retreat_service_area=?,retreat_delivery_mode=?,retreat_travel_radius=?,retreat_price_range=?,retreat_group_size=?,retreat_availability=?,retreat_accessibility=?,retreat_booking_requirements=?,retreat_participating=?,active=1,updated_at=? WHERE id=?''',(*vals,retreat,now(),existing['id'])); bid=existing['id']
             else:
                 cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,contact_email,contact_phone,retreat_service_area,retreat_delivery_mode,retreat_travel_radius,retreat_price_range,retreat_group_size,retreat_availability,retreat_accessibility,retreat_booking_requirements,retreat_participating,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,retreat,now(),now())); bid=cur.lastrowid
+            conn.execute('UPDATE businesses SET enabled_modules=?,section_order=?,updated_at=? WHERE id=?',(draft.get('enabled_modules','home,about,contact,booking'),draft.get('section_order',''),now(),bid))
             conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your FREE Hosted Business App is published.','success'); return redirect(url_for('business_app',business_id=bid))
         if step<9: return redirect(url_for('business_builder',step=step+1))
-    titles={1:'Identity',2:'About',3:'What Do You Offer?',4:'App Features',5:'Branding & Media',6:'Business Links & Contact',7:'Preview',8:'Edit',9:'Publish My App'}
+    titles={1:'Identity',2:'About',3:'What Do You Offer?',4:'App Features',5:'Branding & Media',6:'Business Links & Contact',7:'Preview Your App',8:'Final Review & Edit',9:'Publish My App'}
     def val(k): return draft.get(k,'') or ''
-    if step==1: form=f'''<label><b>Business Name</b></label><input class="input" name="name" value="{val('name')}" required><label><b>Business Title / Category</b></label><input class="input" name="owner_title" value="{val('owner_title')}" placeholder="Yoga Studio • Content Creator • Wellness Provider"><label><b>Business Type</b></label><input class="input" name="category" value="{val('category')}"><label><b>Location / Service Area</b></label><input class="input" name="location" value="{val('location')}">'''
+    if step==1: form=f'''{('<div class="notice"><b>We found information from your Business Plan.</b> Matching fields are filled in below. Review and edit everything before it is used publicly.</div>' if val('_plan_prefill_available') else '')}<label><b>Business Name</b></label><input class="input" name="name" value="{val('name')}" required><label><b>Business Title / Category</b></label><input class="input" name="owner_title" value="{val('owner_title')}" placeholder="Yoga Studio • Content Creator • Wellness Provider"><label><b>Business Type</b></label><input class="input" name="category" value="{val('category')}"><label><b>Location / Service Area</b></label><input class="input" name="location" value="{val('location')}">'''
     elif step==2: form=f'''<label><b>Business Description</b></label><textarea class="input" name="description">{val('description')}</textarea><label><b>Business Story</b></label><textarea class="input" name="story">{val('story')}</textarea><label><b>Tagline</b></label><input class="input" name="tagline" value="{val('tagline')}">'''
     elif step==3: form=f'''<label><b>What does your business offer?</b></label><textarea class="input" name="offers" placeholder="Services, products, classes, courses, events, Retreats, content, memberships, consultations">{val('offers')}</textarea>'''
     elif step==4: form=f'''<label><b>Which app features do you need?</b></label><textarea class="input" name="features" placeholder="Booking, Classes, Programs, Courses, Shop, Videos, Events, Retreats, Media Kit, Gallery, Affiliate Links">{val('features')}</textarea><div class="fact"><label><input type="checkbox" name="retreat_participating" {'checked' if val('retreat_participating') else ''}> <b>Allow my services to be recommended in Seasons Within Retreats.</b></label><p class="muted small">Only published, active, opted-in Hosted Business Apps can be matched into Retreat provider choices.</p></div><h3>Retreat Provider Details</h3><p class="muted small">Complete these only if you want your services considered for Retreat inquiries. These details help the platform match real providers without inventing availability, pricing or service conditions.</p><label><b>Service Area</b></label><input class="input" name="retreat_service_area" value="{val('retreat_service_area')}" placeholder="Detroit area, Southeast Michigan, virtual nationwide..."><label><b>Virtual / In-Person</b></label><select class="input" name="retreat_delivery_mode"><option value="">Choose</option>{''.join(f'<option value="{x}" {"selected" if val("retreat_delivery_mode")==x else ""}>{x}</option>' for x in ['In-person','Virtual','Both'])}</select><label><b>Travel Radius</b></label><input class="input" name="retreat_travel_radius" value="{val('retreat_travel_radius')}" placeholder="25 miles, 90 minutes, statewide..."><label><b>Typical Retreat Price / Range</b></label><input class="input" name="retreat_price_range" value="{val('retreat_price_range')}" placeholder="$150 session, $300–$500 group experience..."><label><b>Group Size Limits</b></label><input class="input" name="retreat_group_size" value="{val('retreat_group_size')}" placeholder="1–8 guests, up to 20 guests..."><label><b>Retreat Availability</b></label><textarea class="input" name="retreat_availability" placeholder="Weekends, advance notice, unavailable dates, seasonal limits...">{val('retreat_availability')}</textarea><label><b>Accessibility Information</b></label><textarea class="input" name="retreat_accessibility" placeholder="Mobility access, sensory considerations, virtual alternatives...">{val('retreat_accessibility')}</textarea><label><b>Booking Requirements</b></label><textarea class="input" name="retreat_booking_requirements" placeholder="Deposit, minimum notice, intake form, equipment needs...">{val('retreat_booking_requirements')}</textarea>'''
-    elif step==5: form='''<p class="muted">Your logo becomes the Hosted App profile image and listing image. Your cover photo/video becomes the top hero of the Hosted App. You may create a photo gallery and upload up to 3 videos, 3 minutes each.</p><label><b>Business Logo</b></label><input class="input" type="file" name="logo" accept="image/*"><label><b>Cover Photo or Cover Video</b></label><input class="input" type="file" name="cover" accept="image/*,video/*"><label><input type="checkbox" name="gallery_enabled" checked> <b>Show Business Photo Gallery</b></label><label><b>Business Photo Gallery</b></label><input class="input" type="file" name="gallery" accept="image/*" multiple><h3>Business Videos — maximum 3, maximum 3 minutes each</h3><input class="input" type="file" name="business_videos" accept="video/*" multiple><div class="grid"><input class="input" name="video_title_1" placeholder="Video 1 title"><input class="input" name="video_description_1" placeholder="Video 1 short description"><input class="input" name="video_title_2" placeholder="Video 2 title"><input class="input" name="video_description_2" placeholder="Video 2 short description"><input class="input" name="video_title_3" placeholder="Video 3 title"><input class="input" name="video_description_3" placeholder="Video 3 short description"></div>'''
+    elif step==5: form=_hosted_media_builder_html(existing_business)
     elif step==6: form=f'''<p class="muted">These become real links and contact information inside the Hosted App.</p><label><b>Business Contact Email</b></label><input class="input" type="email" name="contact_email" value="{val('contact_email')}"><label><b>Business Contact Phone</b></label><input class="input" name="contact_phone" value="{val('contact_phone')}"><label><b>Website</b></label><input class="input" type="url" name="website" value="{val('website')}"><label><b>Instagram</b></label><input class="input" type="url" name="instagram" value="{val('instagram')}"><label><b>TikTok</b></label><input class="input" type="url" name="tiktok" value="{val('tiktok')}"><label><b>YouTube</b></label><input class="input" type="url" name="youtube" value="{val('youtube')}"><label><b>Facebook</b></label><input class="input" type="url" name="facebook" value="{val('facebook')}"><label><b>External Booking Link (optional)</b></label><input class="input" type="url" name="booking_url" value="{val('booking_url')}"><label><b>Store</b></label><input class="input" type="url" name="store_url" value="{val('store_url')}"><label><b>Podcast</b></label><input class="input" type="url" name="podcast_url" value="{val('podcast_url')}"><label><b>Affiliate / Resource Links</b></label><textarea class="input" name="affiliate_links">{val('affiliate_links')}</textarea>'''
-    elif step in (7,8): form=f'''<div class="fact"><small>Business</small><b>{val('name') or 'Your Business'}</b></div><div class="fact"><small>Category / Title</small><b>{val('owner_title') or val('category')}</b></div><div class="fact"><small>Tagline</small><b>{val('tagline')}</b></div><p class="muted">Preview shows the information that will feed Home, Business Network, and your Hosted App. Step 8 lets you go back and edit any step before publishing.</p>'''
-    else: form=f'''<h2>Ready to Publish?</h2><p class="muted">Publishing activates <b>{val('name') or 'your business'}</b> on Home and Business Network.</p>'''
+    elif step==7:
+        conn=db()
+        media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(existing_business['id'],)).fetchall() if existing_business else []
+        events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(existing_business['id'],)).fetchall() if existing_business else []
+        conn.close()
+        form=f'''<p class="muted">This mobile-width preview uses the same components as the published app.</p><div class="hosted-preview">{_hosted_app_render(existing_business,media,events,owner=True,preview=True,draft=draft)}</div>'''
+    elif step==8:
+        enabled=set((val('enabled_modules') or 'home,about,contact,booking').split(','))
+        current_order=[x for x in (val('section_order') or ','.join(k for k,_ in HOSTED_APP_MODULES)).split(',') if x]
+        labels=dict(HOSTED_APP_MODULES)
+        rows=''.join(f'''<div class="hosted-section-control" data-key="{key}"><label><input type="checkbox" name="module_{key}" {'checked' if key in enabled else ''}> <b>{labels[key]}</b></label><span><button class="out move-up" type="button">Up</button> <button class="out move-down" type="button">Down</button></span></div>''' for key in current_order if key in labels)
+        form=f'''<p class="muted">Show, hide and reorder the sections of your app. Return to the matching builder step when content needs editing.</p><input type="hidden" id="section-order" name="section_order" value="{','.join(current_order)}"><div id="section-controls">{rows}</div><div class="actions"><a class="out" href="{url_for('business_builder',step=1)}">Edit Identity</a><a class="out" href="{url_for('business_builder',step=2)}">Edit About</a><a class="out" href="{url_for('business_builder',step=3)}">Edit Services</a><a class="out" href="{url_for('business_builder',step=5)}">Edit Media</a><a class="out" href="{url_for('business_builder',step=6)}">Edit Contact</a></div><script>(function(){{var box=document.getElementById('section-controls'),out=document.getElementById('section-order');function sync(){{out.value=[].map.call(box.children,function(x){{return x.dataset.key}}).join(',')}}box.addEventListener('click',function(e){{var row=e.target.closest('.hosted-section-control');if(!row)return;if(e.target.classList.contains('move-up')&&row.previousElementSibling)box.insertBefore(row,row.previousElementSibling);if(e.target.classList.contains('move-down')&&row.nextElementSibling)box.insertBefore(row.nextElementSibling,row);sync()}})}})();</script>'''
+    else: form=f'''<h2>Ready to Publish?</h2><div class="fact">✓ Business information</div><div class="fact">✓ Branding</div><div class="fact">✓ Contact information</div><div class="fact">✓ App sections</div><div class="fact">✓ Mobile preview</div><p class="muted">Publishing activates <b>{val('name') or 'your business'}</b>. You can edit it after publication.</p><a class="out" href="{url_for('business_builder',step=7)}">Preview Again</a>'''
     enctype=' enctype="multipart/form-data"' if step==5 else ''
     back=f'<a class="out" href="{url_for("business_builder",step=step-1)}">Back</a>' if step>1 else ''
     button='Publish My App' if step==9 else 'Save & Continue'
-    return page('Hosted App Builder',f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER • STEP {step} OF 9</span><h1>{titles[step]}</h1><div class="meter"><i style="width:{step/9*100}%"></i></div></div><form class="card" method="post"{enctype}>{form}<div class="actions">{back}<button class="btn">{button}</button></div></form>''','business')
+    hero=f'''<div class="hero"><span class="badge">FREE HOSTED APP BUILDER • STEP {step} OF 9</span><h1>{titles[step]}</h1><div class="meter"><i style="width:{step/9*100}%"></i></div></div>'''
+    if step==5:
+        return page('Hosted App Builder',f'''{hero}<div class="card">{form}</div><form class="card" method="post"><input type="hidden" name="media_action" value="continue"><div class="actions">{back}<button class="btn">Save & Continue</button></div></form>''','business')
+    return page('Hosted App Builder',f'''{hero}<form class="card" method="post"{enctype}>{form}<div class="actions">{back}<button class="btn">{button}</button></div></form>''','business')
+
+@app.route('/business/builder/media/<int:media_id>',methods=['POST'])
+@login_required
+def business_builder_media(media_id):
+    u=current_user(); action=request.form.get('action','update'); conn=db()
+    row=conn.execute('''SELECT m.* FROM business_media m JOIN businesses b ON b.id=m.business_id WHERE m.id=? AND b.owner_id=?''',(media_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    if action=='remove':
+        conn.execute('DELETE FROM business_media WHERE id=?',(media_id,)); (UPLOAD_DIR/row['file_name']).unlink(missing_ok=True)
+    elif action=='replace':
+        allowed=BUSINESS_VIDEO_EXT if row['media_kind']=='video' else BUSINESS_IMAGE_EXT
+        stored=_store_business_upload(request.files.get('replacement'),row['business_id'],'replacement',allowed)
+        if not stored:
+            conn.close(); flash('Choose a supported replacement file and try again.','error'); return redirect(url_for('business_builder',step=5))
+        if row['media_kind']=='video':
+            duration=_video_duration_seconds(UPLOAD_DIR/stored)
+            if duration is None or duration>180:
+                conn.close(); (UPLOAD_DIR/stored).unlink(missing_ok=True); flash('Replacement videos must be verifiable and no longer than 3 minutes.','error'); return redirect(url_for('business_builder',step=5))
+        conn.execute('UPDATE business_media SET file_name=?,title=?,description=?,crop_data=? WHERE id=?',(stored,request.form.get('title','').strip(),request.form.get('description','').strip(),_crop_payload(request.form),media_id))
+        (UPLOAD_DIR/row['file_name']).unlink(missing_ok=True)
+    elif action in {'up','down'}:
+        direction='<' if action=='up' else '>'; ordering='DESC' if action=='up' else 'ASC'
+        other=conn.execute(f'''SELECT * FROM business_media WHERE business_id=? AND media_kind=? AND sort_order {direction} ? ORDER BY sort_order {ordering},id {ordering} LIMIT 1''',(row['business_id'],row['media_kind'],row['sort_order'])).fetchone()
+        if other:
+            conn.execute('UPDATE business_media SET sort_order=? WHERE id=?',(other['sort_order'],row['id']))
+            conn.execute('UPDATE business_media SET sort_order=? WHERE id=?',(row['sort_order'],other['id']))
+    else:
+        conn.execute('UPDATE business_media SET title=?,description=?,crop_data=? WHERE id=?',(request.form.get('title','').strip(),request.form.get('description','').strip(),_crop_payload(request.form),media_id))
+    conn.commit(); conn.close(); flash('Media updated.','success'); return redirect(url_for('business_builder',step=5))
+
+@app.route('/business/builder/core-media',methods=['POST'])
+@login_required
+def business_builder_core_media():
+    u=current_user(); kind=request.form.get('kind',''); action=request.form.get('action','update'); conn=db()
+    b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+    if not b: conn.close(); abort(404)
+    if kind not in {'logo','cover'}: conn.close(); abort(400)
+    name_field=kind+'_name'; old=b[name_field]
+    if action=='remove':
+        extra=',cover_type=\'\'' if kind=='cover' else ''
+        conn.execute(f"UPDATE businesses SET {name_field}='',{kind}_crop='{{}}'{extra},updated_at=? WHERE id=?",(now(),b['id']))
+        if old: (UPLOAD_DIR/old).unlink(missing_ok=True)
+    else:
+        conn.execute(f'UPDATE businesses SET {kind}_crop=?,updated_at=? WHERE id=?',(_crop_payload(request.form),now(),b['id']))
+    conn.commit(); conn.close(); flash('Media updated.','success'); return redirect(url_for('business_builder',step=5))
 
 def _business_month_shift(year, month, delta):
     total=year*12+(month-1)+delta
@@ -7546,12 +7747,12 @@ def business_calendar_grid(events, business_id, selected_date='', month_value=''
     else:
         prev_link=url_for('business_app',business_id=business_id,month=f'{prev_y:04d}-{prev_m:02d}')+'#book'
         next_link=url_for('business_app',business_id=business_id,month=f'{next_y:04d}-{next_m:02d}')+'#book'
-    headers=''.join(f'<div style="font-weight:800;text-align:center;padding:8px">{d}</div>' for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])
+    headers=''.join(f'<div class="calendar-label" style="font-weight:800;padding:8px">{d}</div>' for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])
     cells=[]
     for week in pycalendar.Calendar(firstweekday=6).monthdayscalendar(year,month):
         for day in week:
             if not day:
-                cells.append('<div style="min-height:105px;border:1px solid var(--line);background:#faf7fc;border-radius:12px"></div>')
+                cells.append('<div class="calendar-cell" style="background:#faf7fc"></div>')
                 continue
             ds=f'{year:04d}-{month:02d}-{day:02d}'; rows=by_date.get(ds,[])
             open_rows=[e for e in rows if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
@@ -7568,9 +7769,68 @@ def business_calendar_grid(events, business_id, selected_date='', month_value=''
             if blocked: badges.append('<span class="badge" style="margin-top:5px;background:#f8e9ef">busy</span>')
             inner=f'<b>{day}</b><div>{"".join(badges)}</div>'
             tag=f'<a href="{href}" style="display:block;color:inherit;height:100%">{inner}</a>' if href else inner
-            cells.append(f'<div style="min-height:105px;border:1px solid var(--line);background:white;border-radius:12px;padding:8px;{selected}">{tag}</div>')
+            cells.append(f'<div class="calendar-cell" style="{selected}">{tag}</div>')
     title=datetime(year,month,1).strftime('%B %Y')
-    return f'''<div class="card"><div class="topspace" style="margin-top:0"><a class="out" href="{prev_link}">‹ Previous</a><h2>{title}</h2><a class="out" href="{next_link}">Next ›</a></div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">{headers}{''.join(cells)}</div><p class="muted small">Open dates can be selected. Busy/blocked time is shown so the same calendar can protect classes, appointments, events and Retreats from collisions.</p></div>'''
+    return f'''<div class="card calendar-card"><div class="calendar-head"><a class="out" href="{prev_link}">‹ Previous</a><h2>{title}</h2><a class="out" href="{next_link}">Next ›</a></div><div class="calendar-grid">{headers}{''.join(cells)}</div><p class="muted small">Open dates can be selected. Busy/blocked time is shown so the same calendar can protect classes, appointments, events and Retreats from collisions.</p></div>'''
+
+def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
+    draft=draft or {}
+    def get(key,default=''):
+        if key in draft and draft.get(key) not in (None,''): return draft.get(key)
+        try: return b[key] if key in b.keys() and b[key] is not None else default
+        except Exception: return default
+    business_id=get('id',0); name=html.escape(str(get('name','Your Business'))); logo_name=get('logo_name',''); cover_name=get('cover_name','')
+    logo_html=(f'<img src="{business_media_src(logo_name)}" alt="{name} logo" style="{_crop_css(get("logo_crop","{}"))}">' if logo_name else '<div class="branded-placeholder">LOGO</div>')
+    if cover_name:
+        src=business_media_src(cover_name)
+        cover_html=(f'<video controls playsinline src="{src}"></video>' if get('cover_type')=='video' else f'<img src="{src}" alt="{name} cover" style="{_crop_css(get("cover_crop","{}"))}">')
+    else: cover_html='<div class="branded-placeholder">The Seasons Within • Business Cover</div>'
+    galleries=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
+    enabled=set((draft.get('enabled_modules') or get('enabled_modules','home,about,contact,booking')).split(','))
+    draft_order=[x.strip() for x in (draft.get('section_order') or '').split(',') if x.strip()]
+    order=(draft_order+[x for x in _module_order(b) if x not in draft_order]) if draft_order else _module_order(b)
+    external=[]
+    for label,key in [('Website','website'),('Instagram','instagram'),('TikTok','tiktok'),('YouTube','youtube'),('Facebook','facebook'),('Store','store_url'),('Podcast','podcast_url')]:
+        if get(key): external.append(f'<a class="out" href="{html.escape(str(get(key)))}" target="_blank" rel="noopener">{label}</a>')
+    ext_html='<div class="actions">'+''.join(external)+'</div>' if external else ''
+    edit=lambda step: (f'<a class="out" href="{url_for("business_builder",step=step)}">Edit</a>' if owner else '')
+    sections={}
+    description=html.escape(str(get('description',''))); story=html.escape(str(get('story',''))); offers=html.escape(str(get('offers','')))
+    sections['home']=f'''<section id="home"><div class="crop-stage cover-crop">{cover_html}</div><article class="card"><div class="splitlabel"><span class="badge">HOME</span>{edit(1)}</div><div class="profilehero"><div><h1>{name}</h1><h3>{html.escape(str(get('owner_title') or get('category')))}</h3><p class="muted">{html.escape(str(get('location')))} • {html.escape(str(get('tagline')))}</p></div><div class="crop-stage logo-crop" style="width:110px;margin:0">{logo_html}</div></div>{ext_html}</article></section>'''
+    if description or story:
+        sections['about']=f'''<section id="about"><article class="card"><div class="splitlabel"><span class="badge">ABOUT</span>{edit(2)}</div><h2>About {name}</h2>{f'<p>{description}</p>' if description else ''}{f'<h3>Our Story</h3><p>{story}</p>' if story else ''}</article></section>'''
+    if offers: sections['services']=f'''<section id="services"><article class="card"><div class="splitlabel"><span class="badge">SERVICES</span>{edit(3)}</div><h2>What We Offer</h2><p>{offers}</p></article></section>'''
+    grouped={'classes':[],'courses':[],'events':[],'retreats':[]}
+    for e in events:
+        typ=(e['event_type'] or '').lower()
+        if typ in {'class','program'}: grouped['classes'].append(e)
+        elif typ=='course': grouped['courses'].append(e)
+        elif typ=='retreat': grouped['retreats'].append(e)
+        elif typ not in {'blocked / unavailable','availability','appointment'}: grouped['events'].append(e)
+    for key,title in [('classes','Classes'),('courses','Courses'),('events','Events'),('retreats','Retreats')]:
+        rows=grouped[key]
+        if rows:
+            cards=''.join(f'<article class="card"><h3>{html.escape(e["title"])}</h3><p>{e["event_date"]} • {e["start_time"]}–{e["end_time"]}</p></article>' for e in rows[:8])
+            sections[key]=f'<section id="{key}"><div class="splitlabel"><h2>{title}</h2>{edit(4)}</div><div class="grid">{cards}</div></section>'
+    if videos:
+        cards=''.join(f'''<article class="card"><video controls playsinline src="{business_media_src(m['file_name'])}"></video><h3>{html.escape(m['title'] or 'Business Video')}</h3>{f'<p>{html.escape(m["description"])}</p>' if m['description'] else ''}</article>''' for m in videos)
+        sections['videos']=f'<section id="videos"><div class="splitlabel"><h2>Videos</h2>{edit(5)}</div><div class="grid">{cards}</div></section>'
+    if galleries and int(get('gallery_enabled',1) or 0):
+        cards=''.join(f'''<div class="crop-stage gallery-crop"><img src="{business_media_src(m['file_name'])}" alt="Business gallery photo" style="{_crop_css(m['crop_data'] if 'crop_data' in m.keys() else '{}')}"></div>''' for m in galleries)
+        sections['gallery']=f'<section id="gallery"><div class="splitlabel"><h2>Gallery</h2>{edit(5)}</div><div class="grid">{cards}</div></section>'
+    if get('contact_email') or get('contact_phone') or external:
+        sections['contact']=f'''<section id="contact"><article class="card"><div class="splitlabel"><span class="badge">CONTACT</span>{edit(6)}</div><h2>Contact {name}</h2>{f'<p><b>Email:</b> {html.escape(str(get("contact_email")))}</p>' if get('contact_email') else ''}{f'<p><b>Phone:</b> {html.escape(str(get("contact_phone")))}</p>' if get('contact_phone') else ''}{ext_html}</article></section>'''
+    open_events=[e for e in events if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
+    if business_id and (open_events or get('booking_url')) and not preview:
+        month=request.args.get('month',''); selected=request.args.get('date',''); calendar_html=business_calendar_grid(events,business_id,selected,month,False)
+        slots=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{html.escape(e['title'])}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><a class="btn" href="{url_for('business_book',business_id=business_id,calendar_id=e['id'])}">Book / Request</a></article>''' for e in open_events[:8])
+        sections['booking']=f'''<section id="booking"><div class="splitlabel"><h2>Booking</h2>{edit(4)}</div>{calendar_html}{f'<div class="grid">{slots}</div>' if slots else ''}</section>'''
+    elif 'booking' in enabled:
+        sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Booking</h2><p class="muted">Booking will display here when availability or a booking link is added.</p></article></section>'''
+    if get('affiliate_links'): sections['affiliate']=f'''<section id="affiliate"><article class="card"><div class="splitlabel"><span class="badge">AFFILIATE LINKS</span>{edit(6)}</div><p>{html.escape(str(get('affiliate_links')))}</p></article></section>'''
+    visible=[key for key in order if key in enabled and key in sections]
+    nav=''.join(f'<a class="chip" href="#{key}">{dict(HOSTED_APP_MODULES).get(key,key.title())}</a>' for key in visible)
+    return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
 
 @app.route('/business/app/<int:business_id>')
 def business_app(business_id):
@@ -7578,6 +7838,9 @@ def business_app(business_id):
     if not b: conn.close(); abort(404)
     media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(business_id,)).fetchall()
     events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(business_id,)).fetchall(); conn.close()
+    viewer=current_user(); owner=bool(viewer and viewer['id']==b['owner_id'])
+    owner_bar=(f'''<div class="actions"><a class="btn" href="{url_for('business_builder',step=7)}">Preview / Edit My App</a><a class="out" href="{url_for('business_dashboard')}">Business Dashboard</a></div>''' if owner else '')
+    return page(b['name'],f'''<div class="hero paid"><span class="badge gold">★ HOSTED BUSINESS APP</span><h1>{html.escape(b['name'])}</h1><p class="muted">{html.escape(b['category'] or b['owner_title'] or '')} • {html.escape(b['location'] or '')}</p>{owner_bar}</div>{_hosted_app_render(b,media,events,owner=owner)}''','business')
     logo=business_media_src(b['logo_name'])
     if b['cover_name']:
         src=business_media_src(b['cover_name']); cover_html=f'<video controls playsinline style="width:100%;height:100%;object-fit:cover" src="{src}"></video>' if b['cover_type']=='video' else f'<img src="{src}" alt="{b["name"]} cover" style="width:100%;height:100%;object-fit:cover">'
@@ -7810,7 +8073,11 @@ def google_calendar_connect():
 @login_required
 @business_development_required
 def startup():
-    u=current_user(); conn=db(); saved=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); conn.close(); data=json.loads(saved['payload']) if saved else {}
+    u=current_user(); conn=db(); saved=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); hosted=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close(); data=json.loads(saved['payload']) if saved else {}
+    hosted_prefill=False
+    if not saved and hosted:
+        data={'name':u['name'],'email':u['email'],'business_name':hosted['name'] or '','industry':hosted['category'] or hosted['owner_title'] or '','mission':'','vision':'','usp':hosted['tagline'] or '','additional_info':hosted['description'] or '','revenue_sources':hosted['offers'] or ''}
+        hosted_prefill=True
     if request.method=='POST':
         fields=['name','email','phone','preferred_contact','business_name','business_type','industry','business_stage','mission','vision','core_values','usp','short_goals','long_goals','challenges','plan_goal','financial_records','budget','revenue_sources','financial_help','target_audience','marketing_strategy','marketing_help','certification_need','certifications','grant_interest','funding_type','additional_info','heard_about']
         payload={k:request.form.get(k,'').strip() for k in fields}; action=request.form.get('action','save')
@@ -7819,7 +8086,7 @@ def startup():
         flash('Business Plan questionnaire saved. You can return and continue later.','success'); return redirect(url_for('startup'))
     def v(k): return html.escape(str(data.get(k,'') or ''),quote=True)
     def helpbox(desc,example): return f'<p class="muted small"><b>What this means:</b> {desc}<br><b>Example:</b> {example}</p>'
-    form=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Build Your Professional Business Plan</h1><p class="muted">Answer in your own words. You do not need formal business language. Each section explains what it means and gives an example. Your answers—not the examples—will be used to generate your professional 10–15 page Business Plan, Marketing Strategy and 90-Day Launch Plan.</p></div><form class="card" method="post">
+    form=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Build Your Professional Business Plan</h1><p class="muted">Answer in your own words. You do not need formal business language. Each section explains what it means and gives an example. Your answers—not the examples—will be used to generate your professional 10–15 page Business Plan, Marketing Strategy and 90-Day Launch Plan.</p></div>{('<div class="notice"><b>We already know some information from your Hosted App.</b> Matching fields are filled in below. Please review and edit them before continuing. Missing answers were not fabricated.</div>' if hosted_prefill else '')}<form class="card" method="post">
     <h2>Contact & Business Overview</h2><label><b>Name</b></label><input class="input" name="name" value="{v('name')}"><label><b>Email</b></label><input class="input" type="email" name="email" value="{v('email')}"><label><b>Phone</b></label><input class="input" name="phone" value="{v('phone')}"><label><b>Preferred Method of Contact</b></label><input class="input" name="preferred_contact" value="{v('preferred_contact')}" placeholder="Email, Phone, Other"><label><b>Business Name (if registered)</b></label><input class="input" name="business_name" value="{v('business_name')}"><label><b>Type of Business</b></label><input class="input" name="business_type" value="{v('business_type')}" placeholder="LLC, Corporation, Nonprofit, Sole Proprietor, Partnership, Other"><label><b>Industry / Sector</b></label>{helpbox('The field your business operates in.','Wellness, beauty, food service, education, consulting, retail, technology.') }<input class="input" name="industry" value="{v('industry')}"><label><b>Business Stage</b></label><select class="input" name="business_stage"><option>{v('business_stage') or 'Idea Stage'}</option><option>Idea Stage</option><option>Startup (&lt;1 year)</option><option>Growing (1–3 years)</option><option>Established (3+ years)</option></select>
     <h2>Mission, Vision & Position</h2><label><b>Mission Statement</b></label>{helpbox('What is the purpose of your business, why does it exist, who does it serve and how?','Our mission is to provide accessible seasonal wellness experiences that help adults reconnect with rest, nature and intentional living.') }<textarea class="input" name="mission">{v('mission')}</textarea><label><b>Vision Statement</b></label>{helpbox('What do you want the business to become or accomplish in the next 3–5 years?','Our vision is to become a trusted Michigan wellness destination serving thousands of guests through classes, private retreats and community experiences.') }<textarea class="input" name="vision">{v('vision')}</textarea><label><b>Core Values</b></label>{helpbox('The principles that guide your decisions and customer experience.','Integrity, community, sustainability, safety and personalized care.') }<textarea class="input" name="core_values">{v('core_values')}</textarea><label><b>Unique Selling Proposition (USP)</b></label>{helpbox('What makes your business different and why a customer should choose you.','Unlike large wellness centers, our experiences are small, seasonal and personally coordinated around each guest.') }<textarea class="input" name="usp">{v('usp')}</textarea>
     <h2>Goals & Needs</h2><label><b>Short-term business goals (6–12 months)</b></label>{helpbox('The specific results you want in the next year.','Publish the Hosted App, reach 100 paying customers, launch monthly classes and book 10 private retreats.') }<textarea class="input" name="short_goals">{v('short_goals')}</textarea><label><b>Long-term business goals (2–5 years)</b></label>{helpbox('How you want the business to grow over several years.','Expand to a second location, hire a small team and develop recurring membership revenue.') }<textarea class="input" name="long_goals">{v('long_goals')}</textarea><label><b>Biggest challenges or obstacles right now</b></label>{helpbox('Anything making growth difficult today.','Limited marketing budget, inconsistent bookings and not enough time to manage scheduling and promotion.') }<textarea class="input" name="challenges">{v('challenges')}</textarea><label><b>What do you hope to gain from a completed business plan?</b></label><input class="input" name="plan_goal" value="{v('plan_goal')}" placeholder="Funding, Expansion, Certification, Internal Strategy, Other">
