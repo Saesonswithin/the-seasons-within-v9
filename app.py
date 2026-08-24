@@ -30,6 +30,7 @@ import math
 import hashlib
 import difflib
 import io
+import struct
 from collections import Counter
 
 app = Flask(__name__)
@@ -110,7 +111,7 @@ PG_ID_TABLES = {
     'business_certifications','funding_searches','saved_funding_opportunities','business_proposals',
     'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
     'password_reset_tokens','email_verification_tokens','trusted_devices','security_events',
-    'astrology_reflections','compatibility_reports','coordination_video_requests',
+    'astrology_reflections','compatibility_reports','coordination_video_requests','coordination_video_invitations',
     'natal_charts','planet_positions','natal_aspects','lunar_cycles','member_lunar_cycles',
     'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
@@ -1246,6 +1247,30 @@ def init_astrology_tables():
         created_at TEXT NOT NULL,
         responded_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS coordination_video_invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        video_name TEXT NOT NULL,
+        video_mime TEXT NOT NULL,
+        duration_seconds INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        accepted_at TEXT,
+        declined_at TEXT,
+        viewed_at TEXT,
+        FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS member_blocks (
+        blocker_id INTEGER NOT NULL,
+        blocked_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(blocker_id,blocked_user_id),
+        FOREIGN KEY(blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS natal_charts (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE, payload TEXT NOT NULL, updated_at TEXT NOT NULL
     );
@@ -1335,6 +1360,10 @@ def _persist_uploaded_file(file_name, user_id, content_type='application/octet-s
         conn.close()
 
 def _send_persistent_upload(file_name):
+    # Consent-gated Conscious Coordination videos are served only by their
+    # authenticated invitation route, never by a general upload URL.
+    if str(file_name).startswith('ccvideo_'):
+        abort(404)
     path=UPLOAD_DIR/file_name
     if path.exists():
         return send_from_directory(UPLOAD_DIR,file_name)
@@ -1429,10 +1458,33 @@ def _store_business_upload(file_storage, business_id, kind, allowed_exts):
 def _video_duration_seconds(path):
     ffprobe=shutil.which('ffprobe')
     if not ffprobe:
-        return None
+        return _mp4_duration_seconds(path)
     try:
         result=subprocess.run([ffprobe,'-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],capture_output=True,text=True,timeout=20)
         return float(result.stdout.strip()) if result.returncode==0 and result.stdout.strip() else None
+    except Exception:
+        return _mp4_duration_seconds(path)
+
+def _mp4_duration_seconds(path):
+    """Read an MP4/MOV mvhd duration when ffprobe is unavailable."""
+    try:
+        data=Path(path).read_bytes()
+        start=0
+        while True:
+            marker=data.find(b'mvhd',start)
+            if marker<0:
+                return None
+            version=data[marker+4]
+            if version==0 and marker+24<=len(data):
+                timescale=struct.unpack('>I',data[marker+16:marker+20])[0]
+                duration=struct.unpack('>I',data[marker+20:marker+24])[0]
+            elif version==1 and marker+36<=len(data):
+                timescale=struct.unpack('>I',data[marker+24:marker+28])[0]
+                duration=struct.unpack('>Q',data[marker+28:marker+36])[0]
+            else:
+                start=marker+4
+                continue
+            return (duration/timescale) if timescale else None
     except Exception:
         return None
 
@@ -5967,7 +6019,7 @@ def journal_entry_delete(entry_id):
 @app.route('/inbox')
 @login_required
 def inbox():
-    u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int)
+    u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int); video_focus=request.args.get('video_invitation',type=int)
     conn=db()
     unread=conn.execute('SELECT COUNT(*) n FROM messages WHERE recipient_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']
     msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
@@ -5982,10 +6034,34 @@ def inbox():
         open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         coordination_profile_action=f'<a class="out" href="{url_for("connection_profile",user_id=m["sender_id"])}">View Coordination Profile</a>' if m['category']=='Conscious Coordination' and m['sender_id']!=u['id'] else ''
         cards.append(f'<article class="card"{anchor}{highlight}>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p><div class="actions">{open_action}{coordination_profile_action}{reply}</div></article>')
-    html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
+    invitation_cards=[]
+    if category in {'All','Conscious Coordination'}:
+        conn=db()
+        invitations=conn.execute('''SELECT v.*,s.name sender_name,r.name recipient_name
+            FROM coordination_video_invitations v
+            JOIN users s ON s.id=v.sender_id JOIN users r ON r.id=v.recipient_id
+            WHERE v.sender_id=? OR v.recipient_id=? ORDER BY v.id DESC''',(u['id'],u['id'])).fetchall()
+        conn.close()
+        for v in invitations:
+            is_recipient=(v['recipient_id']==u['id'])
+            highlight=' style="outline:3px solid #ead7ad"' if video_focus==v['id'] else ''
+            if is_recipient and v['status']=='pending':
+                actions=f'''<form method="post" action="{url_for('video_invitation_response',invitation_id=v['id'],decision='accept')}" style="display:inline"><button class="btn" type="submit">Accept &amp; View Video</button></form><form method="post" action="{url_for('video_invitation_response',invitation_id=v['id'],decision='decline')}" style="display:inline"><button class="out" type="submit">Decline</button></form><form method="post" action="{url_for('video_invitation_block',invitation_id=v['id'])}" style="display:inline"><button class="out" type="submit">Block Sender</button></form>'''
+                state='<span class="badge gold">PENDING</span>'
+            elif v['status']=='accepted':
+                actions=f'''<a class="btn" href="{url_for('video_invitation_view',invitation_id=v['id'])}">{'Open Private Video' if is_recipient else 'Review Sent Video'}</a>'''
+                state='<span class="badge">ACCEPTED</span>'
+            elif v['status']=='declined':
+                actions=''; state='<span class="badge">DECLINED</span>'
+            else:
+                actions=''; state=f'<span class="badge">{html.escape(str(v["status"]).upper())}</span>'
+            direction=(f'<b>From:</b> {html.escape(v["sender_name"])}' if is_recipient else f'<b>To:</b> {html.escape(v["recipient_name"])}')
+            invitation_cards.append(f'''<article class="card" id="video-invitation-{v['id']}"{highlight}><span class="badge heart">18+ PRIVATE VIDEO</span>{state}<h3>Video Invitation</h3><p>{direction}</p><p><b>Description:</b> {html.escape(v['description'])}</p><p><b>Length:</b> {_format_video_duration(v['duration_seconds'])}</p><p class="muted small">Private • Recipient approval required • Never autoplays</p><div class="actions">{actions}</div></article>''')
+    all_cards=invitation_cards+cards
+    html_content=''.join(all_cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{status}{filters}{html}''','more')
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{status}{filters}{html_content}''','more')
 
 @app.route('/inbox/read/<int:message_id>')
 @login_required
@@ -6724,9 +6800,161 @@ def connection_ideas(user_id):
     <article class="card"><h3>Retreat Ideas</h3><p>Choose wellness interests, social energy, pace and personal-space expectations that work for both of you.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p><a class="out" href="{url_for('retreat_builder')}">Build Retreat</a></article>
     </div>''','more')
 
+def _member_is_adult(member):
+    data=dict(member) if member else {}
+    dob=(data.get('dob') or '').strip()
+    if dob:
+        try:
+            born=datetime.strptime(dob[:10],'%Y-%m-%d').date()
+            today=datetime.now(timezone.utc).date()
+            return (today.year-born.year-((today.month,today.day)<(born.month,born.day)))>=18
+        except ValueError:
+            pass
+    try:
+        return int(data.get('age') or 0)>=18 and bool(data.get('adult_confirmed'))
+    except (TypeError,ValueError):
+        return False
+
+def _private_video_blocked(conn,sender_id,recipient_id):
+    return bool(conn.execute('''SELECT 1 FROM member_blocks
+        WHERE (blocker_id=? AND blocked_user_id=?) OR (blocker_id=? AND blocked_user_id=?)''',
+        (sender_id,recipient_id,recipient_id,sender_id)).fetchone())
+
+@app.route('/conscious-coordination/profile/<int:user_id>/video-introduction',methods=['GET','POST'])
+@login_required
+def video_introduction(user_id):
+    sender=current_user()
+    if user_id==sender['id']:
+        abort(400)
+    conn=db()
+    recipient=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
+    blocked=_private_video_blocked(conn,sender['id'],user_id) if recipient else False
+    conn.close()
+    if not recipient:
+        abort(404)
+    if not _member_is_adult(sender) or not _member_is_adult(recipient):
+        flash('Private video introductions are available only when both members are confirmed adults.','info')
+        return redirect(url_for('video',user_id=user_id))
+    if blocked:
+        flash('A private video invitation cannot be sent between blocked members.','info')
+        return redirect(url_for('video',user_id=user_id))
+    if request.method=='POST':
+        description=request.form.get('description','').strip()
+        uploaded=request.files.get('video')
+        if not description or len(description)>300:
+            flash('Add a short description of 300 characters or fewer.','info')
+        elif not uploaded or not uploaded.filename:
+            flash('Choose or record a video before sending.','info')
+        else:
+            clean=secure_filename(uploaded.filename); ext=Path(clean).suffix.lower()
+            allowed={'.mp4':'video/mp4','.mov':'video/quicktime','.m4v':'video/x-m4v'}
+            if ext not in allowed:
+                flash('Please use an MP4, MOV, or M4V video.','info')
+            else:
+                stamp=datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+                stored=f'ccvideo_{sender["id"]}_{user_id}_{stamp}{ext}'
+                path=UPLOAD_DIR/stored
+                uploaded.save(path)
+                size=path.stat().st_size
+                duration=_video_duration_seconds(path)
+                if size>150*1024*1024:
+                    path.unlink(missing_ok=True)
+                    flash('That video is too large. Please choose a video under 150 MB.','info')
+                elif duration is None:
+                    path.unlink(missing_ok=True)
+                    flash('We could not verify the video length. Please export it as MP4 and try again.','info')
+                elif duration<=0 or duration>180.5:
+                    path.unlink(missing_ok=True)
+                    flash('Private video introductions can be no longer than 3 minutes.','info')
+                else:
+                    mime=uploaded.mimetype or allowed[ext]
+                    _persist_uploaded_file(stored,sender['id'],mime)
+                    conn=db()
+                    cur=conn.execute('''INSERT INTO coordination_video_invitations
+                        (sender_id,recipient_id,description,video_name,video_mime,duration_seconds,status,created_at)
+                        VALUES(?,?,?,?,?,?,?,?)''',(sender['id'],user_id,description,stored,mime,int(round(duration)),'pending',now()))
+                    invitation_id=cur.lastrowid
+                    conn.commit(); conn.close()
+                    link=url_for('inbox',category='Conscious Coordination',video_invitation=invitation_id)+f'#video-invitation-{invitation_id}'
+                    notify(user_id,'Private Video Invitation',f'{sender["name"]} sent a consent-first private video invitation. Read the description in Journal Inbox before deciding.',link)
+                    flash('Private video invitation sent. The video stays hidden unless the recipient accepts it.','success')
+                    return redirect(url_for('video',user_id=user_id))
+    return page('Private Video Invitation',f'''<div class="hero"><span class="badge heart">18+ • PRIVATE • CONSENT FIRST</span><h1>♡ Consciously Coordinating</h1><h2>Send a little piece of your personality.</h2><p class="muted">Send a private video introduction of up to 3 minutes to <b>{html.escape(recipient['name'])}</b>. They will see your name and description first. The video remains hidden until they accept.</p></div><form class="card paid" method="post" enctype="multipart/form-data"><p><b>To:</b> {html.escape(recipient['name'])}</p><label><b>Short description</b></label><textarea class="input" name="description" maxlength="300" required placeholder="What would you like them to know before deciding whether to watch?"></textarea><label><b>Record or upload video — maximum 3 minutes</b></label><input class="input" type="file" name="video" accept="video/mp4,video/quicktime,video/x-m4v" capture="user" required><p class="muted small">18+ does not mean explicit sexual content. Existing safety and content rules apply.</p><button class="btn">Send Video</button></form>''','more')
+
+@app.route('/conscious-coordination/video-invitation/<int:invitation_id>/<decision>',methods=['POST'])
+@login_required
+def video_invitation_response(invitation_id,decision):
+    if decision not in {'accept','decline'}:
+        abort(400)
+    u=current_user(); conn=db()
+    row=conn.execute('SELECT * FROM coordination_video_invitations WHERE id=? AND recipient_id=?',(invitation_id,u['id'])).fetchone()
+    if not row:
+        conn.close(); abort(404)
+    if row['status']!='pending':
+        conn.close()
+        flash('This invitation has already been answered.','info')
+        return redirect(url_for('inbox',category='Conscious Coordination'))
+    status='accepted' if decision=='accept' else 'declined'; stamp=now()
+    field='accepted_at' if status=='accepted' else 'declined_at'
+    conn.execute(f'UPDATE coordination_video_invitations SET status=?,{field}=? WHERE id=?',(status,stamp,invitation_id))
+    conn.commit(); sender_id=row['sender_id']; conn.close()
+    notify(sender_id,'Video Invitation Updated',f'Your private video invitation was {status}.','')
+    if status=='accepted':
+        return redirect(url_for('video_invitation_view',invitation_id=invitation_id))
+    flash('Video invitation declined. The video was not opened.','success')
+    return redirect(url_for('inbox',category='Conscious Coordination'))
+
+@app.route('/conscious-coordination/video-invitation/<int:invitation_id>/block',methods=['POST'])
+@login_required
+def video_invitation_block(invitation_id):
+    u=current_user(); conn=db()
+    row=conn.execute('SELECT * FROM coordination_video_invitations WHERE id=? AND recipient_id=?',(invitation_id,u['id'])).fetchone()
+    if not row:
+        conn.close(); abort(404)
+    conn.execute('INSERT OR IGNORE INTO member_blocks(blocker_id,blocked_user_id,created_at) VALUES(?,?,?)',(u['id'],row['sender_id'],now()))
+    if row['status']=='pending':
+        conn.execute('UPDATE coordination_video_invitations SET status=?,declined_at=? WHERE id=?',('declined',now(),invitation_id))
+    conn.commit(); conn.close()
+    flash('Member blocked. They cannot send you new private video invitations.','success')
+    return redirect(url_for('inbox',category='Conscious Coordination'))
+
+@app.route('/conscious-coordination/video-invitation/<int:invitation_id>')
+@login_required
+def video_invitation_view(invitation_id):
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT v.*,s.name sender_name,r.name recipient_name
+        FROM coordination_video_invitations v JOIN users s ON s.id=v.sender_id JOIN users r ON r.id=v.recipient_id
+        WHERE v.id=? AND (v.sender_id=? OR v.recipient_id=?)''',(invitation_id,u['id'],u['id'])).fetchone()
+    conn.close()
+    if not row or (row['recipient_id']==u['id'] and row['status']!='accepted'):
+        abort(404)
+    return page('Private Video Invitation',f'''<div class="hero"><span class="badge heart">18+ PRIVATE VIDEO</span><h1>Video from {html.escape(row['sender_name'])}</h1><p>{html.escape(row['description'])}</p><p class="muted">Length: {_format_video_duration(row['duration_seconds'])} • Recipient approval required</p></div><article class="card"><video controls preload="metadata" style="width:100%;max-height:70vh;border-radius:16px"><source src="{url_for('video_invitation_media',invitation_id=invitation_id)}" type="{html.escape(row['video_mime'],quote=True)}"></video><p class="muted small">This private video never autoplays.</p></article>''','more')
+
+def _format_video_duration(seconds):
+    seconds=max(0,int(seconds or 0))
+    return f'{seconds//60}:{seconds%60:02d}'
+
+@app.route('/conscious-coordination/video-invitation/<int:invitation_id>/media')
+@login_required
+def video_invitation_media(invitation_id):
+    u=current_user(); conn=db()
+    row=conn.execute('SELECT * FROM coordination_video_invitations WHERE id=?',(invitation_id,)).fetchone()
+    if not row or u['id'] not in {row['sender_id'],row['recipient_id']} or (u['id']==row['recipient_id'] and row['status']!='accepted'):
+        conn.close(); abort(404)
+    stored=conn.execute('SELECT content_type,file_data FROM stored_files WHERE file_name=?',(row['video_name'],)).fetchone()
+    if u['id']==row['recipient_id'] and not row['viewed_at']:
+        conn.execute('UPDATE coordination_video_invitations SET viewed_at=? WHERE id=?',(now(),invitation_id)); conn.commit()
+    conn.close()
+    if not stored:
+        abort(404)
+    raw=stored['file_data'].tobytes() if isinstance(stored['file_data'],memoryview) else bytes(stored['file_data'])
+    response=send_file(io.BytesIO(raw),mimetype=stored['content_type'] or row['video_mime'],download_name='private-video'+Path(row['video_name']).suffix)
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['X-Content-Type-Options']='nosniff'
+    return response
+
 @app.route('/video/<int:user_id>')
 @login_required
-
 def video(user_id):
     u=current_user(); conn=db()
     me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
@@ -6750,8 +6978,9 @@ def video(user_id):
         status=f'''<article class="card paid"><span class="badge gold">PRIVATE VIDEO</span><h2>Request a 5-Minute Private Connection</h2><p class="muted">Both members must consent. Your eligible first connection includes 5 minutes.</p><form method="post" action="{url_for('video_request',user_id=user_id)}"><button class="btn">Send Private Video Request</button></form></article>'''
     else:
         status=f'''<article class="card locked"><h2>Private Video</h2><p class="muted">Paid members can initiate a private video request. You can receive and accept a request from a paid member.</p><a class="out" href="{url_for('membership')}">View Upgrade</a></article>'''
+    intro=f'''<article class="card paid"><span class="badge heart">18+ PRIVATE VIDEO INTRODUCTION</span><h2>♡ Consciously Coordinating</h2><h3>Send a little piece of your personality.</h3><p class="muted">Share a private video introduction of up to 3 minutes with {html.escape(other['name'])}. Add a short note first so they can decide whether they would like to accept and watch.</p><p><b>18+ members only • Private • Recipient approval required</b></p><a class="btn" href="{url_for('video_introduction',user_id=user_id)}">Create Private Video Invitation</a></article>'''
     safety='''<article class="card"><h3>Safety & Moderation</h3><p class="muted">18+ only. No nude or explicit sexual media. Members can Block or Report. Threats, harassment, sexual solicitation and inappropriate age-related behavior are subject to moderation. Profanity alone is not automatically abuse.</p></article>'''
-    return page('Private Video Connection',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION ONLY</span><h1>Private Video with {html.escape(other['name'])}</h1><p class="muted">Mutual consent is required before any private video connection begins.</p></div>{status}{safety}''','more')
+    return page('Private Video Connection',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION ONLY</span><h1>Private Video with {html.escape(other['name'])}</h1><p class="muted">Mutual consent is required before any private video connection begins.</p></div>{intro}{status}{safety}''','more')
 
 
 
