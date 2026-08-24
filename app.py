@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
 from pathlib import Path
-from flask import Flask, request, redirect, url_for, session, flash, abort, render_template_string, send_from_directory, jsonify
+from flask import Flask, request, redirect, url_for, session, flash, abort, render_template_string, send_from_directory, send_file, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import re
@@ -29,6 +29,7 @@ import string
 import math
 import hashlib
 import difflib
+import io
 from collections import Counter
 
 app = Flask(__name__)
@@ -50,6 +51,12 @@ DB_PATH = os.environ.get('DATABASE_PATH', str(_default_persistent_db))
 
 DATABASE_URL = os.environ.get('DATABASE_URL','').strip()
 USING_POSTGRES = DATABASE_URL.startswith('postgres://') or DATABASE_URL.startswith('postgresql://')
+IS_RENDER = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID') or os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
+if IS_RENDER and not USING_POSTGRES:
+    raise RuntimeError(
+        'Persistent account storage is not configured. Set DATABASE_URL to the Render PostgreSQL '
+        'Internal Database URL. The production service will not start with ephemeral SQLite.'
+    )
 DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 if psycopg2 is not None:
     DB_INTEGRITY_ERRORS = DB_INTEGRITY_ERRORS + (psycopg2.IntegrityError,)
@@ -102,7 +109,8 @@ PG_ID_TABLES = {
     'business_media','business_calendar','business_plans','retreats','business_bookings',
     'business_certifications','funding_searches','saved_funding_opportunities','business_proposals',
     'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
-    'password_reset_tokens','astrology_reflections','compatibility_reports','coordination_video_requests',
+    'password_reset_tokens','email_verification_tokens','trusted_devices','security_events',
+    'astrology_reflections','compatibility_reports','coordination_video_requests',
     'natal_charts','planet_positions','natal_aspects','lunar_cycles','member_lunar_cycles',
     'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
@@ -122,6 +130,7 @@ def _pg_rewrite_sql(sql):
 
     sql=re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b','SERIAL PRIMARY KEY',sql,flags=re.I)
     sql=re.sub(r'\bAUTOINCREMENT\b','',sql,flags=re.I)
+    sql=re.sub(r'\bBLOB\b','BYTEA',sql,flags=re.I)
 
     if re.match(r'^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+',sql,re.I):
         sql=re.sub(r'^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+','INSERT INTO ',sql,flags=re.I)
@@ -228,6 +237,9 @@ def init_db():
         is_admin INTEGER NOT NULL DEFAULT 0,
         conscious_paid INTEGER NOT NULL DEFAULT 0,
         business_dev_paid INTEGER NOT NULL DEFAULT 0,
+        email_verified INTEGER NOT NULL DEFAULT 0,
+        email_verified_at TEXT,
+        verification_sent_at TEXT,
         created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS journal_entries (
@@ -322,6 +334,7 @@ def init_db():
         meet_preferences TEXT DEFAULT '', age_range TEXT DEFAULT '', location_preference TEXT DEFAULT '', occupation TEXT DEFAULT '', family TEXT DEFAULT '', lifestyle TEXT DEFAULT '', seeking TEXT DEFAULT '',
         overwhelmed TEXT DEFAULT '', regulate TEXT DEFAULT '', other_emotions TEXT DEFAULT '', conflict_style TEXT DEFAULT '', repair TEXT DEFAULT '', boundaries TEXT DEFAULT '', trust TEXT DEFAULT '', affection TEXT DEFAULT '', communication TEXT DEFAULT '', values_text TEXT DEFAULT '',
         business_style TEXT DEFAULT '', retreat_style TEXT DEFAULT '', about_me TEXT DEFAULT '', opted_in INTEGER NOT NULL DEFAULT 1,
+        profile_completed INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -438,6 +451,53 @@ def init_db():
         updated_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS account_drafts (
+        user_id INTEGER NOT NULL,
+        draft_key TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(user_id,draft_key),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS stored_files (
+        file_name TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+        file_data BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        link_token_hash TEXT NOT NULL UNIQUE,
+        code_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS trusted_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        device_label TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        last_used_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS security_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT NOT NULL,
+        details TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
     CREATE TABLE IF NOT EXISTS business_bookings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         business_id INTEGER NOT NULL,
@@ -478,9 +538,21 @@ def init_db():
         ("connection_profiles","preferred_city","ALTER TABLE connection_profiles ADD COLUMN preferred_city TEXT DEFAULT ''"),
         ("connection_profiles","distance_preference","ALTER TABLE connection_profiles ADD COLUMN distance_preference TEXT DEFAULT ''"),
         ("connection_profiles","display_business_app","ALTER TABLE connection_profiles ADD COLUMN display_business_app INTEGER NOT NULL DEFAULT 0"),
+        ("connection_profiles","profile_completed","ALTER TABLE connection_profiles ADD COLUMN profile_completed INTEGER NOT NULL DEFAULT 0"),
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
+    # Existing completed profiles remain completed after this migration. This
+    # update only promotes records that already have the required saved birth
+    # foundation and were explicitly opted into Conscious Coordination.
+    conn.execute('''UPDATE connection_profiles SET profile_completed=1
+                    WHERE opted_in=1 AND user_id IN (
+                        SELECT id FROM users
+                        WHERE trim(coalesce(dob,''))<>''
+                          AND trim(coalesce(birth_city,''))<>''
+                          AND trim(coalesce(birth_country,''))<>''
+                          AND (trim(coalesce(birth_time,''))<>'' OR birth_time_unknown=1)
+                    )''')
     conn.executescript('''
     CREATE TABLE IF NOT EXISTS coordination_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -568,11 +640,18 @@ def _ensure_runtime_compat_schema():
                 preferred_state TEXT DEFAULT '',
                 preferred_city TEXT DEFAULT '',
                 distance_preference TEXT DEFAULT '',
-                display_business_app INTEGER NOT NULL DEFAULT 0
+                display_business_app INTEGER NOT NULL DEFAULT 0,
+                profile_completed INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
         except Exception:
             app.logger.exception('Could not create or verify connection_profiles table')
 
+        try:
+            _user_columns_before={r['name'] for r in conn.execute('PRAGMA table_info(users)').fetchall()}
+        except Exception:
+            _user_columns_before=set()
+        _migrating_existing_users=bool(_user_columns_before and 'email_verified' not in _user_columns_before)
         specs = {
             'users': [
                 ('dob',"TEXT DEFAULT ''"),('adult_confirmed','INTEGER NOT NULL DEFAULT 0'),
@@ -580,7 +659,8 @@ def _ensure_runtime_compat_schema():
                 ('birth_time',"TEXT DEFAULT ''"),('birth_city',"TEXT DEFAULT ''"),('birth_region',"TEXT DEFAULT ''"),
                 ('birth_country',"TEXT DEFAULT ''"),('birth_timezone',"TEXT DEFAULT ''"),('birth_latitude','REAL'),('birth_longitude','REAL'),('exact_time','INTEGER DEFAULT 0'),
                 ('birth_time_unknown','INTEGER NOT NULL DEFAULT 0'),('is_admin','INTEGER NOT NULL DEFAULT 0'),
-                ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0')
+                ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0'),
+                ('email_verified','INTEGER NOT NULL DEFAULT 0'),('email_verified_at','TEXT'),('verification_sent_at','TEXT')
             ],
             'connection_profiles': [
                 ('coordination_types',"TEXT DEFAULT ''"),('meet_preferences',"TEXT DEFAULT ''"),
@@ -593,7 +673,8 @@ def _ensure_runtime_compat_schema():
                 ('retreat_style',"TEXT DEFAULT ''"),('about_me',"TEXT DEFAULT ''"),('opted_in','INTEGER NOT NULL DEFAULT 0'),
                 ('updated_at',"TEXT DEFAULT ''"),('photo_name',"TEXT DEFAULT ''"),('preferred_state',"TEXT DEFAULT ''"),
                 ('preferred_city',"TEXT DEFAULT ''"),('distance_preference',"TEXT DEFAULT ''"),
-                ('display_business_app','INTEGER NOT NULL DEFAULT 0')
+                ('display_business_app','INTEGER NOT NULL DEFAULT 0'),
+                ('profile_completed','INTEGER NOT NULL DEFAULT 0')
             ],
             'businesses': [
                 ('active','INTEGER NOT NULL DEFAULT 0'),('owner_title',"TEXT DEFAULT ''"),
@@ -630,7 +711,50 @@ def _ensure_runtime_compat_schema():
                     existing.add(column)
                 except Exception:
                     app.logger.exception('Compatibility migration failed for %s.%s',table,column)
+        if _migrating_existing_users:
+            # Preserve established production accounts. Verification is mandatory for
+            # accounts created after this migration; it must not orphan or duplicate
+            # members that already existed before verification was introduced.
+            conn.execute("UPDATE users SET email_verified=1, email_verified_at=COALESCE(email_verified_at,created_at)")
         try:
+            conn.execute('''CREATE TABLE IF NOT EXISTS account_drafts (
+                user_id INTEGER NOT NULL,
+                draft_key TEXT NOT NULL,
+                payload TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(user_id,draft_key),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS stored_files (
+                file_name TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                file_data BLOB NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+                link_token_hash TEXT NOT NULL UNIQUE, code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL, used_at TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until TEXT, created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS trusted_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE, device_label TEXT DEFAULT '',
+                created_at TEXT NOT NULL, last_used_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                revoked_at TEXT, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS security_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+                event_type TEXT NOT NULL, details TEXT DEFAULT '', created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )''')
+            conn.execute('''UPDATE connection_profiles SET profile_completed=1
+                WHERE profile_completed=0 AND opted_in=1 AND user_id IN (
+                    SELECT id FROM users WHERE dob<>'' AND birth_city<>'' AND birth_country<>''
+                )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS affiliate_profiles (
                 user_id INTEGER PRIMARY KEY,
                 referral_code TEXT NOT NULL UNIQUE,
@@ -672,19 +796,22 @@ def _seed_permanent_admin_accounts():
         for name,email,password_hash in ADMIN_ACCOUNT_SEEDS:
             row=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone()
             if row:
-                conn.execute('UPDATE users SET is_admin=1 WHERE id=?',(row['id'],))
+                conn.execute('UPDATE users SET is_admin=1,email_verified=1,email_verified_at=COALESCE(email_verified_at,created_at) WHERE id=?',(row['id'],))
                 continue
-            sql=('INSERT INTO users(name,email,password_hash,dob,adult_confirmed,city,headline,about,birth_time,birth_city,birth_region,birth_country,birth_timezone,exact_time,birth_time_unknown,is_admin,conscious_paid,business_dev_paid,created_at) '
-                 'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-            conn.execute(sql,(name,email,password_hash,'',1,'','','','','','','','',0,1,1,0,0,datetime.utcnow().replace(microsecond=0).isoformat()+'Z'))
+            stamp=datetime.utcnow().replace(microsecond=0).isoformat()+'Z'
+            sql=('INSERT INTO users(name,email,password_hash,dob,adult_confirmed,city,headline,about,birth_time,birth_city,birth_region,birth_country,birth_timezone,exact_time,birth_time_unknown,is_admin,conscious_paid,business_dev_paid,email_verified,email_verified_at,created_at) '
+                 'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+            conn.execute(sql,(name,email,password_hash,'',1,'','','','','','','','',0,1,1,0,0,1,stamp,stamp))
         conn.commit()
     finally:
         conn.close()
 
-def _send_account_email(to_address,subject,body):
+def _send_account_email(to_address,subject,body,html_body=''):
     if not to_address or not SMTP_HOST:
         return False
     msg=EmailMessage(); msg['Subject']=subject; msg['From']=SMTP_FROM; msg['To']=to_address; msg.set_content(body)
+    if html_body:
+        msg.add_alternative(html_body,subtype='html')
     try:
         with smtplib.SMTP(SMTP_HOST,SMTP_PORT,timeout=20) as server:
             if SMTP_USE_TLS: server.starttls()
@@ -716,6 +843,105 @@ def _safe_next_url(value):
 def _reset_link(raw_token):
     path=url_for('reset_password',token=raw_token)
     return (APP_BASE_URL+path) if APP_BASE_URL else request.url_root.rstrip('/')+path
+
+EMAIL_VERIFICATION_MINUTES=15
+TRUSTED_DEVICE_DAYS=60
+TRUSTED_DEVICE_COOKIE='tsw_trusted_device'
+
+def _dt(value):
+    try:
+        return datetime.fromisoformat(str(value or '').replace('Z','+00:00')).replace(tzinfo=None)
+    except Exception:
+        return None
+
+def _security_event(user_id,event_type,details=''):
+    conn=db()
+    try:
+        conn.execute('INSERT INTO security_events(user_id,event_type,details,created_at) VALUES(?,?,?,?)',
+                     (user_id,event_type,str(details or '')[:1000],now()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _verification_link(raw_token):
+    path=url_for('verify_email_link',token=raw_token)
+    return (APP_BASE_URL+path) if APP_BASE_URL else request.url_root.rstrip('/')+path
+
+def _masked_email(value):
+    local,sep,domain=(value or '').partition('@')
+    if not sep: return 'your email address'
+    return (local[:1]+'•'*max(4,len(local)-1))+'@'+domain
+
+def _issue_email_verification(user_id,force=False):
+    created=datetime.utcnow().replace(microsecond=0)
+    conn=db()
+    try:
+        user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
+        if not user or user['email_verified']:
+            return None
+        sent=_dt(user['verification_sent_at'])
+        if not force and sent and (created-sent).total_seconds()<45:
+            return {'throttled':True,'retry_after':45-int((created-sent).total_seconds())}
+        raw=secrets.token_urlsafe(32)
+        code=f'{secrets.randbelow(1000000):06d}'
+        expires=created+timedelta(minutes=EMAIL_VERIFICATION_MINUTES)
+        conn.execute('UPDATE email_verification_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL',(now(),user_id))
+        conn.execute('''INSERT INTO email_verification_tokens
+            (user_id,link_token_hash,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)''',
+            (user_id,hashlib.sha256(raw.encode()).hexdigest(),generate_password_hash(code),expires.isoformat()+'Z',created.isoformat()+'Z'))
+        conn.execute('UPDATE users SET verification_sent_at=? WHERE id=?',(created.isoformat()+'Z',user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    link=_verification_link(raw)
+    body=(f"Hello {user['name']},\n\nVerify your email for The Seasons Within:\n{link}\n\n"
+          f"Or enter this six-digit code: {code}\n\nThe code and link expire in {EMAIL_VERIFICATION_MINUTES} minutes and can be used once.")
+    html_body=(f'<p>Hello {html.escape(user["name"])},</p><p><a href="{html.escape(link,quote=True)}" '
+               f'style="display:inline-block;padding:12px 18px;background:#8f63ba;color:white;border-radius:10px;text-decoration:none">Verify My Email</a></p>'
+               f'<p>Or enter this six-digit code:</p><p style="font-size:28px;letter-spacing:5px"><b>{code}</b></p>'
+               f'<p>This expires in {EMAIL_VERIFICATION_MINUTES} minutes and can be used once.</p>')
+    delivered=_send_account_email(user['email'],'Verify your The Seasons Within email',body,html_body)
+    _security_event(user_id,'verification_sent','delivered' if delivered else 'delivery_not_configured_or_failed')
+    return {'throttled':False,'delivered':delivered,'code':code if app.testing else None}
+
+def _mark_email_verified(conn,user_id,token_id):
+    stamp=now()
+    conn.execute('UPDATE users SET email_verified=1,email_verified_at=? WHERE id=?',(stamp,user_id))
+    conn.execute('UPDATE email_verification_tokens SET used_at=? WHERE id=?',(stamp,token_id))
+    conn.execute('UPDATE email_verification_tokens SET used_at=? WHERE user_id=? AND id<>? AND used_at IS NULL',(stamp,user_id,token_id))
+
+def _device_label():
+    ua=(request.headers.get('User-Agent') or '').lower()
+    browser='Chrome' if 'chrome' in ua else ('Safari' if 'safari' in ua else ('Firefox' if 'firefox' in ua else 'Browser'))
+    platform='Android' if 'android' in ua else ('iPhone' if 'iphone' in ua else ('Windows' if 'windows' in ua else ('Mac' if 'macintosh' in ua else 'Device')))
+    return f'{browser} on {platform}'
+
+def _create_trusted_device(user_id):
+    raw=secrets.token_urlsafe(40); digest=hashlib.sha256(raw.encode()).hexdigest()
+    created=datetime.utcnow().replace(microsecond=0); expires=created+timedelta(days=TRUSTED_DEVICE_DAYS)
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO trusted_devices(user_id,token_hash,device_label,created_at,last_used_at,expires_at)
+                        VALUES(?,?,?,?,?,?)''',(user_id,digest,_device_label(),created.isoformat()+'Z',created.isoformat()+'Z',expires.isoformat()+'Z'))
+        conn.commit()
+    finally: conn.close()
+    return raw
+
+def _trusted_device_for(user_id):
+    raw=request.cookies.get(TRUSTED_DEVICE_COOKIE,'')
+    if not raw: return None
+    digest=hashlib.sha256(raw.encode()).hexdigest(); conn=db()
+    try:
+        row=conn.execute('SELECT * FROM trusted_devices WHERE user_id=? AND token_hash=? AND revoked_at IS NULL',(user_id,digest)).fetchone()
+        if not row or not _dt(row['expires_at']) or _dt(row['expires_at'])<datetime.utcnow(): return None
+        conn.execute('UPDATE trusted_devices SET last_used_at=? WHERE id=?',(now(),row['id'])); conn.commit(); return row
+    finally: conn.close()
+
+def _set_trusted_cookie(response,user_id):
+    raw=_create_trusted_device(user_id)
+    response.set_cookie(TRUSTED_DEVICE_COOKIE,raw,max_age=TRUSTED_DEVICE_DAYS*86400,httponly=True,
+                        secure=app.config['SESSION_COOKIE_SECURE'],samesite='Lax',path='/')
+    return response
 
 
 
@@ -761,20 +987,31 @@ def safe_connection_profile(user_id):
 def ensure_db():
     if getattr(app, '_db_ready', False):
         return
+    schema_ready=False
     try:
         init_db()
+        # Always run the non-destructive compatibility pass.  Existing
+        # production databases may predate newer account-security columns even
+        # when the main initializer itself completes successfully.
+        _ensure_runtime_compat_schema()
+        schema_ready=True
     except Exception:
         app.logger.exception('Full database migration failed; applying compatibility repair')
         try:
             _ensure_runtime_compat_schema()
+            schema_ready=True
         except Exception:
             app.logger.exception('Compatibility database repair also failed')
+    if not schema_ready:
+        # Never continue into normal page rendering with an unavailable or
+        # partially initialized account database. Doing so makes permanent
+        # records look blank and can encourage accidental duplicate rows.
+        raise RuntimeError('The persistent account database could not be initialized safely.')
     try:
         _seed_permanent_admin_accounts()
     except Exception:
         app.logger.exception('Permanent admin account seed failed')
-    finally:
-        app._db_ready = True
+    app._db_ready = True
 
 
 def now():
@@ -834,6 +1071,18 @@ def login_required(fn):
             session.pop('user_id',None)
             flash('Please log in to continue.','info')
             return redirect(url_for('login',next=request.path))
+        return fn(*args,**kwargs)
+    return wrapper
+
+def verified_email_required(fn):
+    @wraps(fn)
+    def wrapper(*args,**kwargs):
+        user=current_user()
+        if not user:
+            return redirect(url_for('login',next=request.path))
+        if not bool(user['email_verified']):
+            flash('Verify your email before publishing or participating publicly. Your private drafts remain saved.','info')
+            return redirect(url_for('verify_email',next=request.path))
         return fn(*args,**kwargs)
     return wrapper
 
@@ -1000,7 +1249,43 @@ BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 
 def page(title, content, active=''):
-    return render_template_string(BASE, title=title, content=content, active=active, user=current_user())
+    user=current_user()
+    if user:
+        content=content+_global_autosave_script()
+    return render_template_string(BASE, title=title, content=content, active=active, user=user)
+
+def _persist_uploaded_file(file_name, user_id, content_type='application/octet-stream'):
+    """Keep a database copy so Render deploys cannot erase member media."""
+    path=UPLOAD_DIR/file_name
+    if not path.exists():
+        return
+    data=path.read_bytes()
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO stored_files(file_name,user_id,content_type,file_data,created_at)
+                        VALUES(?,?,?,?,?)
+                        ON CONFLICT(file_name) DO UPDATE SET user_id=excluded.user_id,
+                        content_type=excluded.content_type,file_data=excluded.file_data''',
+                     (file_name,user_id,content_type or 'application/octet-stream',data,now()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _send_persistent_upload(file_name):
+    path=UPLOAD_DIR/file_name
+    if path.exists():
+        return send_from_directory(UPLOAD_DIR,file_name)
+    conn=db()
+    try:
+        row=conn.execute('SELECT content_type,file_data FROM stored_files WHERE file_name=?',(file_name,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        abort(404)
+    raw=row['file_data']
+    if isinstance(raw,memoryview):
+        raw=raw.tobytes()
+    return send_file(io.BytesIO(bytes(raw)),mimetype=row['content_type'] or 'application/octet-stream',download_name=file_name)
 
 
 def save_community_media(file_storage, user_id):
@@ -1015,6 +1300,7 @@ def save_community_media(file_storage, user_id):
     stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
     stored = f'u{user_id}_{stamp}{ext}'
     file_storage.save(UPLOAD_DIR / stored)
+    _persist_uploaded_file(stored,user_id,getattr(file_storage,'mimetype','application/octet-stream'))
     return stored, ('video' if ext in video_ext else 'image')
 
 
@@ -1051,7 +1337,7 @@ def public_journal_cards(member_id, viewer_id=None):
 @app.route('/community-media/<path:filename>')
 @login_required
 def community_media(filename):
-    return send_from_directory(UPLOAD_DIR, filename)
+    return _send_persistent_upload(filename)
 
 
 
@@ -1068,6 +1354,13 @@ def _store_business_upload(file_storage, business_id, kind, allowed_exts):
     stamp=datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
     stored=f'b{business_id}_{kind}_{stamp}{ext}'
     file_storage.save(UPLOAD_DIR/stored)
+    conn=db()
+    try:
+        owner=conn.execute('SELECT owner_id FROM businesses WHERE id=?',(business_id,)).fetchone()
+    finally:
+        conn.close()
+    if owner:
+        _persist_uploaded_file(stored,owner['owner_id'],getattr(file_storage,'mimetype','application/octet-stream'))
     return stored
 
 def _video_duration_seconds(path):
@@ -1096,6 +1389,107 @@ def _safe_json(value, default=None):
         return parsed if isinstance(parsed,dict) else (default if default is not None else {})
     except Exception:
         return default if default is not None else {}
+
+def _load_account_draft(user_id, draft_key):
+    conn=db()
+    try:
+        row=conn.execute('SELECT payload FROM account_drafts WHERE user_id=? AND draft_key=?',(user_id,draft_key)).fetchone()
+        return _safe_json(row['payload']) if row else {}
+    finally:
+        conn.close()
+
+def _save_account_draft(user_id, draft_key, payload):
+    conn=db()
+    try:
+        conn.execute('''INSERT INTO account_drafts(user_id,draft_key,payload,updated_at)
+                        VALUES(?,?,?,?)
+                        ON CONFLICT(user_id,draft_key) DO UPDATE SET
+                        payload=excluded.payload,updated_at=excluded.updated_at''',
+                     (user_id,draft_key,json.dumps(payload or {}),now()))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _delete_account_draft(user_id, draft_key):
+    conn=db()
+    try:
+        conn.execute('DELETE FROM account_drafts WHERE user_id=? AND draft_key=?',(user_id,draft_key))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _autosave_script(draft_key):
+    endpoint=url_for('account_autosave',draft_key=draft_key)
+    return f'''<p class="muted small" id="autosave-status">Saved</p><script>(function(){{
+    var form=document.currentScript.closest('form'),status=form&&form.querySelector('#autosave-status'),timer,dirty=false;
+    if(!form)return;
+    function save(){{var data={{}};new FormData(form).forEach(function(v,k){{if(v instanceof File)return;if(data[k])data[k]=data[k]+', '+v;else data[k]=v;}});
+      status.textContent='Saving…';fetch('{endpoint}',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(data),credentials:'same-origin'}})
+      .then(function(r){{if(!r.ok)throw new Error();return r.json();}}).then(function(x){{dirty=false;status.textContent=x.saved_at?'Last saved '+x.saved_at:'Saved';}}).catch(function(){{status.textContent='Not saved — tap to retry';}});}}
+    function schedule(delay){{dirty=true;clearTimeout(timer);timer=setTimeout(save,delay);}}
+    form.addEventListener('input',function(){{schedule(1500);}});
+    form.addEventListener('change',function(){{schedule(300);}});
+    form.addEventListener('focusout',function(){{if(dirty)schedule(250);}});
+    status.addEventListener('click',function(){{if(status.textContent.indexOf('Not saved')===0)save();}});
+    document.addEventListener('visibilitychange',function(){{if(document.visibilityState==='hidden'&&dirty)save();}});
+    }})();</script>'''
+
+def _global_autosave_script():
+    endpoint=url_for('page_draft')
+    return f'''<script>(function(){{
+    var endpoint='{endpoint}',forms=[].slice.call(document.querySelectorAll('form'));
+    forms.forEach(function(form,index){{
+      if(form.dataset.noAutosave||String(form.method||'get').toLowerCase()==='get'||form.querySelector('input[type=password]'))return;
+      var action=(form.getAttribute('action')||location.pathname).toLowerCase();
+      if(/delete|logout|publish|payment|revoke|verify-email|trust-device/.test(action))return;
+      var fields=form.querySelectorAll('input:not([type=file]):not([type=submit]):not([type=button]),textarea,select');
+      if(!fields.length)return;
+      var key=location.pathname+'|'+action+'|'+index,timer,dirty=false;
+      var status=document.createElement('button');status.type='button';status.className='autosave-state';status.textContent='Saved';
+      status.style.cssText='border:0;background:transparent;color:#75677f;font-size:12px;padding:6px 0';form.appendChild(status);
+      function values(){{var out={{}};fields.forEach(function(el){{if(!el.name||el.disabled)return;if((el.type==='checkbox'||el.type==='radio')&&!el.checked)return;if(out[el.name]!==undefined){{if(!Array.isArray(out[el.name]))out[el.name]=[out[el.name]];out[el.name].push(el.value);}}else out[el.name]=el.value;}});return out;}}
+      function save(){{if(!dirty)return;status.textContent='Saving…';fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{key:key,fields:values(),path:location.pathname}}),keepalive:true}}).then(function(r){{if(!r.ok)throw Error();return r.json();}}).then(function(x){{dirty=false;status.textContent='Last saved '+x.saved_at;}}).catch(function(){{status.textContent='Not saved — tap to retry';}});}}
+      function schedule(ms){{dirty=true;clearTimeout(timer);timer=setTimeout(save,ms);}}
+      form.addEventListener('input',function(){{schedule(1800);}});form.addEventListener('change',function(){{schedule(350);}});form.addEventListener('focusout',function(){{if(dirty)schedule(250);}});status.addEventListener('click',save);
+      fetch(endpoint+'?key='+encodeURIComponent(key),{{credentials:'same-origin'}}).then(function(r){{return r.ok?r.json():{{}};}}).then(function(x){{var data=x.fields||{{}},restored=false;fields.forEach(function(el){{if(!el.name||data[el.name]===undefined||String(el.value||'').trim())return;var value=Array.isArray(data[el.name])?data[el.name][0]:data[el.name];if(el.type==='checkbox'||el.type==='radio')el.checked=Array.isArray(data[el.name])?data[el.name].indexOf(el.value)>=0:String(value)===String(el.value);else el.value=value;restored=true;}});if(restored)status.textContent='Draft restored • '+(x.saved_at||'saved');}}).catch(function(){{}});
+      document.addEventListener('visibilitychange',function(){{if(document.visibilityState==='hidden')save();}});
+    }});}})();</script>'''
+
+@app.route('/account/autosave/<draft_key>',methods=['POST'])
+@login_required
+def account_autosave(draft_key):
+    if draft_key not in {'member_profile','business_plan'}:
+        abort(404)
+    u=current_user()
+    payload=request.get_json(silent=True) or {}
+    payload={str(k)[:80]:str(v)[:20000] for k,v in payload.items() if not str(k).startswith('_')}
+    if draft_key=='business_plan':
+        conn=db()
+        try:
+            conn.execute('''INSERT INTO business_plan_intake(user_id,payload,updated_at) VALUES(?,?,?)
+                            ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at''',
+                         (u['id'],json.dumps(payload),now()))
+            conn.commit()
+        finally:
+            conn.close()
+    else:
+        _save_account_draft(u['id'],draft_key,payload)
+    return jsonify(ok=True,saved_at=datetime.now().strftime('%-I:%M %p'))
+
+@app.route('/account/page-draft',methods=['GET','POST'])
+@login_required
+def page_draft():
+    u=current_user()
+    if request.method=='POST':
+        body=request.get_json(silent=True) or {}; raw=str(body.get('key',''))[:500]
+        fields=body.get('fields') if isinstance(body.get('fields'),dict) else {}
+        safe={str(k)[:100]:(v[:20] if isinstance(v,list) else str(v)[:30000]) for k,v in fields.items() if not str(k).startswith('_')}
+        key='page:'+hashlib.sha256(raw.encode()).hexdigest(); _save_account_draft(u['id'],key,{'fields':safe,'path':str(body.get('path',''))[:300]})
+        return jsonify(ok=True,saved_at=datetime.now().strftime('%-I:%M %p'))
+    raw=str(request.args.get('key',''))[:500]; key='page:'+hashlib.sha256(raw.encode()).hexdigest()
+    data=_load_account_draft(u['id'],key)
+    conn=db(); row=conn.execute('SELECT updated_at FROM account_drafts WHERE user_id=? AND draft_key=?',(u['id'],key)).fetchone(); conn.close()
+    return jsonify(fields=data.get('fields',{}),saved_at=(row['updated_at'] if row else ''))
 
 def _crop_payload(form):
     def number(name, default, low, high):
@@ -1145,7 +1539,7 @@ def _plan_prefill_for_user(user_id):
 
 @app.route('/business-media/<path:filename>')
 def business_media_file(filename):
-    return send_from_directory(UPLOAD_DIR, filename)
+    return _send_persistent_upload(filename)
 
 
 def conscious_coordination_ready(user, cp=None):
@@ -1164,7 +1558,8 @@ def conscious_coordination_ready(user, cp=None):
     birth_time_ack=bool(getv(user,'birth_time','') or getv(user,'birth_time_unknown',0))
     birth_ready=bool(getv(user,'dob','') and getv(user,'birth_city','') and getv(user,'birth_country','') and birth_time_ack)
     opted_in=bool(getv(cp,'opted_in',0))
-    return bool(opted_in and birth_ready)
+    completed=bool(getv(cp,'profile_completed',0))
+    return bool(cp and completed and opted_in and birth_ready)
 
 FULL_ACCESS_TESTING = os.environ.get('FULL_ACCESS_TESTING','false').lower() in {'1','true','yes'}
 
@@ -4680,10 +5075,14 @@ def join():
                                     VALUES(?,?,?) ON CONFLICT DO NOTHING''',(referrer['id'],new_user_id,now()))
                 conn.commit()
                 session['user_id']=new_user_id
-                if referrer:
-                    flash(f'Your account is ready. You joined through {referrer["name"]}’s Earn While You Grow link. Complete your profile to join the Community.','success')
+                verification=_issue_email_verification(new_user_id,force=True)
+                delivered=bool(verification and verification.get('delivered'))
+                if referrer and delivered:
+                    flash(f'Your account is ready. You joined through {referrer["name"]}’s Earn While You Grow link. We sent your email verification. Your private setup can save while you verify.','success')
+                elif delivered:
+                    flash('Your account is ready. We sent your email verification. Your private setup can save while you verify.','success')
                 else:
-                    flash('Your account is ready. Complete your profile to join the Community.','success')
+                    flash('Your account and private setup are saved, but the verification email could not be delivered. Please use Resend Code after email delivery is configured.','error')
                 return redirect(url_for('edit_profile'))
             except DB_INTEGRITY_ERRORS:
                 flash('An account with that email already exists. Use Login or Forgot Password.','error')
@@ -4726,10 +5125,116 @@ def login():
         if u and check_password_hash(u['password_hash'],password):
             session.clear(); session['user_id']=u['id']; session.permanent=remember
             flash('Welcome back. Your existing account and saved information are loaded.','success')
-            return redirect(_safe_next_url(request.args.get('next')))
+            destination=_safe_next_url(request.args.get('next'))
+            if not u['email_verified']:
+                return redirect(url_for('verify_email',next=destination))
+            response=redirect(destination)
+            if request.form.get('trust_device'):
+                response=_set_trusted_cookie(response,u['id'])
+            else:
+                _trusted_device_for(u['id'])
+            return response
         flash('Email or password did not match. Use the email already on your account, or choose Forgot Password.','error')
-    content=f'''<div class="hero"><span class="badge">MEMBER LOGIN</span><h1>Welcome Back</h1><p class="muted">Log back into the same account to keep your profile, Journal, posts, business information and Conscious Coordination history.</p></div><form class="card" method="post"><label><b>Email on your account</b></label><input class="input" type="email" name="email" required autocomplete="email"><label><b>Password</b></label><input class="input" type="password" name="password" required autocomplete="current-password"><label><input type="checkbox" name="remember" value="1"> Remember Me on this browser for 30 days</label><div class="actions"><button class="btn">Login</button><a class="out" href="{url_for('forgot_password')}">Forgot Password</a><a class="out" href="{url_for('join')}">Create Free Account</a></div></form>'''
+    content=f'''<div class="hero"><span class="badge">MEMBER LOGIN</span><h1>Welcome Back</h1><p class="muted">Log back into the same account to keep your profile, Journal, posts, business information and Conscious Coordination history.</p></div><form class="card" method="post" data-no-autosave="1"><label><b>Email on your account</b></label><input class="input" type="email" name="email" required autocomplete="email"><label><b>Password</b></label><input class="input" type="password" name="password" required autocomplete="current-password"><label><input type="checkbox" name="remember" value="1"> Remember Me on this browser for 30 days</label><label><input type="checkbox" name="trust_device" value="1"> Trust this device for 60 days</label><p class="muted small">A trusted device never replaces your password or initial email verification.</p><div class="actions"><button class="btn">Login</button><a class="out" href="{url_for('forgot_password')}">Forgot Password</a><a class="out" href="{url_for('join')}">Create Free Account</a></div></form>'''
     return page('Login',content)
+
+@app.route('/verify-email',methods=['GET','POST'])
+@login_required
+def verify_email():
+    u=current_user(); destination=_safe_next_url(request.values.get('next'))
+    if u['email_verified']:
+        flash('Your email is already verified.','success')
+        return redirect(destination)
+    if request.method=='POST':
+        code=re.sub(r'\D','',request.form.get('code',''))[:6]
+        conn=db()
+        try:
+            row=conn.execute('''SELECT * FROM email_verification_tokens
+                WHERE user_id=? AND used_at IS NULL ORDER BY id DESC LIMIT 1''',(u['id'],)).fetchone()
+            valid=False; reason='invalid'
+            if not row: reason='missing'
+            elif _dt(row['locked_until']) and _dt(row['locked_until'])>datetime.utcnow(): reason='locked'
+            elif not _dt(row['expires_at']) or _dt(row['expires_at'])<datetime.utcnow(): reason='expired'
+            elif row['attempts']>=5: reason='locked'
+            elif len(code)==6 and check_password_hash(row['code_hash'],code): valid=True
+            if valid:
+                _mark_email_verified(conn,u['id'],row['id']); conn.commit()
+            else:
+                if row and reason=='invalid':
+                    attempts=int(row['attempts'] or 0)+1
+                    lock=(datetime.utcnow()+timedelta(minutes=15)).replace(microsecond=0).isoformat()+'Z' if attempts>=5 else None
+                    conn.execute('UPDATE email_verification_tokens SET attempts=?,locked_until=? WHERE id=?',(attempts,lock,row['id'])); conn.commit()
+        finally: conn.close()
+        if valid:
+            _security_event(u['id'],'email_verified','six_digit_code')
+            flash('✓ Email Verified. Welcome to The Seasons Within.','success')
+            response=redirect(destination)
+            if request.form.get('trust_device'): response=_set_trusted_cookie(response,u['id'])
+            return response
+        _security_event(u['id'],'verification_failed',reason)
+        messages={'locked':'Too many attempts. Request a new code or try again later.','expired':'That code expired. Request a new one.','missing':'Request a verification email first.'}
+        flash(messages.get(reason,'That code did not match. Please try again.'),'error')
+    conn=db(); active=conn.execute('SELECT id FROM email_verification_tokens WHERE user_id=? AND used_at IS NULL ORDER BY id DESC LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    if not active: _issue_email_verification(u['id'],force=True)
+    content=f'''<div class="hero"><span class="badge">EMAIL VERIFICATION</span><h1>Verify Your Email</h1>
+    <p class="muted">We sent a one-tap verification link and six-digit code to <b>{html.escape(_masked_email(u['email']))}</b>.</p></div>
+    <form method="post" class="card" data-no-autosave="1"><input type="hidden" name="next" value="{html.escape(destination,quote=True)}">
+    <label><b>Enter verification code</b></label><input class="input" name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{{6}}" maxlength="6" placeholder="482193" required>
+    <label><input type="checkbox" name="trust_device" value="1"> Trust this device after verification</label>
+    <div class="actions"><button class="btn">Verify Email</button></div></form>
+    <form method="post" action="{url_for('resend_verification')}" class="card" data-no-autosave="1"><button class="out">Resend Code</button><p class="muted small">For security, resends are limited to one every 45 seconds.</p></form>'''
+    return page('Verify Email',content)
+
+@app.route('/verify-email/link/<token>')
+def verify_email_link(token):
+    digest=hashlib.sha256((token or '').encode()).hexdigest(); conn=db()
+    try:
+        row=conn.execute('SELECT * FROM email_verification_tokens WHERE link_token_hash=?',(digest,)).fetchone()
+        valid=bool(row and not row['used_at'] and _dt(row['expires_at']) and _dt(row['expires_at'])>=datetime.utcnow())
+        if valid:
+            _mark_email_verified(conn,row['user_id'],row['id']); conn.commit()
+    finally: conn.close()
+    if not valid:
+        return page('Verify Email','''<div class="hero"><h1>This verification link is no longer valid</h1><p class="muted">Sign in and request a new verification email.</p><a class="btn" href="/login">Sign In</a></div>'''),400
+    _security_event(row['user_id'],'email_verified','one_tap_link')
+    if session.get('user_id')==row['user_id']:
+        flash('✓ Email Verified. Welcome to The Seasons Within.','success')
+        return redirect(url_for('profile'))
+    flash('✓ Email verified. Sign in to continue with your saved account.','success')
+    return redirect(url_for('login'))
+
+@app.route('/verify-email/resend',methods=['POST'])
+@login_required
+def resend_verification():
+    u=current_user(); result=_issue_email_verification(u['id'])
+    if result and result.get('throttled'):
+        flash(f'Please wait {max(1,result["retry_after"])} seconds before requesting another code.','info')
+    elif result and not result.get('delivered'):
+        flash('The verification email could not be delivered. Please try again after email delivery is configured.','error')
+    else:
+        flash('A new verification link and code were sent.','success')
+    return redirect(url_for('verify_email'))
+
+@app.route('/account/trust-device',methods=['POST'])
+@login_required
+@verified_email_required
+def trust_device():
+    response=redirect(url_for('account_security')); flash('This device is now trusted for 60 days.','success')
+    return _set_trusted_cookie(response,current_user()['id'])
+
+@app.route('/account/security')
+@login_required
+def account_security():
+    u=current_user(); conn=db(); devices=conn.execute('SELECT * FROM trusted_devices WHERE user_id=? AND revoked_at IS NULL ORDER BY last_used_at DESC',(u['id'],)).fetchall(); conn.close()
+    cards=''.join(f'''<article class="card"><h3>{html.escape(d['device_label'] or 'Trusted Device')}</h3><p class="muted small">Last active: {html.escape(d['last_used_at'])}<br>Expires: {html.escape(d['expires_at'])}</p><form method="post" action="{url_for('revoke_trusted_device',device_id=d['id'])}" data-no-autosave="1"><button class="out danger">Remove Device</button></form></article>''' for d in devices) or '<div class="empty"><p>No trusted devices saved.</p></div>'
+    verify='Verified ✓' if u['email_verified'] else f'<a class="out" href="{url_for("verify_email")}">Verify Email</a>'
+    return page('Account Security',f'''<div class="hero"><span class="badge">ACCOUNT SECURITY</span><h1>Email & Trusted Devices</h1><p>{html.escape(u['email'])} — {verify}</p></div><div class="actions"><form method="post" action="{url_for('trust_device')}" data-no-autosave="1"><button class="btn">Trust This Device</button></form><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('change_email')}">Change Email</a></div><h2>Trusted Devices</h2><div class="grid">{cards}</div>''','more')
+
+@app.route('/account/security/device/<int:device_id>/revoke',methods=['POST'])
+@login_required
+def revoke_trusted_device(device_id):
+    u=current_user(); conn=db(); conn.execute('UPDATE trusted_devices SET revoked_at=? WHERE id=? AND user_id=?',(now(),device_id,u['id'])); conn.commit(); conn.close()
+    flash('Trusted device removed.','success'); return redirect(url_for('account_security'))
 
 @app.route('/forgot-password', methods=['GET','POST'])
 def forgot_password():
@@ -4759,7 +5264,7 @@ def reset_password(token):
         if len(password)<8: flash('Your new password must be at least 8 characters.','error')
         elif password!=confirm: flash('The two password entries do not match.','error')
         else:
-            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(password),row['user_id'])); conn.execute('UPDATE password_reset_tokens SET used_at=? WHERE id=?',(now(),row['id'])); conn.commit(); conn.close(); session.clear(); flash('Your password has been changed. Log in with your existing email and new password.','success'); return redirect(url_for('login'))
+            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(password),row['user_id'])); conn.execute('UPDATE password_reset_tokens SET used_at=? WHERE id=?',(now(),row['id'])); conn.execute('UPDATE trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',(now(),row['user_id'])); conn.commit(); conn.close(); session.clear(); flash('Your password has been changed. Log in with your existing email and new password.','success'); return redirect(url_for('login'))
     return page('Reset Password',f'''<div class="hero"><span class="badge">SECURE PASSWORD RESET</span><h1>Create a New Password</h1><p class="muted">Account: {html.escape(row['email'])}</p></div><form method="post" class="card"><label><b>New Password</b></label><input class="input" type="password" name="password" minlength="8" required autocomplete="new-password"><label><b>Confirm New Password</b></label><input class="input" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button class="btn">Save New Password</button></form>''')
 
 @app.route('/change-password',methods=['GET','POST'])
@@ -4772,8 +5277,43 @@ def change_password():
         elif len(new)<8: flash('New password must be at least 8 characters.','error')
         elif new!=confirm: flash('The new password entries do not match.','error')
         else:
-            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(new),u['id'])); conn.commit(); conn.close(); flash('Your password has been changed.','success'); return redirect(url_for('settings'))
+            conn=db(); conn.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(new),u['id'])); conn.execute('UPDATE trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',(now(),u['id'])); conn.commit(); conn.close(); flash('Your password has been changed. Other trusted devices were revoked.','success'); return redirect(url_for('settings'))
     return page('Change Password',f'''<div class="hero"><span class="badge">ACCOUNT SECURITY</span><h1>Change Password</h1><p class="muted">Your profile and saved data remain attached to {html.escape(u['email'])}.</p></div><form method="post" class="card"><label><b>Current Password</b></label><input class="input" type="password" name="current_password" required autocomplete="current-password"><label><b>New Password</b></label><input class="input" type="password" name="new_password" minlength="8" required autocomplete="new-password"><label><b>Confirm New Password</b></label><input class="input" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button class="btn">Change Password</button></form>''','more')
+
+@app.route('/account/change-email',methods=['GET','POST'])
+@login_required
+def change_email():
+    """Change the address on the existing account; never create a new user."""
+    u=current_user()
+    if request.method=='POST':
+        password=request.form.get('current_password','')
+        new_email=request.form.get('new_email','').strip().lower()
+        if not check_password_hash(u['password_hash'],password):
+            flash('Current password did not match.','error')
+        elif not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',new_email or ''):
+            flash('Enter a valid email address.','error')
+        elif new_email==str(u['email']).strip().lower():
+            flash('That is already the email on this account.','info')
+        else:
+            conn=db()
+            duplicate=conn.execute('SELECT id FROM users WHERE lower(email)=lower(?) AND id<>?',(new_email,u['id'])).fetchone()
+            if duplicate:
+                conn.close(); flash('That email is already connected to an account. Sign in or use account recovery.','error')
+            else:
+                old_email=u['email']; changed=now()
+                conn.execute('UPDATE users SET email=?,email_verified=0,email_verified_at=NULL,verification_sent_at=NULL WHERE id=?',(new_email,u['id']))
+                conn.execute('UPDATE email_verification_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL',(changed,u['id']))
+                conn.execute('UPDATE trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',(changed,u['id']))
+                conn.commit(); conn.close()
+                _security_event(u['id'],'email_change_requested',f'old={old_email}')
+                _send_account_email(old_email,'Your The Seasons Within email was changed',f'The email address on your The Seasons Within account was changed to {new_email}. If you did not request this change, contact support immediately.')
+                verification=_issue_email_verification(u['id'],force=True)
+                if verification and verification.get('delivered'):
+                    flash('Your new email must be verified. We sent a link and six-digit code.','success')
+                else:
+                    flash('Your email change is saved, but the verification email could not be delivered. Use Resend Code after email delivery is configured.','error')
+                return redirect(url_for('verify_email'))
+    return page('Change Email',f'''<div class="hero"><span class="badge">SENSITIVE ACCOUNT CHANGE</span><h1>Change Email Address</h1><p class="muted">Your profile, Journal, business information and drafts stay attached to the same account. The new address must be verified.</p></div><form method="post" class="card" data-no-autosave="1"><label><b>Current email</b></label><p>{html.escape(u['email'])}</p><label><b>New email</b></label><input class="input" type="email" name="new_email" required autocomplete="email"><label><b>Current password</b></label><input class="input" type="password" name="current_password" required autocomplete="current-password"><button class="btn">Change Email & Send Verification</button></form>''','more')
 
 @app.route('/logout')
 def logout():
@@ -4788,6 +5328,9 @@ def community():
     u=current_user()
     if not u:
         session.pop('user_id',None); return redirect(url_for('login',next=request.path))
+    if not u['email_verified']:
+        flash('Verify your email before joining or posting publicly. Your private profile and drafts remain saved.','info')
+        return redirect(url_for('verify_email',next=request.path))
     cp=safe_connection_profile(u['id'])
     if not conscious_coordination_ready(u,cp):
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Your Profile</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
@@ -4947,7 +5490,8 @@ def edit_profile():
     if not u:
         session.pop('user_id',None)
         return redirect(url_for('login',next=request.path))
-    conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone(); existing_media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(u['id'],)).fetchall(); conn.close()
+    conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); existing_media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY id',(u['id'],)).fetchall(); conn.close()
+    profile_draft=_load_account_draft(u['id'],'member_profile')
     if request.method=='POST':
         name=request.form.get('name','').strip()
         city=request.form.get('city','').strip()
@@ -5017,9 +5561,13 @@ def edit_profile():
                 try: (UPLOAD_DIR/stored).unlink(missing_ok=True)
                 except Exception: pass
         keys=['coordination_types','meet_preferences','age_range','location_preference','occupation','family','lifestyle','seeking','overwhelmed','regulate','other_emotions','conflict_style','repair','boundaries','trust','affection','communication','values_text','business_style','retreat_style','about_me']; vals=[data.get(k,'') for k in keys]
-        conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,updated_at,photo_name,preferred_state,preferred_city,distance_preference,display_business_app) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name,preferred_state=excluded.preferred_state,preferred_city=excluded.preferred_city,distance_preference=excluded.distance_preference,display_business_app=excluded.display_business_app''',(u['id'],*vals,now(),photo_name,data['preferred_state'],data['preferred_city'],data['distance_preference'],data['display_business_app']))
-        conn.commit(); conn.close(); flash('Your profile and Conscious Coordination information were saved.','success'); return redirect(url_for('profile'))
-    def val(k): return cp[k] if cp and k in cp.keys() and cp[k] else ''
+        conn.execute('''INSERT INTO connection_profiles(user_id,coordination_types,meet_preferences,age_range,location_preference,occupation,family,lifestyle,seeking,overwhelmed,regulate,other_emotions,conflict_style,repair,boundaries,trust,affection,communication,values_text,business_style,retreat_style,about_me,opted_in,profile_completed,updated_at,photo_name,preferred_state,preferred_city,distance_preference,display_business_app) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET coordination_types=excluded.coordination_types,meet_preferences=excluded.meet_preferences,age_range=excluded.age_range,location_preference=excluded.location_preference,occupation=excluded.occupation,family=excluded.family,lifestyle=excluded.lifestyle,seeking=excluded.seeking,overwhelmed=excluded.overwhelmed,regulate=excluded.regulate,other_emotions=excluded.other_emotions,conflict_style=excluded.conflict_style,repair=excluded.repair,boundaries=excluded.boundaries,trust=excluded.trust,affection=excluded.affection,communication=excluded.communication,values_text=excluded.values_text,business_style=excluded.business_style,retreat_style=excluded.retreat_style,about_me=excluded.about_me,opted_in=1,profile_completed=1,updated_at=excluded.updated_at,photo_name=excluded.photo_name,preferred_state=excluded.preferred_state,preferred_city=excluded.preferred_city,distance_preference=excluded.distance_preference,display_business_app=excluded.display_business_app''',(u['id'],*vals,now(),photo_name,data['preferred_state'],data['preferred_city'],data['distance_preference'],data['display_business_app']))
+        conn.commit(); conn.close(); _delete_account_draft(u['id'],'member_profile'); flash('Your profile and Conscious Coordination information were saved.','success'); return redirect(url_for('profile'))
+    def val(k):
+        if k in profile_draft: return profile_draft.get(k,'')
+        return cp[k] if cp and k in cp.keys() and cp[k] else ''
+    def identity_val(k):
+        return profile_draft.get(k,u[k] if k in u.keys() else '')
     def selected(k): return {x.strip() for x in val(k).split(',') if x.strip()}
     def checks(name,label,options,help_text=''):
         current=selected(name); boxes=''.join(f'<label class="chip" style="display:inline-flex;gap:7px;align-items:center"><input type="checkbox" name="{name}" value="{html.escape(opt,quote=True)}" {"checked" if opt in current else ""}> {opt}</label>' for opt in options)
@@ -5051,19 +5599,19 @@ def edit_profile():
     media_section=f'''<article class="card"><h2>Profile Media</h2><p class="muted">{'Up to 7 photos and 2 profile videos.' if (u['conscious_paid'] or u['is_admin']) else 'Your profile includes one photo. Additional media unlocks automatically with membership features.'}</p>{f'<div class="grid">{media_preview}</div>' if media_preview else ''}<label><b>Add Profile Photo{'s' if (u['conscious_paid'] or u['is_admin']) else ''}</b></label><input class="input" type="file" name="photos" accept="image/*" {'multiple' if (u['conscious_paid'] or u['is_admin']) else ''}>{'<label><b>Add Profile Videos</b></label><input class="input" type="file" name="videos" accept="video/*" multiple>' if (u['conscious_paid'] or u['is_admin']) else ''}</article>'''
     unknown=bool('birth_time_unknown' in u.keys() and u['birth_time_unknown'])
     identity_section=f'''<article class="card"><span class="badge">MEMBER PROFILE</span><h2>About You</h2>
-    <label><b>Name</b></label><input class="input" name="name" value="{html.escape(u['name'] or '',quote=True)}" required>
-    <label><b>City</b></label><input class="input" name="city" value="{html.escape(u['city'] or '',quote=True)}">
-    <label><b>Headline</b></label><input class="input" name="headline" value="{html.escape(u['headline'] or '',quote=True)}">
-    <label><b>About</b></label><textarea class="input" name="about">{html.escape(u['about'] or '')}</textarea>
+    <label><b>Name</b></label><input class="input" name="name" value="{html.escape(identity_val('name') or '',quote=True)}" required>
+    <label><b>City</b></label><input class="input" name="city" value="{html.escape(identity_val('city') or '',quote=True)}">
+    <label><b>Headline</b></label><input class="input" name="headline" value="{html.escape(identity_val('headline') or '',quote=True)}">
+    <label><b>About</b></label><textarea class="input" name="about">{html.escape(identity_val('about') or '')}</textarea>
     </article>'''
-    birth_section=f'''<article class="card"><span class="badge heart">REQUIRED FOR CONSCIOUS COORDINATION</span><h2>Birth Information</h2><p class="muted">This is part of your member setup and is used automatically throughout Conscious Coordination.</p><label><b>Birth Date</b></label><input class="input" type="date" name="dob" value="{html.escape(u['dob'] or '',quote=True)}" required><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time" value="{html.escape(u['birth_time'] or '',quote=True)}"><div class="fact"><label><input type="checkbox" name="exact_time" {'checked' if u['exact_time'] else ''}> Exact birth time is known</label><br><label><input type="checkbox" name="birth_time_unknown" {'checked' if unknown else ''}> I do not know my birth time</label></div><label><b>Birth City</b></label><input class="input" name="birth_city" value="{html.escape(u['birth_city'] or '',quote=True)}" required><label><b>State / Province</b></label><input class="input" name="birth_region" value="{html.escape(u['birth_region'] or '',quote=True)}"><label><b>Country</b></label><input class="input" name="birth_country" value="{html.escape(u['birth_country'] or '',quote=True)}" required></article>'''
+    birth_section=f'''<article class="card"><span class="badge heart">REQUIRED FOR CONSCIOUS COORDINATION</span><h2>Birth Information</h2><p class="muted">This is part of your member setup and is used automatically throughout Conscious Coordination.</p><label><b>Birth Date</b></label><input class="input" type="date" name="dob" value="{html.escape(identity_val('dob') or '',quote=True)}" required><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time" value="{html.escape(identity_val('birth_time') or '',quote=True)}"><div class="fact"><label><input type="checkbox" name="exact_time" {'checked' if (profile_draft.get('exact_time') or u['exact_time']) else ''}> Exact birth time is known</label><br><label><input type="checkbox" name="birth_time_unknown" {'checked' if (profile_draft.get('birth_time_unknown') or unknown) else ''}> I do not know my birth time</label></div><label><b>Birth City</b></label><input class="input" name="birth_city" value="{html.escape(identity_val('birth_city') or '',quote=True)}" required><label><b>State / Province</b></label><input class="input" name="birth_region" value="{html.escape(identity_val('birth_region') or '',quote=True)}"><label><b>Country</b></label><input class="input" name="birth_country" value="{html.escape(identity_val('birth_country') or '',quote=True)}" required></article>'''
     if business:
         checked='checked' if val('display_business_app') and str(val('display_business_app')) not in {'0',''} else ''
         business_section=f'''<article class="card paid"><span class="badge gold">HOSTED BUSINESS APP</span><h2>Show My Business on My Coordination Profile</h2><p class="muted">Your published Hosted Business App can appear as a separate business card on your Conscious Coordination Profile.</p><label><input type="checkbox" name="display_business_app" value="1" {checked}> Display <b>{html.escape(business['name'])}</b> on my Coordination Profile</label></article>'''
     else:
         business_section=f'''<article class="card"><h3>Hosted Business App</h3><p class="muted">You have not created a Hosted Business App yet. Would you like to create one now?</p><a class="btn" href="{url_for('business_builder',step=1)}">Create My FREE Hosted Business App</a></article>'''
     save_label='Save & Join Community' if not (cp and cp['opted_in']) else 'Save My Profile'
-    content=f'''<div class="hero"><span class="badge heart">♡ MY PROFILE</span><h1>My Profile</h1><p class="muted">Your member information, birth information, connection preferences, emotional patterns, communication, boundaries, values and wellness choices all live together here. Edit this one profile anytime.</p></div><form class="card" method="post" enctype="multipart/form-data">{identity_section}{birth_section}{media_section}<article class="card"><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Connection & Psychological Profile</h2><p class="muted">These questions help personalize your Conscious Coordination reflections and compatibility without diagnosing or labeling you.</p>{basic}{full}<label><b>About Me</b></label><textarea class="input" name="about_me" placeholder="Write this part in your own words.">{html.escape(val('about_me'))}</textarea></article>{business_section}<button class="btn">{save_label}</button></form>'''
+    content=f'''<div class="hero"><span class="badge heart">♡ MY PROFILE</span><h1>My Profile</h1><p class="muted">Your member information, birth information, connection preferences, emotional patterns, communication, boundaries, values and wellness choices all live together here. Edit this one profile anytime.</p></div><form class="card" method="post" enctype="multipart/form-data">{identity_section}{birth_section}{media_section}<article class="card"><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Connection & Psychological Profile</h2><p class="muted">These questions help personalize your Conscious Coordination reflections and compatibility without diagnosing or labeling you.</p>{basic}{full}<label><b>About Me</b></label><textarea class="input" name="about_me" placeholder="Write this part in your own words.">{html.escape(val('about_me'))}</textarea></article>{business_section}{_autosave_script('member_profile')}<button class="btn">{save_label}</button></form>'''
     return page('Edit Profile',content,'profile')
 
 @app.route('/profile/<int:user_id>')
@@ -5076,7 +5624,7 @@ def member_profile(user_id):
     conn=db(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
     if not conscious_coordination_ready(u,me_cp):
         conn.close(); flash('Join the Community by completing your profile.','info'); return redirect(url_for('connections'))
-    m=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone(); conn.close()
+    m=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone(); conn.close()
     if not m: abort(404)
     if m['id']==u['id']: return redirect(url_for('profile'))
     public_html=public_journal_cards(m['id'],u['id']); business_html=member_business_card(business) if business else ''
@@ -5342,7 +5890,7 @@ def connections():
     try:
         conn=db()
         try:
-            business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+            business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone()
         finally:
             conn.close()
     except Exception:
@@ -5759,7 +6307,7 @@ def connection_profile(user_id):
     user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
     cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
     me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone()
-    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY id LIMIT 1',(user_id,)).fetchone()
+    business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone()
     liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone()
     conn.close()
     if not user: abort(404)
@@ -7556,19 +8104,19 @@ def business_builder(step):
     if step<1 or step>9: abort(404)
     if step>=7 and request.method=='GET':
         return redirect(url_for('hosted_app_editor'))
-    u=current_user(); draft=session.get('business_draft',{})
-    conn=db(); existing_business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close()
+    u=current_user(); draft=_load_account_draft(u['id'],'hosted_business_builder')
+    conn=db(); existing_business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); conn.close()
     if not draft and existing_business:
         keys=['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements']
         draft={k:(existing_business[k] if k in existing_business.keys() else '') for k in keys}
         draft['retreat_participating']='1' if existing_business['retreat_participating'] else ''
         draft['enabled_modules']=(existing_business['enabled_modules'] if 'enabled_modules' in existing_business.keys() else '') or 'home,about,contact,booking'
         draft['section_order']=(existing_business['section_order'] if 'section_order' in existing_business.keys() else '') or ''
-        session['business_draft']=draft
+        _save_account_draft(u['id'],'hosted_business_builder',draft)
     elif not draft:
         plan_prefill=_plan_prefill_for_user(u['id'])
         if plan_prefill:
-            draft.update(plan_prefill); draft['_plan_prefill_available']='1'; session['business_draft']=draft
+            draft.update(plan_prefill); draft['_plan_prefill_available']='1'; _save_account_draft(u['id'],'hosted_business_builder',draft)
     fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements'],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone']}
     if request.method=='POST':
         for k in fields.get(step,[]): draft[k]=request.form.get(k,'').strip()
@@ -7582,7 +8130,7 @@ def business_builder(step):
             requested_order=[x.strip() for x in request.form.get('section_order','').split(',') if x.strip()]
             valid=[x for x,_ in HOSTED_APP_MODULES]
             draft['section_order']=','.join([x for x in requested_order if x in valid]+[x for x in valid if x not in requested_order])
-        session['business_draft']=draft; session.modified=True
+        _save_account_draft(u['id'],'hosted_business_builder',draft)
         if step==5:
             if not existing_business:
                 name=draft.get('name','').strip()
@@ -7649,20 +8197,23 @@ def business_builder(step):
                 conn.execute('INSERT INTO business_media(business_id,media_kind,file_name,title,description,created_at) VALUES(?,?,?,?,?,?)',(bid,'video',stored,title,desc,now()))
             conn.commit(); conn.close()
         if step==9:
+            if not u['email_verified']:
+                flash('Verify your email before publishing. Your Hosted App draft remains saved.','info')
+                return redirect(url_for('verify_email',next=url_for('hosted_app_editor')))
             name=draft.get('name','').strip()
             if not name: flash('Business Name is required. Return to Step 1.','error'); return redirect(url_for('business_builder',step=1))
-            conn=db(); existing=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+            conn=db(); existing=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone()
             keys=['name','owner_title','category','location','tagline','description','story','offers','features','website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements']; vals=[draft.get(k,'') for k in keys]; retreat=1 if draft.get('retreat_participating') else 0
             if existing:
                 conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,contact_email=?,contact_phone=?,retreat_service_area=?,retreat_delivery_mode=?,retreat_travel_radius=?,retreat_price_range=?,retreat_group_size=?,retreat_availability=?,retreat_accessibility=?,retreat_booking_requirements=?,retreat_participating=?,active=1,updated_at=? WHERE id=?''',(*vals,retreat,now(),existing['id'])); bid=existing['id']
             else:
                 cur=conn.execute('''INSERT INTO businesses(owner_id,name,owner_title,category,location,tagline,description,story,offers,features,website,instagram,tiktok,youtube,facebook,booking_url,store_url,podcast_url,affiliate_links,contact_email,contact_phone,retreat_service_area,retreat_delivery_mode,retreat_travel_radius,retreat_price_range,retreat_group_size,retreat_availability,retreat_accessibility,retreat_booking_requirements,retreat_participating,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',(u['id'],*vals,retreat,now(),now())); bid=cur.lastrowid
             conn.execute('UPDATE businesses SET enabled_modules=?,section_order=?,updated_at=? WHERE id=?',(draft.get('enabled_modules','home,about,contact,booking'),draft.get('section_order',''),now(),bid))
-            conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your FREE Hosted Business App is published.','success'); return redirect(url_for('business_app',business_id=bid))
+            conn.commit(); conn.close(); _delete_account_draft(u['id'],'hosted_business_builder'); flash('Your FREE Hosted Business App is published.','success'); return redirect(url_for('business_app',business_id=bid))
         if step==6 and existing_business:
             conn=db()
             conn.execute('''UPDATE businesses SET name=?,owner_title=?,category=?,location=?,tagline=?,description=?,story=?,offers=?,features=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,booking_url=?,store_url=?,podcast_url=?,affiliate_links=?,contact_email=?,contact_phone=?,retreat_service_area=?,retreat_delivery_mode=?,retreat_travel_radius=?,retreat_price_range=?,retreat_group_size=?,retreat_availability=?,retreat_accessibility=?,retreat_booking_requirements=?,retreat_participating=?,enabled_modules=?,active=1,updated_at=? WHERE id=?''',(draft.get('name',''),draft.get('owner_title',''),draft.get('category',''),draft.get('location',''),draft.get('tagline',''),draft.get('description',''),draft.get('story',''),draft.get('offers',''),draft.get('features',''),draft.get('website',''),draft.get('instagram',''),draft.get('tiktok',''),draft.get('youtube',''),draft.get('facebook',''),draft.get('booking_url',''),draft.get('store_url',''),draft.get('podcast_url',''),draft.get('affiliate_links',''),draft.get('contact_email',''),draft.get('contact_phone',''),draft.get('retreat_service_area',''),draft.get('retreat_delivery_mode',''),draft.get('retreat_travel_radius',''),draft.get('retreat_price_range',''),draft.get('retreat_group_size',''),draft.get('retreat_availability',''),draft.get('retreat_accessibility',''),draft.get('retreat_booking_requirements',''),1 if draft.get('retreat_participating') else 0,draft.get('enabled_modules','home,about,contact,booking'),now(),existing_business['id']))
-            conn.commit(); conn.close(); session.pop('business_draft',None); flash('Your Hosted App is ready. Continue editing directly from one screen.','success'); return redirect(url_for('hosted_app_editor'))
+            conn.commit(); conn.close(); _delete_account_draft(u['id'],'hosted_business_builder'); flash('Your Hosted App is ready. Continue editing directly from one screen.','success'); return redirect(url_for('hosted_app_editor'))
         if step<9: return redirect(url_for('business_builder',step=step+1))
     titles={1:'Identity',2:'About',3:'What Do You Offer?',4:'App Features',5:'Branding & Media',6:'Business Links & Contact',7:'Preview Your App',8:'Final Review & Edit',9:'Publish My App'}
     def val(k): return draft.get(k,'') or ''
@@ -7726,7 +8277,7 @@ def business_builder_media(media_id):
 @login_required
 def business_builder_core_media():
     u=current_user(); kind=request.form.get('kind',''); action=request.form.get('action','update'); conn=db()
-    b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+    b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone()
     if not b: conn.close(); abort(404)
     if kind not in {'logo','cover'}: conn.close(); abort(400)
     name_field=kind+'_name'; old=b[name_field]
@@ -7852,7 +8403,7 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
 
 def _owner_business_bundle(user_id):
-    conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(user_id,)).fetchone()
+    conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone()
     if not b: conn.close(); return None,[],[]
     media=conn.execute('SELECT * FROM business_media WHERE business_id=? ORDER BY media_kind,sort_order,id',(b['id'],)).fetchall()
     events=conn.execute("SELECT * FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled' ORDER BY event_date,start_time",(b['id'],)).fetchall(); conn.close()
@@ -8060,7 +8611,7 @@ def business_book(business_id,calendar_id):
 @app.route('/business/dashboard')
 @login_required
 def business_dashboard():
-    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); unread=conn.execute('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']; conn.close()
+    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); unread=conn.execute('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']; conn.close()
     if not b:
         plan_url=url_for('business_plan') if bool(u['business_dev_paid'] or u['is_admin']) else url_for('payment_info',product='business-development')
         plan_button='Open My Business Journal' if bool(u['business_dev_paid'] or u['is_admin']) else 'Start My Business Plan — $79.99'
@@ -8192,7 +8743,7 @@ def proposal_view(proposal_id):
 @app.route('/business/calendar', methods=['GET','POST'])
 @login_required
 def business_calendar_page():
-    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone()
+    u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone()
     if not b: conn.close(); return redirect(url_for('business_builder',step=1))
     if request.method=='POST':
         title=request.form.get('title','').strip(); event_type=request.form.get('event_type','Other'); event_date=request.form.get('event_date',''); start_time=request.form.get('start_time',''); end_time=request.form.get('end_time',''); location=request.form.get('location','').strip(); capacity=request.form.get('capacity','').strip(); booking_status=request.form.get('booking_status','Open'); notes=request.form.get('notes','').strip()
@@ -8232,7 +8783,7 @@ def google_calendar_connect():
 @login_required
 @business_development_required
 def startup():
-    u=current_user(); conn=db(); saved=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); hosted=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(u['id'],)).fetchone(); conn.close(); data=json.loads(saved['payload']) if saved else {}
+    u=current_user(); conn=db(); saved=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); hosted=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); conn.close(); data=json.loads(saved['payload']) if saved else {}
     hosted_prefill=False
     if not saved and hosted:
         data={'name':u['name'],'email':u['email'],'business_name':hosted['name'] or '','industry':hosted['category'] or hosted['owner_title'] or '','mission':'','vision':'','usp':hosted['tagline'] or '','additional_info':hosted['description'] or '','revenue_sources':hosted['offers'] or ''}
@@ -8253,7 +8804,7 @@ def startup():
     <h2>Marketing & Growth</h2><label><b>Target audience / customer</b></label>{helpbox('Who is most likely to need, value and pay for your offer.','Adults 30–55 in Southeast Michigan who value wellness, nature, personal growth and personalized experiences.') }<textarea class="input" name="target_audience">{v('target_audience')}</textarea><label><b>Current marketing strategy</b></label>{helpbox('How customers currently discover and hear from your business.','Instagram, referrals, local events, Google Business Profile and partnerships with nearby wellness providers.') }<textarea class="input" name="marketing_strategy">{v('marketing_strategy')}</textarea><label><b>Marketing areas where you need help</b></label><textarea class="input" name="marketing_help" placeholder="Branding, digital marketing, community outreach, sales strategy">{v('marketing_help')}</textarea>
     <h2>Certifications & Compliance</h2><label><b>Do you need certifications for government contracts or awards?</b></label><input class="input" name="certification_need" value="{v('certification_need')}" placeholder="Yes, No, Unsure"><label><b>Certifications of interest</b></label><textarea class="input" name="certifications" placeholder="SAM.gov, MBE, WBE, DBE, Veteran-Owned, Other">{v('certifications')}</textarea>
     <h2>Grant & Funding Support</h2><label><b>Interested in grant-writing services?</b></label><input class="input" name="grant_interest" value="{v('grant_interest')}" placeholder="Yes, No, Maybe"><label><b>What type of funding are you seeking?</b></label>{helpbox('Describe the funding purpose and approximate need if known.','$25,000 startup capital for equipment, working capital and launch marketing.') }<textarea class="input" name="funding_type">{v('funding_type')}</textarea>
-    <h2>Additional Information</h2><label><b>Anything else we should know about the business or vision?</b></label><textarea class="input" name="additional_info">{v('additional_info')}</textarea><label><b>How did you hear about us?</b></label><input class="input" name="heard_about" value="{v('heard_about')}"><div class="actions"><button class="out" name="action" value="save">Save & Continue Later</button><button class="btn" name="action" value="generate">Generate Professional Business Plan</button></div></form>'''
+    <h2>Additional Information</h2><label><b>Anything else we should know about the business or vision?</b></label><textarea class="input" name="additional_info">{v('additional_info')}</textarea><label><b>How did you hear about us?</b></label><input class="input" name="heard_about" value="{v('heard_about')}">{_autosave_script('business_plan')}<div class="actions"><button class="out" name="action" value="save">Save & Continue Later</button><button class="btn" name="action" value="generate">Generate Professional Business Plan</button></div></form>'''
     return page('Business Plan Questionnaire',form,'business')
 
 @app.route('/business-plan/generate')
@@ -8448,7 +8999,7 @@ STRUCTURED RETREAT CONTEXT PACKET:\n'''+json.dumps(packet,default=str)
 @app.route('/retreats')
 def retreats():
     conn=db(); participating=conn.execute('SELECT * FROM businesses WHERE active=1 AND retreat_participating=1 ORDER BY name').fetchall(); own=None
-    if session.get('user_id'): own=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id LIMIT 1',(session['user_id'],)).fetchone()
+    if session.get('user_id'): own=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(session['user_id'],)).fetchone()
     conn.close()
     owner_action=''
     if own:
@@ -8568,7 +9119,8 @@ def settings():
     u=current_user(); admin_storage=''
     if u and u['is_admin']:
         admin_storage=f'''<article class="card"><h3>Admin Storage Check</h3><p class="muted">Verify the permanent user ID and saved-record counts attached to this account.</p><a class="out" href="{url_for('account_storage_status')}">Profile Persistence Check</a></article>'''
-    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account, one profile and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b> is the email currently saved on this account.</p><div class="actions"><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>My Profile</h3><p class="muted">Identity, birth information, connection preferences and Conscious Coordination questions are edited together in one place.</p><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('profile')}">View My Journal</a></article>{admin_storage}<article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+    verified='Verified ✓' if u['email_verified'] else 'Verification required'
+    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account, one profile and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b><br>{verified}</p><div class="actions"><a class="out" href="{url_for('account_security')}">Email & Trusted Devices</a><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>My Profile</h3><p class="muted">Identity, birth information, connection preferences and Conscious Coordination questions are edited together in one place.</p><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('profile')}">View My Journal</a></article>{admin_storage}<article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
 
 @app.route('/payment/<product>')
 def payment_info(product):
