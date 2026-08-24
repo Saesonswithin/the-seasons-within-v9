@@ -240,6 +240,9 @@ def init_db():
         email_verified INTEGER NOT NULL DEFAULT 0,
         email_verified_at TEXT,
         verification_sent_at TEXT,
+        age INTEGER,
+        dating_age_min INTEGER,
+        dating_age_max INTEGER,
         created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS journal_entries (
@@ -424,10 +427,17 @@ def init_db():
         ("business_media","crop_data","ALTER TABLE business_media ADD COLUMN crop_data TEXT DEFAULT '{}'"),
         ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
         ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
+        ("users","dob","ALTER TABLE users ADD COLUMN dob TEXT DEFAULT ''"),
+        ("users","birth_city","ALTER TABLE users ADD COLUMN birth_city TEXT DEFAULT ''"),
+        ("users","birth_country","ALTER TABLE users ADD COLUMN birth_country TEXT DEFAULT ''"),
+        ("users","birth_time","ALTER TABLE users ADD COLUMN birth_time TEXT DEFAULT ''"),
         ("users","birth_time_unknown","ALTER TABLE users ADD COLUMN birth_time_unknown INTEGER NOT NULL DEFAULT 0"),
         ("users","birth_timezone","ALTER TABLE users ADD COLUMN birth_timezone TEXT DEFAULT ''"),
         ("users","birth_latitude","ALTER TABLE users ADD COLUMN birth_latitude REAL"),
         ("users","birth_longitude","ALTER TABLE users ADD COLUMN birth_longitude REAL"),
+        ("users","age","ALTER TABLE users ADD COLUMN age INTEGER"),
+        ("users","dating_age_min","ALTER TABLE users ADD COLUMN dating_age_min INTEGER"),
+        ("users","dating_age_max","ALTER TABLE users ADD COLUMN dating_age_max INTEGER"),
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
@@ -559,8 +569,33 @@ def init_db():
         user_id INTEGER NOT NULL,
         media_type TEXT NOT NULL,
         file_name TEXT NOT NULL,
+        media_role TEXT NOT NULL DEFAULT 'gallery',
+        crop_data TEXT DEFAULT '{}',
+        duration_seconds REAL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS virtual_gift_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS member_virtual_gifts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        gift_type_id INTEGER NOT NULL,
+        media_id INTEGER,
+        created_at TEXT NOT NULL,
+        seen_at TEXT,
+        FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(gift_type_id) REFERENCES virtual_gift_types(id),
+        FOREIGN KEY(media_id) REFERENCES coordination_media(id) ON DELETE SET NULL
     );
     CREATE TABLE IF NOT EXISTS coordination_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -595,11 +630,34 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     ''')
+    # coordination_media is created later than the core profile tables. Apply
+    # its compatibility migrations only after the table is guaranteed to
+    # exist so a brand-new database can initialize cleanly.
+    for column, ddl in [
+        ("media_role", "ALTER TABLE coordination_media ADD COLUMN media_role TEXT NOT NULL DEFAULT 'gallery'"),
+        ("crop_data", "ALTER TABLE coordination_media ADD COLUMN crop_data TEXT DEFAULT '{}'"),
+        ("duration_seconds", "ALTER TABLE coordination_media ADD COLUMN duration_seconds REAL"),
+        ("sort_order", "ALTER TABLE coordination_media ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        cols={r["name"] for r in conn.execute("PRAGMA table_info(coordination_media)").fetchall()}
+        if column not in cols:
+            conn.execute(ddl)
     conn.execute("UPDATE journal_entries SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE community_posts SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE messages SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE journal_entries SET category='Reflection' WHERE category='Reflections'")
     conn.execute("UPDATE journal_entries SET category='Retreat' WHERE category='Retreats'")
+    gift_types=[
+        ('flowers','Flowers','🌹',1),('teddy_bear','Teddy Bear','🧸',2),('heart','Heart','❤️',3),
+        ('candy','Candy','🍬',4),('meditation','Meditation','🧘',5),('yoga','Yoga','🧘‍♀️',6),
+        ('sound_bowl','Sound Bowl','🎵',7),('running_shoes','Running Shoes','👟',8),
+        ('stars','Stars','⭐',9),('briefcase','Briefcase','💼',10)
+    ]
+    for code,label,emoji,order in gift_types:
+        conn.execute('''INSERT INTO virtual_gift_types(code,label,emoji,active,sort_order)
+                        VALUES(?,?,?,1,?) ON CONFLICT(code) DO UPDATE SET
+                        label=excluded.label,emoji=excluded.emoji,sort_order=excluded.sort_order''',
+                     (code,label,emoji,order))
     conn.commit()
     conn.close()
     init_astrology_tables()
@@ -661,6 +719,7 @@ def _ensure_runtime_compat_schema():
                 ('birth_time_unknown','INTEGER NOT NULL DEFAULT 0'),('is_admin','INTEGER NOT NULL DEFAULT 0'),
                 ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0'),
                 ('email_verified','INTEGER NOT NULL DEFAULT 0'),('email_verified_at','TEXT'),('verification_sent_at','TEXT')
+                ,('age','INTEGER'),('dating_age_min','INTEGER'),('dating_age_max','INTEGER')
             ],
             'connection_profiles': [
                 ('coordination_types',"TEXT DEFAULT ''"),('meet_preferences',"TEXT DEFAULT ''"),
@@ -693,6 +752,10 @@ def _ensure_runtime_compat_schema():
             'community_posts': [
                 ('title',"TEXT DEFAULT 'Morning Reflection'"),('category',"TEXT DEFAULT 'Reflection'"),
                 ('media_name',"TEXT DEFAULT ''"),('media_type',"TEXT DEFAULT ''")
+            ]
+            ,'coordination_media': [
+                ('media_role',"TEXT NOT NULL DEFAULT 'gallery'"),('crop_data',"TEXT DEFAULT '{}'"),
+                ('duration_seconds','REAL'),('sort_order','INTEGER NOT NULL DEFAULT 0')
             ]
         }
 
@@ -1322,7 +1385,7 @@ def journal_category_for_public(category):
 def public_journal_cards(member_id, viewer_id=None):
     conn=db(); posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.user_id=? ORDER BY p.id DESC',(member_id,)).fetchall(); conn.close()
     if not posts:
-        return '<div class="empty"><h3>No Public Journal entries yet</h3><p class="muted">Community posts shared by this member will appear here.</p></div>'
+        return '<div class="empty"><h3>No Public Journal entries yet</h3></div>'
     cards=[]
     for p in posts:
         message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>' if viewer_id else ''
@@ -4802,7 +4865,7 @@ def galaxy_eve_card():
 
 def regular_business_cards(rows):
     if not rows:
-        return '<div class="empty"><h3>Businesses will appear here as they join</h3><p class="muted">Published Hosted Business Apps appear automatically after their owners publish them.</p></div>'
+        return '<div class="empty"><h3>Businesses will appear here as they join</h3></div>'
     cards=[]
     for b in rows:
         logo=business_media_src(b['logo_name']) if 'logo_name' in b.keys() and b['logo_name'] else ''
@@ -5361,9 +5424,9 @@ def community():
         controls=message+(f'<a class="out" href="{url_for("community_post_edit",post_id=p["id"])}">Edit Post</a><form method="post" action="{url_for("community_post_delete",post_id=p["id"])}" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form>' if p['user_id']==u['id'] else '')
         author_badge='<span class="badge gold">GALAXY EVE</span>' if p['name'].strip().lower()=='galaxy eve' else f'<span class="badge">{html.escape(p["category"])}</span>'
         cards.append(f'''<article class="card"><div class="post"><div class="avatar">{initials(p['name'])}</div><div style="width:100%">{author_badge}<h3 style="margin:6px 0">{html.escape(p['title'])}</h3><p class="muted small"><a class="out" href="{url_for('member_profile',user_id=p['user_id'])}">{html.escape(p['name'])}</a> • {p['created_at']}</p><p>{html.escape(p['body'])}</p>{community_media_html(p)}<div class="actions">{controls}</div></div></div></article>''')
-    post_html=''.join(cards) or '<div class="empty"><h3>Community posts will appear here</h3><p class="muted">Start with a real reflection. There are no fake member posts.</p></div>'
+    post_html=''.join(cards) or '<div class="empty"><h3>Community posts will appear here</h3></div>'
     current_sky_html=_current_sky_card()
-    content=f'''{community_switch}<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1><p class="muted">The shared social, wellness and business network. Member responses stay private through Journal Inbox rather than public comment threads.</p></div>{galaxy_feature}{current_sky_html}<div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">LUNAR SEASON REFLECTION</span><h3>What may deserve your attention during this lunar period?</h3><a class="out" href="{url_for('astrology_reflections')}">Open My Lunar Season Reflection</a></article></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Title</b></label><input class="input" name="title" placeholder="Title your Community post" required><label><b>Category</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select><textarea class="input" name="body" placeholder="Share with the Community..." required></textarea><label class="small"><b>Add Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post to Community</button></form>{post_html}'''
+    content=f'''{community_switch}<div class="hero"><span class="badge">MEMBERS ONLY</span><h1>Community</h1></div>{galaxy_feature}{current_sky_html}<div class="grid"><article class="card"><span class="badge">RELAXATION</span><h3>60-Second Reset</h3><p class="muted">Unclench your jaw. Lower your shoulders. Take three slow breaths and notice what can wait.</p></article><article class="card"><span class="badge">LUNAR SEASON REFLECTION</span><h3>What may deserve your attention during this lunar period?</h3><a class="out" href="{url_for('astrology_reflections')}">Open My Lunar Season Reflection</a></article></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Title</b></label><input class="input" name="title" placeholder="Title your Community post" required><label><b>Category</b></label><select class="input" name="category"><option>Reflection</option><option>Business</option><option>Retreat</option><option>Conscious Coordination</option><option>Journal Entry</option></select><textarea class="input" name="body" placeholder="Share with the Community..." required></textarea><label class="small"><b>Add Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post to Community</button></form>{post_html}'''
     return page('Community',content,'community')
 
 @app.route('/community/post/<int:post_id>/edit', methods=['GET','POST'])
@@ -5454,7 +5517,7 @@ def profile():
             conn=db(); conn.execute("UPDATE users SET city=? WHERE id=? AND trim(coalesce(city,''))=''",(display_city,u['id'])); conn.commit(); conn.close()
         except Exception: app.logger.exception('Could not sync profile city to My Journal')
     member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if (u['conscious_paid'] or u['is_admin']) else 'FREE MEMBER'
-    header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a></div></div><div class="portrait">{initials(u['name'])}</div></div></article>'''
+    header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p></div><div style="text-align:center"><div class="portrait"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;object-fit:contain;border-radius:50%"></div><a class="out small" style="margin-top:10px" href="{url_for('member_gallery',user_id=u['id'])}">Picture Gallery</a></div></div></article>'''
     shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     if not ready:
         content=header+shortcuts+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article>'''
@@ -5497,6 +5560,19 @@ def edit_profile():
         city=request.form.get('city','').strip()
         headline=request.form.get('headline','').strip()
         about=request.form.get('about','').strip()
+        def optional_age(field):
+            raw=request.form.get(field,'').strip()
+            if not raw: return None
+            try: value=int(raw)
+            except ValueError: raise ValueError('Age values must be whole numbers.')
+            if value < 18 or value > 120: raise ValueError('Age values must be between 18 and 120.')
+            return value
+        try:
+            age=optional_age('age'); dating_age_min=optional_age('dating_age_min'); dating_age_max=optional_age('dating_age_max')
+        except ValueError as exc:
+            flash(str(exc),'error'); return redirect(url_for('edit_profile'))
+        if dating_age_min is not None and dating_age_max is not None and dating_age_min > dating_age_max:
+            flash('Minimum dating age cannot be greater than maximum dating age.','error'); return redirect(url_for('edit_profile'))
         dob=request.form.get('dob','').strip()
         birth_time=request.form.get('birth_time','').strip()
         birth_city=request.form.get('birth_city','').strip()
@@ -5524,8 +5600,8 @@ def edit_profile():
         saved_longitude=None if birth_foundation_changed else (u['birth_longitude'] if 'birth_longitude' in u.keys() else None)
         conn=db()
         conn.execute(
-            """UPDATE users SET name=?,city=?,headline=?,about=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone=?,birth_latitude=?,birth_longitude=?,exact_time=?,birth_time_unknown=? WHERE id=?""",
-            (name,city,headline,about,dob,birth_time,birth_city,birth_region,birth_country,saved_timezone,saved_latitude,saved_longitude,exact,time_unknown,u['id'])
+            """UPDATE users SET name=?,city=?,headline=?,about=?,age=?,dating_age_min=?,dating_age_max=?,dob=?,birth_time=?,birth_city=?,birth_region=?,birth_country=?,birth_timezone=?,birth_latitude=?,birth_longitude=?,exact_time=?,birth_time_unknown=? WHERE id=?""",
+            (name,city,headline,about,age,dating_age_min,dating_age_max,dob,birth_time,birth_city,birth_region,birth_country,saved_timezone,saved_latitude,saved_longitude,exact,time_unknown,u['id'])
         )
         conn.commit()
         conn.close()
@@ -5596,13 +5672,15 @@ def edit_profile():
     for m in existing_media:
         src=url_for('community_media',filename=m['file_name']); media_cards.append(f'<div class="media">'+(f'<video controls playsinline src="{src}" style="width:100%;height:100%;object-fit:cover"></video>' if m['media_type']=='video' else f'<img src="{src}" style="width:100%;height:100%;object-fit:cover">')+'</div>')
     media_preview=''.join(media_cards)
-    media_section=f'''<article class="card"><h2>Profile Media</h2><p class="muted">{'Up to 7 photos and 2 profile videos.' if (u['conscious_paid'] or u['is_admin']) else 'Your profile includes one photo. Additional media unlocks automatically with membership features.'}</p>{f'<div class="grid">{media_preview}</div>' if media_preview else ''}<label><b>Add Profile Photo{'s' if (u['conscious_paid'] or u['is_admin']) else ''}</b></label><input class="input" type="file" name="photos" accept="image/*" {'multiple' if (u['conscious_paid'] or u['is_admin']) else ''}>{'<label><b>Add Profile Videos</b></label><input class="input" type="file" name="videos" accept="video/*" multiple>' if (u['conscious_paid'] or u['is_admin']) else ''}</article>'''
+    media_section=f'''<article class="card"><h2>Profile Photo & Picture Gallery</h2><p class="muted">Manage your main profile photo, up to 10 gallery pictures and one 15-second profile video.</p>{f'<div class="grid">{media_preview}</div>' if media_preview else ''}<a class="btn" href="{url_for('member_gallery',user_id=u['id'])}">Picture Gallery</a></article>'''
     unknown=bool('birth_time_unknown' in u.keys() and u['birth_time_unknown'])
     identity_section=f'''<article class="card"><span class="badge">MEMBER PROFILE</span><h2>About You</h2>
     <label><b>Name</b></label><input class="input" name="name" value="{html.escape(identity_val('name') or '',quote=True)}" required>
     <label><b>City</b></label><input class="input" name="city" value="{html.escape(identity_val('city') or '',quote=True)}">
     <label><b>Headline</b></label><input class="input" name="headline" value="{html.escape(identity_val('headline') or '',quote=True)}">
     <label><b>About</b></label><textarea class="input" name="about">{html.escape(identity_val('about') or '')}</textarea>
+    <label><b>Age</b></label><input class="input" type="number" name="age" min="18" max="120" value="{html.escape(str(identity_val('age') or ''),quote=True)}" inputmode="numeric">
+    <div class="grid"><div><label><b>Dating Age Range — Minimum age</b></label><input class="input" type="number" name="dating_age_min" min="18" max="120" value="{html.escape(str(identity_val('dating_age_min') or ''),quote=True)}" inputmode="numeric"></div><div><label><b>Maximum age</b></label><input class="input" type="number" name="dating_age_max" min="18" max="120" value="{html.escape(str(identity_val('dating_age_max') or ''),quote=True)}" inputmode="numeric"></div></div>
     </article>'''
     birth_section=f'''<article class="card"><span class="badge heart">REQUIRED FOR CONSCIOUS COORDINATION</span><h2>Birth Information</h2><p class="muted">This is part of your member setup and is used automatically throughout Conscious Coordination.</p><label><b>Birth Date</b></label><input class="input" type="date" name="dob" value="{html.escape(identity_val('dob') or '',quote=True)}" required><label><b>Birth Time</b></label><input class="input" type="time" name="birth_time" value="{html.escape(identity_val('birth_time') or '',quote=True)}"><div class="fact"><label><input type="checkbox" name="exact_time" {'checked' if (profile_draft.get('exact_time') or u['exact_time']) else ''}> Exact birth time is known</label><br><label><input type="checkbox" name="birth_time_unknown" {'checked' if (profile_draft.get('birth_time_unknown') or unknown) else ''}> I do not know my birth time</label></div><label><b>Birth City</b></label><input class="input" name="birth_city" value="{html.escape(identity_val('birth_city') or '',quote=True)}" required><label><b>State / Province</b></label><input class="input" name="birth_region" value="{html.escape(identity_val('birth_region') or '',quote=True)}"><label><b>Country</b></label><input class="input" name="birth_country" value="{html.escape(identity_val('birth_country') or '',quote=True)}" required></article>'''
     if business:
@@ -5628,8 +5706,175 @@ def member_profile(user_id):
     if not m: abort(404)
     if m['id']==u['id']: return redirect(url_for('profile'))
     public_html=public_journal_cards(m['id'],u['id']); business_html=member_business_card(business) if business else ''
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a></div></div><div class="portrait">{initials(m['name'])}</div></div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
+    conn=db(); main_photo=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(m['id'],)).fetchone(); conn.close()
+    portrait=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(m["name"])}</div>')
+    age_text=f' • Age {m["age"]}' if 'age' in m.keys() and m['age'] else ''
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a></div></div>{portrait}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
     return page(f'{m["name"]} — Public Journal',content,'profile')
+
+def _remove_member_media(conn, row):
+    conn.execute('DELETE FROM stored_files WHERE file_name=?',(row['file_name'],))
+    conn.execute('DELETE FROM coordination_media WHERE id=?',(row['id'],))
+    try: (UPLOAD_DIR/row['file_name']).unlink(missing_ok=True)
+    except Exception: pass
+
+def _member_media_card(row, owner=False, open_crop=False):
+    src=url_for('community_media',filename=row['file_name'])
+    crop=_crop_css(row['crop_data'] if 'crop_data' in row.keys() else '{}')
+    if row['media_type']=='video':
+        media=f'<video controls playsinline preload="metadata" src="{src}" style="width:100%;max-height:420px;border-radius:18px"></video>'
+    else:
+        media=f'<div class="member-crop-preview"><img src="{src}" alt="Gallery photo" style="{crop}"></div>'
+    controls=''
+    if owner:
+        main=(f'<form method="post" action="{url_for("member_media_main",media_id=row["id"])}"><button class="out" type="submit">Make Profile Photo</button></form>' if row['media_type']=='image' and row['media_role']!='profile' else '')
+        edit=(f'<details {"open" if open_crop else ""}><summary class="out">Edit Crop</summary>{_member_crop_form(row)}</details>' if row['media_type']=='image' else '')
+        replace=f'''<form method="post" enctype="multipart/form-data" action="{url_for('member_media_replace',media_id=row['id'])}"><label class="out">Replace<input hidden type="file" name="media" {'accept="image/jpeg,image/png,image/webp"' if row['media_type']=='image' else 'accept="video/mp4,video/quicktime,video/webm"'} onchange="this.form.submit()"></label></form>'''
+        controls=f'<div class="actions">{main}{edit}{replace}<form method="post" action="{url_for("member_media_delete",media_id=row["id"])}"><button class="out danger" type="submit">Delete</button></form></div>'
+    return f'<article class="card">{media}{controls}</article>'
+
+def _member_crop_form(row):
+    data=_safe_json(row['crop_data'] if 'crop_data' in row.keys() else '{}',{'x':50,'y':50,'zoom':1})
+    return f'''<form method="post" action="{url_for('member_media_crop',media_id=row['id'])}" class="touch-crop-form">
+    <div class="touch-crop-stage"><img src="{url_for('community_media',filename=row['file_name'])}" alt="Photo being cropped"></div>
+    <input type="hidden" name="crop_x" value="{data.get('x',50)}"><input type="hidden" name="crop_y" value="{data.get('y',50)}">
+    <label><b>Zoom</b></label><input class="input crop-zoom" type="range" name="crop_zoom" min="1" max="3" step="0.01" value="{data.get('zoom',1)}">
+    <input type="hidden" name="crop_rotate" value="0"><div class="actions"><button class="btn" type="submit">Save Photo</button></div></form>'''
+
+@app.route('/profile/<int:user_id>/gallery',methods=['GET','POST'])
+@login_required
+def member_gallery(user_id):
+    me=current_user(); conn=db(); member=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone()
+    if not member: conn.close(); abort(404)
+    owner=me['id']==user_id
+    if not owner and not (cp and cp['opted_in']): conn.close(); abort(404)
+    if request.method=='POST':
+        if not owner: conn.close(); abort(403)
+        kind=request.form.get('kind','gallery')
+        upload=request.files.get('media')
+        if not upload or not getattr(upload,'filename',''):
+            conn.close(); flash('Choose a photo or video first.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+        ext=Path(secure_filename(upload.filename)).suffix.lower()
+        if kind in {'profile','gallery'}:
+            if ext not in {'.jpg','.jpeg','.png','.webp'}:
+                conn.close(); flash('Use a JPG, PNG or WebP photo.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+            count=conn.execute("SELECT COUNT(*) n FROM coordination_media WHERE user_id=? AND media_type='image' AND media_role='gallery'",(user_id,)).fetchone()['n']
+            if kind=='gallery' and count>=10:
+                conn.close(); flash('Your Picture Gallery already has the maximum 10 photos.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+        elif kind=='video':
+            if ext not in BUSINESS_VIDEO_EXT:
+                conn.close(); flash('Use a supported MP4, MOV, WebM or M4V video.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+            if conn.execute("SELECT 1 FROM coordination_media WHERE user_id=? AND media_type='video'",(user_id,)).fetchone():
+                conn.close(); flash('Only one profile video is allowed. Delete or replace the current video first.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+        else:
+            conn.close(); abort(400)
+        conn.close()
+        stored,media_type=save_community_media(upload,user_id)
+        if not stored:
+            flash('We could not save that file. Please try again.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+        duration=None
+        if kind=='video':
+            duration=_video_duration_seconds(UPLOAD_DIR/stored)
+            if duration is None or duration>15.0:
+                conn=db(); conn.execute('DELETE FROM stored_files WHERE file_name=?',(stored,)); conn.commit(); conn.close()
+                try: (UPLOAD_DIR/stored).unlink(missing_ok=True)
+                except Exception: pass
+                flash('The profile video must be verifiably 15 seconds or shorter.','error'); return redirect(url_for('member_gallery',user_id=user_id))
+        conn=db()
+        if kind=='profile':
+            old=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile'",(user_id,)).fetchall()
+            for row in old: _remove_member_media(conn,row)
+        role='profile_video' if kind=='video' else kind
+        cur=conn.execute('''INSERT INTO coordination_media(user_id,media_type,file_name,media_role,crop_data,duration_seconds,sort_order,created_at)
+                            VALUES(?,?,?,?,?,?,?,?)''',(user_id,media_type,stored,role,'{}',duration,0,now()))
+        if kind=='profile':
+            conn.execute("UPDATE connection_profiles SET photo_name=? WHERE user_id=?",(stored,user_id))
+        conn.commit(); media_id=cur.lastrowid; conn.close()
+        flash('Upload complete ✓','success')
+        return redirect(url_for('member_gallery',user_id=user_id,edit=media_id)+'#media-'+str(media_id))
+    media=conn.execute('SELECT * FROM coordination_media WHERE user_id=? ORDER BY CASE media_role WHEN \'profile\' THEN 0 WHEN \'gallery\' THEN 1 ELSE 2 END,sort_order,id',(user_id,)).fetchall()
+    gifts=conn.execute('''SELECT g.*,t.label,t.emoji,u.name sender_name FROM member_virtual_gifts g JOIN virtual_gift_types t ON t.id=g.gift_type_id JOIN users u ON u.id=g.sender_id WHERE g.recipient_id=? ORDER BY g.id DESC LIMIT 50''',(user_id,)).fetchall() if owner else []
+    gift_types=conn.execute('SELECT * FROM virtual_gift_types WHERE active=1 ORDER BY sort_order,id').fetchall(); conn.close()
+    edit_id=request.args.get('edit',type=int)
+    cards=''.join(f'<div id="media-{m["id"]}">{_member_media_card(m,owner,edit_id==m["id"])}</div>' for m in media) or '<div class="empty"><h3>No gallery media yet</h3></div>'
+    manage=''
+    if owner:
+        manage=f'''<div class="grid"><form class="card" method="post" enctype="multipart/form-data"><h3>Main Profile Photo</h3><input type="hidden" name="kind" value="profile"><input class="input" type="file" name="media" accept="image/jpeg,image/png,image/webp" required><button class="btn">Upload / Replace</button></form><form class="card" method="post" enctype="multipart/form-data"><h3>Picture Gallery</h3><p class="muted">Up to 10 photos.</p><input type="hidden" name="kind" value="gallery"><input class="input" type="file" name="media" accept="image/jpeg,image/png,image/webp" required><button class="btn">+ Add Photo</button></form><form class="card" method="post" enctype="multipart/form-data"><h3>Profile Video</h3><p class="muted">One video, maximum 15 seconds.</p><input type="hidden" name="kind" value="video"><input class="input" type="file" name="media" accept="video/mp4,video/quicktime,video/webm" required><button class="btn">Upload Video</button></form></div>'''
+        received=''.join(f'<article class="card"><h3>{g["emoji"]} {html.escape(g["label"])}</h3><p class="muted">From {html.escape(g["sender_name"])}</p></article>' for g in gifts) or '<div class="empty"><h3>No gifts received yet</h3></div>'
+        gift_area=f'<div class="topspace"><span class="badge">GIFTS RECEIVED</span><div class="grid">{received}</div></div>'
+    else:
+        buttons=''.join(f'<button class="out" name="gift_code" value="{html.escape(t["code"],quote=True)}" type="submit">{t["emoji"]} {html.escape(t["label"])}</button>' for t in gift_types)
+        gift_area=f'''<article class="card"><h2>Send a Gift</h2><form method="post" action="{url_for('send_virtual_gift',user_id=user_id)}"><div class="actions">{buttons}</div></form></article>'''
+    script='''<style>.member-crop-preview,.touch-crop-stage{position:relative;overflow:hidden;border-radius:22px;background:#f6eef9;aspect-ratio:1/1}.member-crop-preview img,.touch-crop-stage img{width:100%;height:100%;object-fit:cover;touch-action:none}.touch-crop-stage{max-width:420px;margin:12px auto;border-radius:50%}</style><script>document.querySelectorAll('.touch-crop-form').forEach(function(f){const s=f.querySelector('.touch-crop-stage'),img=s.querySelector('img'),x=f.querySelector('[name=crop_x]'),y=f.querySelector('[name=crop_y]'),z=f.querySelector('[name=crop_zoom]');let down=false,lastX=0,lastY=0;function draw(){img.style.objectPosition=x.value+'% '+y.value+'%';img.style.transform='scale('+z.value+')'}s.addEventListener('pointerdown',e=>{down=true;lastX=e.clientX;lastY=e.clientY;s.setPointerCapture(e.pointerId)});s.addEventListener('pointermove',e=>{if(!down)return;x.value=Math.max(0,Math.min(100,+x.value-(e.clientX-lastX)/s.clientWidth*100));y.value=Math.max(0,Math.min(100,+y.value-(e.clientY-lastY)/s.clientHeight*100));lastX=e.clientX;lastY=e.clientY;draw()});s.addEventListener('pointerup',()=>down=false);z.addEventListener('input',draw);draw()})</script>'''
+    content=f'''<div class="hero"><span class="badge">PICTURE GALLERY</span><h1>{html.escape(member['name'])}</h1><p class="muted">{'Upload, crop, preview, replace or delete your profile media.' if owner else 'Photos, profile video and virtual gifts.'}</p></div>{manage}<div class="grid">{cards}</div>{gift_area}{script}'''
+    return page('Picture Gallery',content,'profile')
+
+@app.route('/profile/media/<int:media_id>/crop',methods=['POST'])
+@login_required
+def member_media_crop(media_id):
+    me=current_user(); conn=db(); row=conn.execute('SELECT * FROM coordination_media WHERE id=?',(media_id,)).fetchone()
+    if not row or row['user_id']!=me['id'] or row['media_type']!='image': conn.close(); abort(404)
+    conn.execute('UPDATE coordination_media SET crop_data=? WHERE id=?',(_crop_payload(request.form),media_id)); conn.commit(); conn.close(); flash('Photo crop saved.','success'); return redirect(url_for('member_gallery',user_id=me['id'])+'#media-'+str(media_id))
+
+@app.route('/profile/media/<int:media_id>/replace',methods=['POST'])
+@login_required
+def member_media_replace(media_id):
+    me=current_user(); conn=db(); row=conn.execute('SELECT * FROM coordination_media WHERE id=?',(media_id,)).fetchone()
+    if not row or row['user_id']!=me['id']: conn.close(); abort(404)
+    upload=request.files.get('media')
+    if not upload or not getattr(upload,'filename',''):
+        conn.close(); flash('Choose a replacement file first.','error'); return redirect(url_for('member_gallery',user_id=me['id']))
+    ext=Path(secure_filename(upload.filename)).suffix.lower()
+    if row['media_type']=='image' and ext not in {'.jpg','.jpeg','.png','.webp'}:
+        conn.close(); flash('Use a JPG, PNG or WebP photo.','error'); return redirect(url_for('member_gallery',user_id=me['id']))
+    if row['media_type']=='video' and ext not in BUSINESS_VIDEO_EXT:
+        conn.close(); flash('Use a supported MP4, MOV, WebM or M4V video.','error'); return redirect(url_for('member_gallery',user_id=me['id']))
+    old_file=row['file_name']; conn.close()
+    stored,media_type=save_community_media(upload,me['id'])
+    if not stored:
+        flash('We could not save that replacement. Please try again.','error'); return redirect(url_for('member_gallery',user_id=me['id']))
+    duration=None
+    if row['media_type']=='video':
+        duration=_video_duration_seconds(UPLOAD_DIR/stored)
+        if duration is None or duration>15.0:
+            conn=db(); conn.execute('DELETE FROM stored_files WHERE file_name=?',(stored,)); conn.commit(); conn.close()
+            try: (UPLOAD_DIR/stored).unlink(missing_ok=True)
+            except Exception: pass
+            flash('The profile video must be verifiably 15 seconds or shorter.','error'); return redirect(url_for('member_gallery',user_id=me['id']))
+    conn=db(); conn.execute('UPDATE coordination_media SET file_name=?,media_type=?,crop_data=?,duration_seconds=?,created_at=? WHERE id=?',(stored,media_type,'{}',duration,now(),media_id)); conn.execute('DELETE FROM stored_files WHERE file_name=?',(old_file,))
+    if row['media_role']=='profile': conn.execute('UPDATE connection_profiles SET photo_name=? WHERE user_id=?',(stored,me['id']))
+    conn.commit(); conn.close()
+    try: (UPLOAD_DIR/old_file).unlink(missing_ok=True)
+    except Exception: pass
+    flash('Media replaced. Adjust the crop and save when it looks right.','success')
+    return redirect(url_for('member_gallery',user_id=me['id'],edit=media_id)+'#media-'+str(media_id))
+
+@app.route('/profile/media/<int:media_id>/main',methods=['POST'])
+@login_required
+def member_media_main(media_id):
+    me=current_user(); conn=db(); row=conn.execute('SELECT * FROM coordination_media WHERE id=?',(media_id,)).fetchone()
+    if not row or row['user_id']!=me['id'] or row['media_type']!='image': conn.close(); abort(404)
+    conn.execute("UPDATE coordination_media SET media_role='gallery' WHERE user_id=? AND media_role='profile'",(me['id'],)); conn.execute("UPDATE coordination_media SET media_role='profile' WHERE id=?",(media_id,)); conn.execute('UPDATE connection_profiles SET photo_name=? WHERE user_id=?',(row['file_name'],me['id'])); conn.commit(); conn.close(); flash('Main profile photo updated.','success'); return redirect(url_for('member_gallery',user_id=me['id']))
+
+@app.route('/profile/media/<int:media_id>/delete',methods=['POST'])
+@login_required
+def member_media_delete(media_id):
+    me=current_user(); conn=db(); row=conn.execute('SELECT * FROM coordination_media WHERE id=?',(media_id,)).fetchone()
+    if not row or row['user_id']!=me['id']: conn.close(); abort(404)
+    was_main=row['media_role']=='profile'; _remove_member_media(conn,row)
+    if was_main: conn.execute("UPDATE connection_profiles SET photo_name='' WHERE user_id=?",(me['id'],))
+    conn.commit(); conn.close(); flash('Media removed.','success'); return redirect(url_for('member_gallery',user_id=me['id']))
+
+@app.route('/profile/<int:user_id>/gift',methods=['POST'])
+@login_required
+def send_virtual_gift(user_id):
+    me=current_user()
+    if me['id']==user_id: flash('Choose a gift when viewing another member.','info'); return redirect(url_for('member_gallery',user_id=user_id))
+    code=request.form.get('gift_code',''); conn=db(); recipient=conn.execute('SELECT u.*,cp.opted_in FROM users u JOIN connection_profiles cp ON cp.user_id=u.id WHERE u.id=?',(user_id,)).fetchone(); gift=conn.execute('SELECT * FROM virtual_gift_types WHERE code=? AND active=1',(code,)).fetchone()
+    if not recipient or not recipient['opted_in'] or not gift: conn.close(); abort(404)
+    conn.execute('INSERT INTO member_virtual_gifts(sender_id,recipient_id,gift_type_id,created_at) VALUES(?,?,?,?)',(me['id'],user_id,gift['id'],now())); conn.commit(); conn.close()
+    notify(user_id,'You received a virtual gift',f'{me["name"]} sent you {gift["emoji"]} {gift["label"]}.',url_for('member_gallery',user_id=user_id))
+    flash('Gift sent.','success'); return redirect(url_for('member_gallery',user_id=user_id))
 
 @app.route('/journal', methods=['GET','POST'])
 @login_required
@@ -5908,7 +6153,7 @@ def connections():
     try:
         conn=db()
         host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
+        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid,u.age,u.dating_age_min,u.dating_age_max FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
         posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
         conn.close()
     except Exception:
@@ -5928,6 +6173,11 @@ def connections():
     else:
         members=[m for m in members if splitv(m['coordination_types']) & own_types]
 
+    # Dating ages are reciprocal: both members must fall inside the other's saved range.
+    if 'Love / Relationship' in own_types and u['age']:
+        own_min=u['dating_age_min'] or 18; own_max=u['dating_age_max'] or 120
+        members=[m for m in members if m['age'] and own_min<=m['age']<=own_max and (m['dating_age_min'] or 18)<=u['age']<=(m['dating_age_max'] or 120)]
+
     pref_state=(own.get('preferred_state') or '').strip()
     pref_city=(own.get('preferred_city') or '').strip()
     distance=(own.get('distance_preference') or '').strip()
@@ -5946,7 +6196,8 @@ def connections():
     cards=[]
     for m in members:
         score=preview(m)
-        photo=(f'<img src="{url_for("community_media",filename=m["photo_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%" alt="{html.escape(m["name"],quote=True)}">' if 'photo_name' in m.keys() and m['photo_name'] else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
+        conn=db(); media=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(m['user_id'],)).fetchone(); conn.close()
+        photo=(f'<img src="{url_for("community_media",filename=media["file_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%;{_crop_css(media["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if media else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
         location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
         score_html=f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else ''
         cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'MEMBER'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Conscious Coordination')}</p>{score_html}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Private Journal Entry</a></div></div>{photo}</div></article>''')
@@ -5968,7 +6219,7 @@ def connections():
         if host:
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
-    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><p class="muted">Your profile choices, planetary placements and shared intentions working together for conscious connection.</p><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
+    content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     {host_form}
     <div class="topspace"><h2>Discover Members</h2></div><div class="chips">{filters}</div><div class="grid">{member_cards}</div>'''
     return page('Conscious Coordination',content,'more')
@@ -6309,6 +6560,7 @@ def connection_profile(user_id):
     me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone()
     business=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone()
     liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone()
+    main_photo=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(user_id,)).fetchone()
     conn.close()
     if not user: abort(404)
     me_ready=conscious_coordination_ready(me,me_cp); target_ready=conscious_coordination_ready(user,cp_row)
@@ -6320,7 +6572,7 @@ def connection_profile(user_id):
     cp=dict(cp_row) if cp_row else {}; is_self=(me['id']==user_id)
     location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),(cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
     coordination_types=cp.get('coordination_types',''); about=cp.get('about_me') or user['about'] or ''
-    photo=(f'<img src="{url_for("community_media",filename=cp["photo_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%" alt="{html.escape(user["name"],quote=True)}">' if cp.get('photo_name') else f'<div class="portrait">{initials(user["name"])}</div>')
+    photo=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(user["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(user["name"])}</div>')
     chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
     pair_data=None; pair_overall=None
     if is_self:
@@ -9009,8 +9261,8 @@ def retreats():
     season_guide='''<div class="topspace"><div><span class="badge heart">SEASONAL RETREATS</span><h2>Choose the Season That Fits Your Retreat</h2></div></div><div class="grid"><article class="card"><h3>🌸 Spring Retreats</h3><p class="muted">Renewal, fresh beginnings, intention setting, mindful exploration and new possibilities.</p></article><article class="card"><h3>☀️ Summer Retreats</h3><p class="muted">Warmth, connection, lakeside moments, nature immersion, outdoor experiences and long evenings.</p></article><article class="card"><h3>🍂 Autumn Retreats</h3><p class="muted">Reflection, gratitude, boundaries, fire-circle experiences, release and creating room for what comes next.</p></article><article class="card"><h3>❄️ Winter Retreats</h3><p class="muted">Restoration, candlelit quiet, herbal tea rituals, Reiki reflection, deep rest and inner listening.</p></article></div>'''
     builder_url=url_for('retreat_builder') if session.get('user_id') else url_for('join')
     return page('Retreats',f'''<div class="hero" style="text-align:center"><span class="badge">THE SEASONS WITHIN • MICHIGAN</span><img src="{RETREAT_LOGO_DATA_URI}" alt="The Seasons Within Michigan Day Retreats" style="display:block;width:min(680px,92%);margin:10px auto 22px;border-radius:28px"><h1>Private Seasonal Wellness Retreats</h1><h3>All-Day • Overnight • Luxury Weekend</h3><p class="muted"><em>Take a slow, gentle breath.</em></p><h2>A Sacred Journey Created Just for You</h2><p class="muted">Return to Your</p><h1>Natural RHYTHM</h1></div>{season_guide}
-    <article class="card paid"><span class="badge heart">🌿 DESIGN YOUR SEASONS WITHIN RETREAT</span><h2>Build a Retreat Around What May Support You</h2><p class="muted">Tell Your Story → Balance Your Seasons Assessment → reuse your existing profile/natal context → choose Preferred Dates and Retreat preferences → receive a personal Retreat & Conscious Coordination report → review a proposed schedule → choose real participating Hosted Business Apps → Request My Retreat.</p><div class="actions"><a class="btn" href="{builder_url}">Design My Seasons Within Retreat</a></div></article>
-    <article class="card" style="text-align:center"><h2>Ready to Begin?</h2><p class="muted">The Seasons Within coordinates the final experience. The system proposes and matches; it does not silently book providers.</p><div class="actions" style="justify-content:center"><a class="out" href="{form_url}" target="_blank" rel="noopener">Begin My Private Retreat</a></div></article>
+    <article class="card paid"><span class="badge heart">🌿 DESIGN YOUR SEASONS WITHIN RETREAT</span><h2>Build a Retreat Around What May Support You</h2><div class="actions"><a class="btn" href="{builder_url}">Design My Seasons Within Retreat</a></div></article>
+    <article class="card" style="text-align:center"><h2>Ready to Begin?</h2><div class="actions" style="justify-content:center"><a class="out" href="{form_url}" target="_blank" rel="noopener">Begin My Private Retreat</a></div></article>
     <article class="card"><span class="badge gold">PARTICIPATING HOSTED BUSINESS APPS</span><h2>Wellness Businesses Can Be Part of Retreats</h2><p class="muted">Only real active Hosted Business Apps that opt in can be recommended. Provider choice remains with the member, and final scheduling is coordinated through private inquiries.</p>{owner_action}</article><div class="grid">{participating_html}</div>''','retreats')
 
 @app.route('/retreats/business/<int:business_id>/participate', methods=['POST'])
