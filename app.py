@@ -562,9 +562,40 @@ def init_db():
         ("business_plans","marketing_text","ALTER TABLE business_plans ADD COLUMN marketing_text TEXT DEFAULT ''"),
         ("business_plans","launch_text","ALTER TABLE business_plans ADD COLUMN launch_text TEXT DEFAULT ''"),
         ("business_plans","status","ALTER TABLE business_plans ADD COLUMN status TEXT DEFAULT 'Generated'"),
+        ("business_certifications","issue_date","ALTER TABLE business_certifications ADD COLUMN issue_date TEXT DEFAULT ''"),
+        ("business_certifications","credential_number","ALTER TABLE business_certifications ADD COLUMN credential_number TEXT DEFAULT ''"),
+        ("business_certifications","state","ALTER TABLE business_certifications ADD COLUMN state TEXT DEFAULT ''"),
+        ("business_certifications","credential_type","ALTER TABLE business_certifications ADD COLUMN credential_type TEXT DEFAULT ''"),
+        ("business_certifications","verification_url","ALTER TABLE business_certifications ADD COLUMN verification_url TEXT DEFAULT ''"),
+        ("business_certifications","continuing_education","ALTER TABLE business_certifications ADD COLUMN continuing_education TEXT DEFAULT ''"),
+        ("business_certifications","renewal_frequency","ALTER TABLE business_certifications ADD COLUMN renewal_frequency TEXT DEFAULT ''"),
+        ("business_certifications","renewal_fee","ALTER TABLE business_certifications ADD COLUMN renewal_fee TEXT DEFAULT ''"),
+        ("business_certifications","reminder_preference","ALTER TABLE business_certifications ADD COLUMN reminder_preference TEXT DEFAULT '60 days'"),
+        ("business_certifications","reminder_enabled","ALTER TABLE business_certifications ADD COLUMN reminder_enabled INTEGER NOT NULL DEFAULT 1"),
+        ("business_certifications","document_url","ALTER TABLE business_certifications ADD COLUMN document_url TEXT DEFAULT ''"),
     ]:
         cols={r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in cols: conn.execute(ddl)
+    conn.executescript('''
+    CREATE TABLE IF NOT EXISTS business_requirement_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        requirement_key TEXT NOT NULL,
+        requirement_name TEXT NOT NULL,
+        classification TEXT DEFAULT '', jurisdiction TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'Recommended', notes TEXT DEFAULT '',
+        source_url TEXT DEFAULT '', last_verified_at TEXT DEFAULT '',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(user_id,requirement_key),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_requirement_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
     # Conscious Coordination profile discovery, media, and private-interest support.
     for table, column, ddl in [
         ("connection_profiles","preferred_state","ALTER TABLE connection_profiles ADD COLUMN preferred_state TEXT DEFAULT ''"),
@@ -9176,17 +9207,85 @@ def business_journal_workspace():
     education='''<div class="grid"><article class="card"><h3>Grants</h3><p>Funding that generally does not have to be repaid when the award terms are followed. Eligibility, approved uses, deadlines and reporting rules can be strict.</p></article><article class="card"><h3>Business Loans</h3><p>Borrowed funding normally repaid under lender terms. Qualification may depend on business history, revenue, credit, collateral and ability to repay.</p></article><article class="card"><h3>Proposals & Applications</h3><p>Your application explains the business, funding need, use of funds, expected results, budget and other information required by the source.</p></article></div>'''
     return page('Business Journal',f'''<div class="hero"><span class="badge">BUSINESS JOURNAL</span><h1>Business Development</h1><p><b>Funding, preparation and proposal tools for your business.</b></p><p class="muted">Business Development helps you understand funding options, prepare your business, identify grants and loans that may fit your needs, and build stronger applications. Your saved Business Plan helps identify relevant opportunities and requirements you may still need to complete.</p></div>{education}{links}''','business')
 
+def _licensing_roadmap(facts):
+    """Conservative, source-linked roadmap. It never treats a lookup as legal advice."""
+    text=' '.join(_clean_text(facts.get(k,'')) for k in ('industry','services','business_type','status')).lower()
+    state=_clean_text(facts.get('state'))
+    city=_clean_text(facts.get('city'))
+    county=_clean_text(facts.get('county'))
+    cards=[]
+    def add(key,name,classification,jurisdiction,why,matters,source,source_url,who='Verify the activities described by the issuing agency.',qualifications='Review the official eligibility and application instructions.',application_url='',cost='',renewal='',education='',category='required'):
+        cards.append({'key':key,'name':name,'classification':classification,'jurisdiction':jurisdiction,'why':why,'matters':matters,'source':source,'source_url':source_url,'application_url':application_url or source_url,'who':who,'qualifications':qualifications,'cost':cost or 'Not provided by official source','renewal':renewal or 'Not provided by official source','education':education or 'Confirm with the issuing agency','category':category,'last_checked':'Verification needed — use official source'})
+    identity=', '.join(x for x in (facts.get('industry'),facts.get('stage'),city,state) if x) or 'your saved business information'
+    add('entity-registration','State business registration / entity standing','🟠 May Be Required — Verify','State',f'Your saved plan describes {identity}.', 'Registration and ongoing filings depend on the legal structure and activities selected for the business.','Michigan Business','https://www.michigan.gov/business' if state.lower() in {'mi','michigan'} else 'https://www.sba.gov/business-guide/launch-your-business/register-your-business',who='Businesses forming or registering an entity, assumed name, or regulated activity.',category='state')
+    if city.lower()=='detroit':
+        add('detroit-local','Detroit business licensing and zoning review','🟠 May Be Required — Verify','City / Local',f'Your saved business location is Detroit{", " + county + " County" if county else ""}.','The need for a city license, permit, inspection, or zoning approval depends on the activity and operating address.','City of Detroit BSEED','https://detroitmi.gov/departments/buildings-safety-engineering-and-environmental-department/business-license-information',who='Businesses whose activity or premises falls within a locally regulated category.',category='local')
+    if any(w in text for w in ('wellness','massage','therapy','beauty','cosmet','health','food','restaurant','child','transport','construction')):
+        add('professional-lookup','Professional or occupational license check','🟠 May Be Required — Verify','State',f'Your plan lists services in {facts.get("industry") or facts.get("services") or "a potentially regulated field"}.','Some services may only be performed or advertised by a licensed person or facility. The exact scope must be confirmed before offering the service.','Michigan LARA Bureau of Professional Licensing','https://www.michigan.gov/lara/bureau-list/bpl' if state.lower() in {'mi','michigan'} else 'https://www.sba.gov/business-guide/launch-your-business/apply-licenses-permits',who='People or facilities performing activities listed by the applicable licensing authority.',education='Education, examinations, supervised hours and continuing education vary by profession.',category='professional')
+    add('ein','Employer Identification Number (EIN)','🟠 May Be Required — Verify','Federal',f'Your plan identifies a {facts.get("business_type") or "business"}; EIN need depends on structure, employees, banking and tax elections.','An EIN is used for federal tax administration and is commonly needed for employees, certain entities and business banking.','Internal Revenue Service','https://www.irs.gov/businesses/small-businesses-self-employed/employer-id-numbers',who='Businesses that meet IRS EIN requirements. A sole proprietor without employees may not always need one.',cost='No fee through the IRS',category='federal')
+    if facts.get('employees'):
+        add('employer-compliance','Employer registrations and workplace requirements','🟠 May Be Required — Verify','Federal / State',f'Employee information appears in your saved Business Plan: {facts.get("employees")}.','Hiring can trigger tax, reporting, insurance and workplace-safety responsibilities.','SBA Hire and Manage Employees','https://www.sba.gov/business-guide/manage-your-business/hire-manage-employees',who='Businesses with employees or that are preparing to hire.',category='federal')
+    contracting=any(w in text for w in ('government','contract','procurement','grant')) or any(w in _clean_text(facts.get('goals')).lower() for w in ('government','contract','procurement'))
+    add('sam-uei','SAM.gov entity registration and Unique Entity ID','🔵 Business Opportunity / Contracting Certification','Federal',('Government contracting or funding appears in your saved goals.' if contracting else 'This is included as an optional federal contracting and assistance pathway.'),'SAM registration is not required for every business. It becomes relevant for many federal contracts and certain federal assistance processes.','SAM.gov','https://sam.gov/content/entity-registration',who='Entities pursuing opportunities that specifically require an active SAM registration or UEI.',renewal='SAM registration must be renewed; confirm the current cycle on SAM.gov.',category='growth')
+    add('wosb','Women-Owned Small Business federal contracting program','🔵 Business Opportunity / Contracting Certification','Federal','Your roadmap includes optional contracting programs; eligibility must be confirmed from ownership and program rules.','Certification may help an eligible business compete for certain federal set-aside contracts. It is not a general operating license.','U.S. Small Business Administration','https://www.sba.gov/federal-contracting/contracting-assistance-programs/women-owned-small-business-federal-contract-program',who='Businesses meeting current SBA ownership, control, size and citizenship requirements.',category='growth')
+    add('sba-contracting','SBA contracting assistance program review','🟢 Optional Professional Certification','Federal','This gives you a verified place to assess 8(a), HUBZone and other contracting pathways without assuming eligibility.','A qualifying program may expand access to contracting support or set-aside opportunities.','U.S. Small Business Administration','https://www.sba.gov/federal-contracting/contracting-assistance-programs',who='Businesses that meet the requirements of a specific SBA contracting program.',category='growth')
+    return cards
+
+def _renewal_label(value):
+    if not value: return 'Renewal date not set'
+    try:
+        days=(datetime.fromisoformat(value[:10]).date()-datetime.now(timezone.utc).date()).days
+        if days < 0: return f'Renewal overdue by {abs(days)} days'
+        if days <= 90: return f'Renewal approaching — {days} days remaining'
+        return f'Active — renewal due {value[:10]}'
+    except Exception: return f'Renewal: {value}'
+
+def _save_credential_document(file_storage,user_id):
+    if not file_storage or not getattr(file_storage,'filename',''): return ''
+    ext=Path(secure_filename(file_storage.filename)).suffix.lower()
+    if ext not in {'.pdf','.jpg','.jpeg','.png','.webp'}: return ''
+    stored=f'credential_u{user_id}_{datetime.utcnow().strftime("%Y%m%d%H%M%S%f")}{ext}'
+    file_storage.save(UPLOAD_DIR/stored)
+    _persist_uploaded_file(stored,user_id,getattr(file_storage,'mimetype','application/octet-stream'))
+    return url_for('community_media',filename=stored)
+
 @app.route('/business-development/certifications',methods=['GET','POST'])
 @login_required
 def business_certifications():
-    u=current_user(); conn=db()
+    u=current_user(); facts=_business_funding_facts(u['id']); roadmap=_licensing_roadmap(facts); by_key={x['key']:x for x in roadmap}; conn=db()
     if request.method=='POST':
-        name=request.form.get('name','').strip()
-        if name: conn.execute('INSERT INTO business_certifications(user_id,name,issuing_body,status,renewal_date,notes,source_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],name,request.form.get('issuing_body','').strip(),request.form.get('status','Considering'),request.form.get('renewal_date',''),request.form.get('notes','').strip(),request.form.get('source_url','').strip(),now(),now())); conn.commit(); flash('License or certification saved.','success')
-    rows=conn.execute('SELECT * FROM business_certifications WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); conn.close()
-    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p class="muted">Renewal: {html.escape(r['renewal_date'] or 'Not set')}</p><p>{html.escape(r['notes'] or '')}</p></article>''' for r in rows) or '<div class="empty">No license or certification records yet.</div>'
-    form='''<form class="card" method="post"><h2>Add License or Certification</h2><label><b>Name</b></label><input class="input" name="name" required><label><b>Issuing body</b></label><input class="input" name="issuing_body"><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>In Progress</option><option>Active</option><option>Renewal Needed</option></select><label><b>Renewal date</b></label><input class="input" type="date" name="renewal_date"><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url"><button class="btn">Save Record</button></form>'''
-    return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Licenses & Certifications</h1></div>{form}<div class="grid">{cards}</div>''','business')
+        action=request.form.get('action','manual')
+        if action=='requirement':
+            item=by_key.get(request.form.get('requirement_key','')); status=request.form.get('status','Recommended')
+            if item and status in ('Recommended','Researching','Considering','Application Started','Application Submitted','Pending','Active','Renewal Due','Expired','Not Applicable'):
+                conn.execute('''INSERT INTO business_requirement_progress(user_id,requirement_key,requirement_name,classification,jurisdiction,status,source_url,last_verified_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,requirement_key) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at''',(u['id'],item['key'],item['name'],item['classification'],item['jurisdiction'],status,item['source_url'],item['last_checked'],now(),now())); conn.commit(); flash('Roadmap progress saved.','success')
+        elif action=='ask':
+            question=request.form.get('question','').strip()[:500]
+            if question:
+                relevant=[x for x in roadmap if any(w in (x['name']+' '+x['matters']).lower() for w in _tokens(question))][:3] or roadmap[:3]
+                answer='Based on your saved Business Plan, start by reviewing: '+ '; '.join(x['name'] for x in relevant)+'. These are roadmap recommendations, not legal determinations. Confirm requirements through each linked issuing agency.'
+                conn.execute('INSERT INTO business_requirement_questions(user_id,question,answer,created_at) VALUES(?,?,?,?)',(u['id'],question,answer,now())); conn.commit(); flash(answer,'info')
+        else:
+            name=request.form.get('name','').strip()
+            if name:
+                document_url=request.form.get('document_url','').strip()
+                uploaded=_save_credential_document(request.files.get('document_file'),u['id'])
+                if uploaded: document_url=uploaded
+                conn.execute('''INSERT INTO business_certifications(user_id,name,issuing_body,status,issue_date,renewal_date,credential_number,state,credential_type,verification_url,continuing_education,renewal_frequency,renewal_fee,reminder_preference,reminder_enabled,document_url,notes,source_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(u['id'],name,request.form.get('issuing_body','').strip(),request.form.get('status','Considering'),request.form.get('issue_date',''),request.form.get('renewal_date',''),request.form.get('credential_number','').strip(),request.form.get('state','').strip(),request.form.get('credential_type','').strip(),request.form.get('verification_url','').strip(),request.form.get('continuing_education','').strip(),request.form.get('renewal_frequency','').strip(),request.form.get('renewal_fee','').strip(),request.form.get('reminder_preference','60 days'),1 if request.form.get('reminder_enabled') else 0,document_url,request.form.get('notes','').strip(),request.form.get('source_url','').strip(),now(),now())); conn.commit(); flash('License or certification saved.','success')
+        conn.close(); return redirect(url_for('business_certifications'))
+    rows=conn.execute('SELECT * FROM business_certifications WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); progress={r['requirement_key']:r for r in conn.execute('SELECT * FROM business_requirement_progress WHERE user_id=?',(u['id'],)).fetchall()}; conn.close()
+    snapshot=' • '.join(html.escape(_clean_text(x)) for x in (facts['business_name'],facts['industry'],facts['stage'],facts['city'],facts['county'],facts['state']) if x) or 'Complete your Business Plan to improve this roadmap.'
+    def roadcard(item):
+        saved=progress.get(item['key']); status=saved['status'] if saved else 'Recommended'
+        actions=''.join(f'''<button class="out" name="status" value="{html.escape(v,quote=True)}">{html.escape(label)}</button>''' for v,label in [('Active','I Already Have This'),('Application Started','Start This Requirement'),('Researching','Save to Business Workshop'),('Not Applicable','Not Applicable')])
+        return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><span class="badge">{html.escape(item['jurisdiction'])}</span><h3>{html.escape(item['name'])}</h3><p><b>Status:</b> {html.escape(status)}</p><p><b>Why this appeared:</b> {html.escape(item['why'])}</p><details><summary class="out">View requirement details</summary><p><b>Why it matters:</b> {html.escape(item['matters'])}</p><p><b>Who needs it:</b> {html.escape(item['who'])}</p><p><b>Basic qualifications:</b> {html.escape(item['qualifications'])}</p><p><b>Education & training:</b> {html.escape(item['education'])}</p><p><b>Estimated cost:</b> {html.escape(item['cost'])}<br><b>Renewal:</b> {html.escape(item['renewal'])}</p><p><b>Source:</b> {html.escape(item['source'])}<br><b>Last checked:</b> {item['last_checked']}<br><b>Jurisdiction:</b> {html.escape(item['jurisdiction'])}</p><a class="out" target="_blank" rel="noopener" href="{html.escape(item['source_url'],quote=True)}">Official Website</a></details><form method="post" class="actions"><input type="hidden" name="action" value="requirement"><input type="hidden" name="requirement_key" value="{html.escape(item['key'],quote=True)}">{actions}</form></article>'''
+    groups=[('Required or Potentially Required','required'),('State Requirements','state'),('County & City / Local Requirements','local'),('Federal Registrations & Requirements','federal'),('Professional / Industry Certifications','professional'),('Optional Certifications That May Help','growth')]
+    sections=''.join(f'''<section><h2>{title}</h2><div class="grid">{''.join(roadcard(x) for x in roadmap if x['category']==cat) or '<div class="empty">No recommendation in this category from the current saved plan.</div>'}</div></section>''' for title,cat in groups)
+    completed=sum(1 for r in progress.values() if r['status']=='Active'); steps=''.join(f'<li><b>Step {i}</b> — {html.escape(x["name"])} <small>({html.escape(progress[x["key"]]["status"] if x["key"] in progress else "Recommended")})</small></li>' for i,x in enumerate(roadmap[:6],1))
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p><b>{html.escape(_renewal_label(r['renewal_date']))}</b></p><p>{html.escape(r['notes'] or '')}</p></article>''' for r in rows) or '<div class="empty">No manually recorded licenses or certifications yet.</div>'
+    form='''<details class="card"><summary class="btn">+ Add a License or Certification</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="manual"><label><b>Name</b></label><input class="input" name="name" required><label><b>Issuing body</b></label><input class="input" name="issuing_body"><div class="grid"><label><b>Credential type</b><input class="input" name="credential_type"></label><label><b>State</b><input class="input" name="state"></label><label><b>Issue date</b><input class="input" type="date" name="issue_date"></label><label><b>Renewal date</b><input class="input" type="date" name="renewal_date"></label></div><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>Researching</option><option>Application Started</option><option>Application Submitted</option><option>Pending</option><option>Active</option><option>Renewal Due</option><option>Expired</option><option>Not Applicable</option></select><label><b>Credential / license number</b></label><input class="input" name="credential_number"><label><b>Verification URL</b></label><input class="input" type="url" name="verification_url"><label><b>Upload certificate or license</b></label><input class="input" type="file" name="document_file" accept="application/pdf,image/jpeg,image/png,image/webp"><label><b>Or permanent document URL</b></label><input class="input" type="url" name="document_url"><label><b>Continuing education required?</b></label><input class="input" name="continuing_education"><div class="grid"><label><b>Renewal frequency</b><input class="input" name="renewal_frequency"></label><label><b>Renewal fee</b><input class="input" name="renewal_fee"></label></div><label><input type="checkbox" name="reminder_enabled" checked> Renewal reminder</label><select class="input" name="reminder_preference"><option>90 days</option><option selected>60 days</option><option>30 days</option><option>7 days</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url"><button class="btn">Save Record</button></form></details>'''
+    ask='''<form class="card" method="post"><input type="hidden" name="action" value="ask"><h2>Ask About My Business Requirements</h2><textarea class="input" name="question" required placeholder="What licenses or certifications might I need?"></textarea><button class="btn">Ask About My Requirements</button></form>'''
+    return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Your Licensing & Certification Roadmap</h1><p>Based on your business plan, here are registrations, licenses, permits, certifications and professional credentials that may apply.</p><div class="actions"><a class="btn" href="{url_for('business_certifications')}">Check My Business Requirements</a><a class="out" href="{url_for('business_certifications',refresh=1)}">Refresh Requirements</a></div></div><article class="card"><h2>Your Business Snapshot</h2><p>{snapshot}</p><p class="muted">Recommendations distinguish possible legal requirements from optional business-development programs. Confirm legal requirements with the linked issuing agency.</p></article>{sections}<article class="card"><h2>Your Next Steps</h2><p><b>{completed} of {len(roadmap)} roadmap items completed</b></p><ol>{steps}</ol></article><section><h2>My Licenses & Certifications</h2>{form}<div class="grid">{cards}</div></section>{ask}''','business')
 
 @app.route('/business-development/funding')
 @login_required
