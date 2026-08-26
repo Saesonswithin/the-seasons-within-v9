@@ -88,3 +88,10 @@ COMMUNITY DISPLAY CLEANUP — 2026-08-23
 - Removed the Host Feed heading, Galaxy Eve host-feed heading and empty “Galaxy Eve posts will appear here” block from Conscious Coordination.
 - Removed the Galaxy Eve Featured Hosted App promotion from Home and the Business Network listing.
 - Preserved the Conscious Coordinator posting form, Discover Members, business search, Community Businesses and all unrelated systems.
+
+BUSINESS DEVELOPMENT FUNDING ROUTE REPAIR — 2026-08-26
+
+- Added the funding-opportunity cache table and saved-opportunity fields to the existing-production-database compatibility migration.
+- Funding Matches, Grant Search and Loan Search now tolerate older production schemas with missing optional business, certification and generated-plan columns.
+- Temporary opportunity-source, cache or search-history failures no longer take down the full Business Development page.
+- Proposal Builder, existing member data, authentication, visual design and unrelated application systems remain unchanged.

@@ -1,5 +1,5 @@
 THE SEASONS WITHIN — CORRECTED WORKING BUILD
-Packaged: 2026-08-25
+Packaged: 2026-08-26
 
 Included:
 - Current application source
@@ -7,6 +7,7 @@ Included:
 - Existing build notes and engine documentation
 - Existing Seasons Within logo asset
 - Financial Planning & Forecasting additions
+- Business Development funding-page production-schema compatibility repair
 
 Intentionally excluded:
 - Local database files and member data

@@ -108,7 +108,7 @@ JOURNAL_CATEGORIES = ('Reflection','Business','Retreat','Conscious Coordination'
 PG_ID_TABLES = {
     'users','journal_entries','community_posts','messages','notifications','businesses',
     'business_media','business_calendar','business_plans','retreats','business_bookings',
-    'business_certifications','funding_searches','saved_funding_opportunities','business_proposals',
+    'business_certifications','funding_searches','funding_opportunities','saved_funding_opportunities','business_proposals',
     'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
     'password_reset_tokens','email_verification_tokens','trusted_devices','security_events',
     'astrology_reflections','compatibility_reports','coordination_video_requests',
@@ -868,6 +868,13 @@ def _ensure_runtime_compat_schema():
                 ('title',"TEXT DEFAULT 'Morning Reflection'"),('category',"TEXT DEFAULT 'Reflection'"),
                 ('media_name',"TEXT DEFAULT ''"),('media_type',"TEXT DEFAULT ''")
             ]
+            ,'saved_funding_opportunities': [
+                ('opportunity_record_id','INTEGER'),('match_score','INTEGER NOT NULL DEFAULT 0'),
+                ('readiness_score','INTEGER NOT NULL DEFAULT 0'),
+                ('eligibility_results',"TEXT DEFAULT '[]'"),
+                ('application_status',"TEXT DEFAULT 'Researching'"),
+                ('member_notes',"TEXT DEFAULT ''")
+            ]
             ,'coordination_media': [
                 ('media_role',"TEXT NOT NULL DEFAULT 'gallery'"),('crop_data',"TEXT DEFAULT '{}'"),
                 ('duration_seconds','REAL'),('sort_order','INTEGER NOT NULL DEFAULT 0')
@@ -928,6 +935,25 @@ def _ensure_runtime_compat_schema():
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
                 event_type TEXT NOT NULL, details TEXT DEFAULT '', created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )''')
+            # These three pages share this cache. Existing production databases
+            # predate the table, so the compatibility path must create it too.
+            conn.execute('''CREATE TABLE IF NOT EXISTS funding_opportunities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_name TEXT NOT NULL, source_id TEXT NOT NULL,
+                opportunity_type TEXT NOT NULL DEFAULT 'Grant', title TEXT NOT NULL,
+                agency_name TEXT DEFAULT '', government_level TEXT DEFAULT 'Federal',
+                city TEXT DEFAULT '', county TEXT DEFAULT '', state TEXT DEFAULT '', service_area TEXT DEFAULT '',
+                official_url TEXT DEFAULT '', application_url TEXT DEFAULT '', contact_name TEXT DEFAULT '',
+                contact_email TEXT DEFAULT '', contact_phone TEXT DEFAULT '',
+                funding_min REAL, funding_max REAL, amount_text TEXT DEFAULT '',
+                deadline TEXT DEFAULT '', open_date TEXT DEFAULT '', status TEXT DEFAULT 'OPEN',
+                eligibility TEXT DEFAULT '', required_certifications TEXT DEFAULT '[]',
+                required_documents TEXT DEFAULT '[]', eligible_industries TEXT DEFAULT '[]',
+                eligible_business_stages TEXT DEFAULT '[]', funding_uses TEXT DEFAULT '[]',
+                description TEXT DEFAULT '', raw_payload TEXT DEFAULT '{}',
+                retrieved_at TEXT NOT NULL, last_verified_at TEXT NOT NULL,
+                UNIQUE(source_name,source_id)
             )''')
             conn.execute('''UPDATE connection_profiles SET profile_completed=1
                 WHERE profile_completed=0 AND opted_in=1 AND user_id IN (
@@ -9118,8 +9144,28 @@ def business_dashboard():
     return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business</h1><p class="muted">Your Hosted Business App appears first, followed by the private tools used to manage inquiries, scheduling, Journal records, Retreat participation and professional business development.</p></div>{app_card}{links}''','business')
 
 def _business_plan_answers(user_id):
-    conn=db(); intake=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(user_id,)).fetchone()
-    plan=conn.execute("SELECT payload FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(user_id,)).fetchone(); conn.close()
+    conn=db(); intake=None; plan=None
+    try:
+        try:
+            intake=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(user_id,)).fetchone()
+        except Exception:
+            app.logger.exception('Could not read saved business-plan intake for user %s',user_id)
+            try: conn.rollback()
+            except Exception: pass
+        try:
+            plan=conn.execute("SELECT payload FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(user_id,)).fetchone()
+        except Exception:
+            # Older production schemas may not yet have the status/version fields.
+            try: conn.rollback()
+            except Exception: pass
+            try:
+                plan=conn.execute('SELECT payload FROM business_plans WHERE user_id=? ORDER BY id DESC LIMIT 1',(user_id,)).fetchone()
+            except Exception:
+                app.logger.exception('Could not read saved business plan for user %s',user_id)
+                try: conn.rollback()
+                except Exception: pass
+    finally:
+        conn.close()
     row=plan or intake
     try: return json.loads(row['payload']) if row else {}
     except Exception: return {}
@@ -9131,20 +9177,49 @@ def _clean_text(value):
 
 def _business_funding_facts(user_id):
     a=_business_plan_answers(user_id)
-    conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone(); certs=conn.execute("SELECT name FROM business_certifications WHERE user_id=? AND status IN ('Active','In Progress')",(user_id,)).fetchall(); conn.close()
+    conn=db(); b=None; certs=[]
+    try:
+        try:
+            b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone()
+        except Exception:
+            # Production databases created before active/updated_at existed still
+            # contain valid businesses. Read the newest row without those columns.
+            try: conn.rollback()
+            except Exception: pass
+            try: b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY id DESC LIMIT 1',(user_id,)).fetchone()
+            except Exception:
+                app.logger.exception('Could not read business profile for funding user %s',user_id)
+                try: conn.rollback()
+                except Exception: pass
+        try:
+            certs=conn.execute("SELECT name FROM business_certifications WHERE user_id=? AND status IN ('Active','In Progress')",(user_id,)).fetchall()
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+            try: certs=conn.execute('SELECT name FROM business_certifications WHERE user_id=?',(user_id,)).fetchall()
+            except Exception:
+                app.logger.exception('Could not read certifications for funding user %s',user_id)
+                try: conn.rollback()
+                except Exception: pass
+    finally:
+        conn.close()
+    def row_value(row,key):
+        if not row: return ''
+        try: return row[key]
+        except (KeyError,IndexError,TypeError): return ''
     def first(*keys):
         for key in keys:
             value=_clean_text(a.get(key,''))
             if value: return value
         return ''
-    location=first('business_location','location','city','state') or (_clean_text(b['location']) if b else '')
+    location=first('business_location','location','city','state') or _clean_text(row_value(b,'location'))
     state=first('state','business_state')
     if not state and re.search(r'\b(MI|Michigan)\b',location,re.I): state='Michigan'
     city=first('city','business_city')
     if not city and location: city=re.split(r'[,•]',location)[0].strip()
     county=first('county','business_county')
     if not county and city.lower()=='detroit': county='Wayne'
-    return {'business_name':first('business_name','name') or (_clean_text(b['name']) if b else ''),'city':city,'county':county,'state':state,'zip':first('zip','zip_code','postal_code'),'industry':first('industry','industry_sector','business_type') or (_clean_text(b['category']) if b else ''),'business_type':first('business_type','legal_structure'),'stage':first('business_stage','stage'),'years':first('years_in_business','operating_history'),'purpose':first('funding_type','funding_purpose','financial_help'),'amount':first('budget','funding_amount','estimated_budget'),'revenue':first('revenue','projected_revenue','revenue_sources'),'employees':first('employees','employee_count'),'status':first('for_profit_status','organization_type'),'services':first('services','products_services','offerings'),'goals':first('short_goals','long_goals','goals'),'certifications':[r['name'] for r in certs],'plan_complete':bool(a),'raw':a}
+    return {'business_name':first('business_name','name') or _clean_text(row_value(b,'name')),'city':city,'county':county,'state':state,'zip':first('zip','zip_code','postal_code'),'industry':first('industry','industry_sector','business_type') or _clean_text(row_value(b,'category')),'business_type':first('business_type','legal_structure'),'stage':first('business_stage','stage'),'years':first('years_in_business','operating_history'),'purpose':first('funding_type','funding_purpose','financial_help'),'amount':first('budget','funding_amount','estimated_budget'),'revenue':first('revenue','projected_revenue','revenue_sources'),'employees':first('employees','employee_count'),'status':first('for_profit_status','organization_type'),'services':first('services','products_services','offerings'),'goals':first('short_goals','long_goals','goals'),'certifications':[_clean_text(row_value(r,'name')) for r in certs if _clean_text(row_value(r,'name'))],'plan_complete':bool(a),'raw':a}
 
 def _tokens(*values):
     return {w for w in re.findall(r'[a-z0-9]{3,}', ' '.join(_clean_text(v).lower() for v in values)) if w not in {'business','funding','grant','loan','small','with','from','that','this','your','program'}}
@@ -9224,15 +9299,33 @@ def _official_loan_programs():
     ]
 
 def _store_funding_opportunity(opp):
-    conn=db(); fields=('source','source_id','opportunity_type','title','agency','government_level','city','county','state','service_area','source_url','application_url','contact_name','contact_email','contact_phone','funding_min','funding_max','amount_text','deadline','open_date','status','eligibility','required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses','description')
-    vals={k:opp.get(k,'') for k in fields}; vals['source_name']=vals.pop('source'); vals['agency_name']=vals.pop('agency'); vals['official_url']=vals.pop('source_url')
-    for key in ('required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses'):
-        if not isinstance(vals[key],str): vals[key]=json.dumps(vals[key] or [])
-    vals['status']=_opportunity_status(str(vals['deadline'] or ''),str(vals['status'] or ''))
-    columns=['source_name','source_id','opportunity_type','title','agency_name','government_level','city','county','state','service_area','official_url','application_url','contact_name','contact_email','contact_phone','funding_min','funding_max','amount_text','deadline','open_date','status','eligibility','required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses','description']
-    values=[vals.get(k) for k in columns]
-    conn.execute(f'''INSERT INTO funding_opportunities({','.join(columns)},raw_payload,retrieved_at,last_verified_at) VALUES({','.join('?' for _ in columns)},?,?,?) ON CONFLICT(source_name,source_id) DO UPDATE SET title=excluded.title,agency_name=excluded.agency_name,amount_text=excluded.amount_text,deadline=excluded.deadline,status=excluded.status,eligibility=excluded.eligibility,description=excluded.description,raw_payload=excluded.raw_payload,retrieved_at=excluded.retrieved_at,last_verified_at=excluded.last_verified_at''',tuple(values+[json.dumps(opp),now(),opp.get('last_verified_at') or now()]))
-    row=conn.execute('SELECT id FROM funding_opportunities WHERE source_name=? AND source_id=?',(vals['source_name'],vals['source_id'])).fetchone(); conn.commit(); conn.close(); return row['id'] if row else None
+    conn=db()
+    try:
+        fields=('source','source_id','opportunity_type','title','agency','government_level','city','county','state','service_area','source_url','application_url','contact_name','contact_email','contact_phone','funding_min','funding_max','amount_text','deadline','open_date','status','eligibility','required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses','description')
+        vals={k:opp.get(k,'') for k in fields}; vals['source_name']=vals.pop('source'); vals['agency_name']=vals.pop('agency'); vals['official_url']=vals.pop('source_url')
+        for key in ('required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses'):
+            if not isinstance(vals[key],str): vals[key]=json.dumps(vals[key] or [])
+        vals['status']=_opportunity_status(str(vals['deadline'] or ''),str(vals['status'] or ''))
+        columns=['source_name','source_id','opportunity_type','title','agency_name','government_level','city','county','state','service_area','official_url','application_url','contact_name','contact_email','contact_phone','funding_min','funding_max','amount_text','deadline','open_date','status','eligibility','required_certifications','required_documents','eligible_industries','eligible_business_stages','funding_uses','description']
+        values=[vals.get(k) for k in columns]
+        conn.execute(f'''INSERT INTO funding_opportunities({','.join(columns)},raw_payload,retrieved_at,last_verified_at) VALUES({','.join('?' for _ in columns)},?,?,?) ON CONFLICT(source_name,source_id) DO UPDATE SET title=excluded.title,agency_name=excluded.agency_name,amount_text=excluded.amount_text,deadline=excluded.deadline,status=excluded.status,eligibility=excluded.eligibility,description=excluded.description,raw_payload=excluded.raw_payload,retrieved_at=excluded.retrieved_at,last_verified_at=excluded.last_verified_at''',tuple(values+[json.dumps(opp),now(),opp.get('last_verified_at') or now()]))
+        row=conn.execute('SELECT id FROM funding_opportunities WHERE source_name=? AND source_id=?',(vals['source_name'],vals['source_id'])).fetchone()
+        conn.commit()
+        return row['id'] if row else None
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+        raise
+    finally:
+        conn.close()
+
+def _cache_funding_opportunity(opp):
+    """A cache outage must not turn a valid funding search into a 500 page."""
+    try:
+        return _store_funding_opportunity(opp)
+    except Exception:
+        app.logger.exception('Funding cache write failed for %s/%s',opp.get('source'),opp.get('source_id'))
+        return None
 
 def _stored_funding_opportunities(opportunity_type=''):
     conn=db(); rows=conn.execute('SELECT * FROM funding_opportunities WHERE opportunity_type=? ORDER BY last_verified_at DESC',(opportunity_type,)).fetchall() if opportunity_type else conn.execute('SELECT * FROM funding_opportunities ORDER BY last_verified_at DESC').fetchall(); conn.close(); out=[]
@@ -9579,7 +9672,7 @@ def funding_opportunities():
     try: grants=_grants_gov_search(keyword)
     except Exception: warning='The official Grants.gov service could not be reached just now. Saved and official loan programs remain available.'
     opportunities=grants+_official_loan_programs()
-    for opp in opportunities: _store_funding_opportunity(opp)
+    for opp in opportunities: _cache_funding_opportunity(opp)
     if kind in {'grant','loan'}: opportunities=[o for o in opportunities if o.get('opportunity_type','').lower()==kind]
     if level!='All': opportunities=[o for o in opportunities if o.get('government_level')==level]
     opportunities=[o for o in opportunities if _opportunity_status(o.get('deadline',''),o.get('status',''))!='CLOSED']
@@ -9596,8 +9689,12 @@ def funding_search():
     live=[]; warning=''
     try: live=_grants_gov_search(keyword)
     except Exception: warning='The official Grants.gov service could not be reached at this moment. Please retry without losing your saved work.'
-    for o in live: _store_funding_opportunity(o)
-    results=_merge_opportunities(_stored_funding_opportunities('Grant'),live)
+    for o in live: _cache_funding_opportunity(o)
+    try: stored=_stored_funding_opportunities('Grant')
+    except Exception:
+        app.logger.exception('Stored grant cache could not be read')
+        stored=[]
+    results=_merge_opportunities(stored,live)
     query_tokens=_tokens(keyword,purpose,stage)
     if query_tokens: results=[o for o in results if query_tokens & _tokens(o.get('title',''),o.get('description',''),o.get('eligible_industries',''),o.get('funding_uses',''))]
     if level!='All': results=[o for o in results if o.get('government_level')==level]
@@ -9607,7 +9704,18 @@ def funding_search():
     elif sort=='Newly Added': results=list(reversed(results))
     elif sort=='Local First': results.sort(key=lambda o:['City','County','State','Federal'].index(o.get('government_level','Federal')))
     else: results.sort(key=lambda o:_funding_analysis(o,facts)['match_score'],reverse=True)
-    conn=db(); conn.execute('INSERT INTO funding_searches(user_id,keyword,funding_type,state,industry,amount,result_count,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],keyword,'Grant',facts['state'],facts['industry'],facts['amount'],len(results),now())); conn.commit(); conn.close()
+    # Search history is useful, but an older/mid-migration history table must
+    # never prevent the member from seeing live official grant results.
+    conn=db()
+    try:
+        conn.execute('INSERT INTO funding_searches(user_id,keyword,funding_type,state,industry,amount,result_count,created_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],keyword,'Grant',facts['state'],facts['industry'],facts['amount'],len(results),now()))
+        conn.commit()
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+        app.logger.exception('Funding search history could not be saved for user %s',u['id'])
+    finally:
+        conn.close()
     options=lambda values,current: ''.join(f'<option{" selected" if x==current else ""}>{html.escape(x)}</option>' for x in values)
     form=f'''<form class="card" method="post"><h2>Search Grants</h2><label><b>Search grants</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><div class="grid"><div><label>Location</label><select class="input" name="level">{options(['All','City','County','State','Federal'],level)}</select></div><div><label>Business Stage</label><select class="input" name="stage">{options(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Funding Purpose</label><select class="input" name="purpose">{options(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Research','Other'],purpose)}</select></div><div><label>Status</label><select class="input" name="status">{options(['Open','Upcoming','Rolling','Closed','All'],status_filter)}</select></div><div><label>Sort</label><select class="input" name="sort">{options(['Best Match','Deadline Soonest','Newly Added','Local First','Funding Amount'],sort)}</select></div></div><button class="btn">Search Grants</button></form>'''
     body=''.join(_funding_card(o,facts) for o in results) or '<div class="empty">No current official grant results matched. Try broader industry or funding-purpose words.</div>'
@@ -9617,8 +9725,12 @@ def funding_search():
 @login_required
 def loan_search():
     u=current_user(); facts=_business_funding_facts(u['id']); amount=request.values.get('amount',facts['amount']); purpose=request.values.get('purpose',facts['purpose']); stage=request.values.get('stage',facts['stage']); official=_official_loan_programs()
-    for o in official: _store_funding_opportunity(o)
-    programs=_merge_opportunities(_stored_funding_opportunities('Loan'),official)
+    for o in official: _cache_funding_opportunity(o)
+    try: stored=_stored_funding_opportunities('Loan')
+    except Exception:
+        app.logger.exception('Stored loan cache could not be read')
+        stored=[]
+    programs=_merge_opportunities(stored,official)
     purpose_tokens=_tokens(purpose)
     if purpose_tokens: programs=[o for o in programs if purpose_tokens & _tokens(o.get('funding_uses',''),o.get('description',''),o.get('title',''))] or programs
     programs.sort(key=lambda o:_funding_analysis(o,facts)['match_score'],reverse=True)
