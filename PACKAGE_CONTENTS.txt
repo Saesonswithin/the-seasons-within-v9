@@ -1,0 +1,17 @@
+THE SEASONS WITHIN — CORRECTED WORKING BUILD
+Packaged: 2026-08-25
+
+Included:
+- Current application source
+- Python dependency requirements
+- Existing build notes and engine documentation
+- Existing Seasons Within logo asset
+- Financial Planning & Forecasting additions
+
+Intentionally excluded:
+- Local database files and member data
+- Python cache files
+- API keys, database credentials, and environment secrets
+
+Deployment configuration must provide DATABASE_URL and any required API/service
+credentials through the hosting environment. They are not stored in this archive.

@@ -30,6 +30,7 @@ import math
 import hashlib
 import difflib
 import io
+import csv
 from collections import Counter
 
 app = Flask(__name__)
@@ -115,6 +116,8 @@ PG_ID_TABLES = {
     'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
     'report_embeddings','member_pair_coordination','member_pair_planetary_scores'
+    ,'financial_forecasts','financial_entries','financial_imports','financial_questions',
+    'financial_connections'
 }
 
 def _pg_qmarks(sql):
@@ -521,6 +524,64 @@ def init_db():
         last_used_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         revoked_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS financial_forecasts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        name TEXT NOT NULL DEFAULT 'Business Forecast',
+        assumptions TEXT NOT NULL DEFAULT '{}',
+        calculations TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'Draft',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS financial_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        entry_month TEXT NOT NULL,
+        entry_type TEXT NOT NULL DEFAULT 'Expense',
+        category TEXT NOT NULL DEFAULT 'Other',
+        amount REAL NOT NULL DEFAULT 0,
+        source_type TEXT NOT NULL DEFAULT 'MEMBER ENTERED',
+        source_name TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        import_batch_id INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS financial_imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Pending Review',
+        payload TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS financial_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS financial_connections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Not Connected',
+        read_only INTEGER NOT NULL DEFAULT 1,
+        connection_metadata TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id,provider),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS security_events (
@@ -9198,12 +9259,235 @@ def _funding_card(opp,facts):
     action='Prepare Application' if typ.lower()=='loan' else 'Start Proposal'
     return f'''<article class="card funding-card"><div class="actions"><span class="badge">{html.escape(typ.upper())}</span><span class="badge">{html.escape(level.upper())}</span><span class="badge">{html.escape(_opportunity_status(deadline,opp.get('status','')))}</span></div><h3>{html.escape(_clean_text(opp.get('title')))}</h3><p><b>{official(opp.get('agency'))}</b></p><p><b>Funding:</b> {html.escape(amount)}<br><b>Deadline:</b> {html.escape(deadline)}</p><div class="grid"><div><b>Business Plan Match: {analysis['match_score']}%</b></div><div><b>Application Readiness: {analysis['readiness_score']}%</b></div></div><details><summary class="out">View Details</summary><h3>Why This Matches Your Business</h3><p>{html.escape(analysis['match_reason'])}</p><h3>Eligibility Checklist</h3><ul>{checklist}</ul><p><b>Location / Service Area:</b> {official(opp.get('service_area'))}<br><b>Business Types Eligible:</b> {official(opp.get('eligibility'))}<br><b>Business Stage Eligible:</b> {official(opp.get('eligible_business_stages'))}<br><b>Required Certifications / Registrations:</b> {official(opp.get('required_certifications'))}<br><b>Documents Typically Required:</b> {official(opp.get('required_documents'))}<br><b>Official Contact:</b> {official(opp.get('contact_name'))}<br><b>Email:</b> {official(opp.get('contact_email'))}<br><b>Phone:</b> {official(opp.get('contact_phone'))}<br><b>Last Verified:</b> {official(opp.get('last_verified_at'))}</p><p class="muted">Application Readiness estimates how prepared your current business records appear for this opportunity. It does not predict approval or guarantee funding.</p></details><div class="actions"><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><button class="btn">Save</button></form><a class="out" target="_blank" rel="noopener" href="{html.escape(opp.get('source_url') or opp.get('application_url') or '#',quote=True)}">Official Source</a></div></article>'''
 
+def _financial_number(value):
+    """Convert member/imported numeric text without inventing a value."""
+    try:
+        cleaned=re.sub(r'[^0-9.\-]','',str(value or ''))
+        return round(float(cleaned),2) if cleaned not in {'','-','.'} else 0.0
+    except (TypeError,ValueError):
+        return 0.0
+
+def _financial_plan_seed(user_id):
+    """Prefill only values that are explicitly present in the saved Business Plan."""
+    answers=_business_plan_answers(user_id)
+    def value(*keys):
+        for key in keys:
+            if answers.get(key) not in (None,''): return answers.get(key)
+        return ''
+    return {
+        'business_name':value('business_name','name'),
+        'service_name':value('primary_service','services','products_services'),
+        'service_price':_financial_number(value('service_price','price','pricing')),
+        'service_sales':_financial_number(value('expected_monthly_clients','expected_sales','customers_per_month')),
+        'product_price':_financial_number(value('product_price')),
+        'product_sales':_financial_number(value('product_sales','products_per_month')),
+        'recurring_revenue':_financial_number(value('monthly_recurring_revenue','membership_revenue')),
+        'startup_costs':_financial_number(value('startup_costs','startup_budget')),
+        'rent':_financial_number(value('monthly_rent','rent')),
+        'utilities':_financial_number(value('monthly_utilities','utilities')),
+        'supplies':_financial_number(value('monthly_supplies','supplies')),
+        'payroll':_financial_number(value('monthly_payroll','payroll')),
+        'contractors':_financial_number(value('monthly_contractors','contractors')),
+        'marketing':_financial_number(value('monthly_marketing','marketing_budget')),
+        'insurance':_financial_number(value('monthly_insurance','insurance')),
+        'technology':_financial_number(value('monthly_technology','software','technology_budget')),
+        'professional_services':_financial_number(value('professional_services')),
+        'transportation':_financial_number(value('transportation')),
+        'taxes_fees':_financial_number(value('taxes_fees')),
+        'other_fixed':_financial_number(value('other_fixed_expenses')),
+        'variable_cost_percent':_financial_number(value('variable_cost_percent')),
+        'monthly_growth_percent':_financial_number(value('monthly_growth_percent','growth_rate')),
+        'source_type':'PROJECTED',
+        'source_note':'Prefilled from saved Professional Business Plan; review every assumption.'
+    }
+
+def _calculate_financial_forecast(assumptions):
+    """Rules-based forecast. AI never supplies or changes these calculations."""
+    a={k:_financial_number(v) for k,v in assumptions.items() if k not in {'business_name','service_name','source_type','source_note'}}
+    service_revenue=a.get('service_price',0)*a.get('service_sales',0)
+    product_revenue=a.get('product_price',0)*a.get('product_sales',0)
+    base_revenue=round(service_revenue+product_revenue+a.get('recurring_revenue',0),2)
+    fixed_keys=('rent','utilities','supplies','payroll','contractors','marketing','insurance','technology','professional_services','transportation','taxes_fees','other_fixed')
+    fixed=round(sum(a.get(k,0) for k in fixed_keys),2)
+    variable_rate=max(0,min(a.get('variable_cost_percent',0),100))/100
+    variable=round(base_revenue*variable_rate,2)
+    expenses=round(fixed+variable,2)
+    gross=round(base_revenue-variable,2)
+    operating=round(base_revenue-expenses,2)
+    margin=1-variable_rate
+    break_even=round(fixed/margin,2) if margin>0 else 0
+    average_sale=a.get('service_price',0) or a.get('product_price',0)
+    sales_to_break_even=math.ceil(break_even/average_sale) if average_sale>0 else 0
+    growth=max(-100,a.get('monthly_growth_percent',0))/100
+    startup_costs=max(0,a.get('startup_costs',0))
+    months=[]
+    for index in range(36):
+        revenue=round(base_revenue*((1+growth)**index),2)
+        month_variable=round(revenue*variable_rate,2)
+        total=round(fixed+month_variable,2)
+        profit_loss=round(revenue-total,2)
+        cash_flow=round(profit_loss-(startup_costs if index==0 else 0),2)
+        months.append({'month':index+1,'revenue':revenue,'expenses':total,'profit_loss':profit_loss,'cash_flow':cash_flow})
+    horizons={}
+    for count,label in ((12,'12_month'),(24,'24_month'),(36,'3_year')):
+        selected=months[:count]
+        horizons[label]={
+            'revenue':round(sum(x['revenue'] for x in selected),2),
+            'expenses':round(sum(x['expenses'] for x in selected),2),
+            'profit_loss':round(sum(x['profit_loss'] for x in selected),2),
+            'cash_flow':round(sum(x['cash_flow'] for x in selected),2),
+        }
+    return {'monthly_revenue':base_revenue,'monthly_fixed_expenses':fixed,'monthly_variable_expenses':variable,'monthly_expenses':expenses,'gross_profit':gross,'operating_profit_loss':operating,'cash_flow':round(operating-startup_costs,2),'break_even_revenue':break_even,'sales_to_break_even':sales_to_break_even,'startup_costs':startup_costs,'months':months,'horizons':horizons,'formula_version':'financial-forecast-v2'}
+
+def _latest_financial_forecast(user_id):
+    conn=db(); row=conn.execute('SELECT * FROM financial_forecasts WHERE user_id=? ORDER BY version DESC,id DESC LIMIT 1',(user_id,)).fetchone(); conn.close()
+    if not row: return None
+    item=dict(row)
+    for key in ('assumptions','calculations'):
+        try: item[key]=json.loads(item[key] or '{}')
+        except Exception: item[key]={}
+    return item
+
+def _money(value):
+    return '${:,.2f}'.format(_financial_number(value))
+
+@app.route('/business-development/financial-planning')
+@login_required
+def financial_planning():
+    u=current_user(); forecast=_latest_financial_forecast(u['id'])
+    conn=db(); entries=conn.execute('SELECT COUNT(*) n FROM financial_entries WHERE user_id=?',(u['id'],)).fetchone()['n']; conn.close()
+    summary='No forecast saved yet.' if not forecast else f"Latest forecast: {_money(forecast['calculations'].get('monthly_revenue'))} projected monthly revenue • {_money(forecast['calculations'].get('operating_profit_loss'))} projected operating profit/loss"
+    cards=f'''<div class="grid"><a class="moreitem" href="{url_for('financial_forecast')}">Build My Financial Forecast<br><small>Business Plan assumptions + deterministic calculations</small></a><a class="moreitem" href="{url_for('financial_entries')}">Add / Connect Financial Information<br><small>{entries} saved entries • manual, upload or optional QuickBooks</small></a><a class="moreitem" href="{url_for('financial_actual_vs_forecast')}">Actual vs. Forecast<br><small>Compare real/member-entered history with projections</small></a><a class="moreitem" href="{url_for('financial_ask')}">Ask About My Numbers<br><small>Scenarios and plain-language explanations</small></a></div>'''
+    return page('Financial Planning & Forecasting',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Financial Planning & Forecasting</h1><p><b>Build projections, understand your numbers, and compare your business goals with actual performance.</b></p><p class="muted">QuickBooks is optional. Start with your saved Business Plan, enter numbers yourself, or upload records. Projections are estimates based on the information and assumptions you approve.</p></div><article class="card"><h2>My Financial Dashboard</h2><p>{html.escape(summary)}</p><div class="actions"><span class="badge">ACTUAL</span><span class="badge">MEMBER ENTERED</span><span class="badge">PROJECTED</span></div></article>{cards}<div class="actions"><a class="out" href="{url_for('financial_forecast')}">Update My Financial Forecast</a><a class="out" href="{url_for('business_plan')}">Continue Developing My Business Plan</a><a class="out" href="{url_for('marketing')}">Create a Growth Strategy</a><a class="out" href="{url_for('funding_opportunities')}">Prepare for Funding</a></div>''','business')
+
+@app.route('/business-development/financial-planning/forecast',methods=['GET','POST'])
+@login_required
+def financial_forecast():
+    u=current_user(); latest=_latest_financial_forecast(u['id']); seed=(latest['assumptions'] if latest else _financial_plan_seed(u['id']))
+    fields=[('service_price','Average service price'),('service_sales','Expected service sales/clients per month'),('product_price','Average product price'),('product_sales','Expected product sales per month'),('recurring_revenue','Monthly recurring or membership revenue'),('startup_costs','One-time startup costs'),('rent','Monthly rent'),('utilities','Monthly utilities'),('supplies','Monthly supplies'),('payroll','Monthly payroll'),('contractors','Monthly contractors'),('marketing','Monthly marketing/advertising'),('insurance','Monthly insurance'),('technology','Monthly technology/software'),('professional_services','Monthly professional services'),('transportation','Monthly transportation'),('taxes_fees','Monthly taxes/fees estimate'),('other_fixed','Other monthly fixed expenses'),('variable_cost_percent','Variable costs as % of revenue'),('monthly_growth_percent','Expected monthly growth %')]
+    if request.method=='POST':
+        assumptions={'business_name':request.form.get('business_name','').strip(),'service_name':request.form.get('service_name','').strip(),'source_type':'PROJECTED','source_note':'Member reviewed forecast assumptions.'}
+        assumptions.update({key:_financial_number(request.form.get(key)) for key,_ in fields})
+        calculations=_calculate_financial_forecast(assumptions)
+        conn=db(); current=conn.execute('SELECT COALESCE(MAX(version),0) v FROM financial_forecasts WHERE user_id=?',(u['id'],)).fetchone()['v']; conn.execute('INSERT INTO financial_forecasts(user_id,version,name,assumptions,calculations,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],current+1,'Business Forecast',json.dumps(assumptions),json.dumps(calculations),'Saved',now(),now())); conn.commit(); conn.close(); flash('Financial forecast saved to your Business Journal.','success'); return redirect(url_for('financial_forecast'))
+    inputs=''.join(f'''<div><label><b>{label}</b></label><input class="input" type="number" step="0.01" name="{key}" value="{html.escape(str(seed.get(key,0)),quote=True)}"></div>''' for key,label in fields)
+    results=''
+    if latest:
+        c=latest['calculations']; h=c.get('horizons',{}); results=f'''<article class="card"><span class="badge">PROJECTED</span><h2>Latest Forecast — Version {latest['version']}</h2><div class="grid"><div><b>Monthly Revenue</b><br>{_money(c.get('monthly_revenue'))}</div><div><b>Monthly Expenses</b><br>{_money(c.get('monthly_expenses'))}</div><div><b>Gross Profit</b><br>{_money(c.get('gross_profit'))}</div><div><b>Operating Profit/Loss</b><br>{_money(c.get('operating_profit_loss'))}</div><div><b>First-Month Cash Flow</b><br>{_money(c.get('cash_flow'))}</div><div><b>Break-even Revenue</b><br>{_money(c.get('break_even_revenue'))}</div><div><b>Sales to Break Even</b><br>{c.get('sales_to_break_even',0)}</div></div><details><summary class="out">View 12 / 24 / 3-Year Forecast</summary><p><b>12-month revenue:</b> {_money(h.get('12_month',{}).get('revenue'))}<br><b>12-month cash flow:</b> {_money(h.get('12_month',{}).get('cash_flow'))}<br><b>24-month revenue:</b> {_money(h.get('24_month',{}).get('revenue'))}<br><b>24-month cash flow:</b> {_money(h.get('24_month',{}).get('cash_flow'))}<br><b>3-year revenue:</b> {_money(h.get('3_year',{}).get('revenue'))}<br><b>3-year cash flow:</b> {_money(h.get('3_year',{}).get('cash_flow'))}</p></details><p class="muted">These projections are estimates based on approved assumptions, not guaranteed performance.</p></article>'''
+    return page('Build My Financial Forecast',f'''<div class="hero"><span class="badge">FINANCIAL PLANNING</span><h1>Build My Financial Forecast</h1><p class="muted">Saved Business Plan values are prefilled where available. Review every assumption before saving. Blank or unavailable values remain zero rather than being invented.</p></div>{results}<form class="card" method="post"><div class="grid"><div><label><b>Business name</b></label><input class="input" name="business_name" value="{html.escape(str(seed.get('business_name','')),quote=True)}"></div><div><label><b>Primary product/service</b></label><input class="input" name="service_name" value="{html.escape(str(seed.get('service_name','')),quote=True)}"></div>{inputs}</div><button class="btn">Update My Financial Forecast</button></form>''','business')
+
+@app.route('/business-development/financial-planning/entries',methods=['GET','POST'])
+@login_required
+def financial_entries():
+    u=current_user()
+    if request.method=='POST':
+        month=request.form.get('entry_month','')[:7]; typ=request.form.get('entry_type','Expense'); category=request.form.get('category','Other').strip()[:120]; amount=_financial_number(request.form.get('amount')); notes=request.form.get('notes','').strip()[:2000]
+        if typ not in {'Revenue','Expense','Sales'}: typ='Expense'
+        if not re.fullmatch(r'\d{4}-\d{2}',month): flash('Choose a valid month.','error')
+        elif amount<0: flash('Enter a positive amount and choose Revenue or Expense.','error')
+        else:
+            conn=db(); conn.execute('INSERT INTO financial_entries(user_id,entry_month,entry_type,category,amount,source_type,source_name,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(u['id'],month,typ,category,amount,'MEMBER ENTERED','Manual entry',notes,now(),now())); conn.commit(); conn.close(); flash('Financial entry saved.','success'); return redirect(url_for('financial_entries'))
+    conn=db(); rows=conn.execute('SELECT * FROM financial_entries WHERE user_id=? ORDER BY entry_month DESC,id DESC',(u['id'],)).fetchall(); connection=conn.execute("SELECT * FROM financial_connections WHERE user_id=? AND provider='QuickBooks'",(u['id'],)).fetchone(); conn.close()
+    cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['source_type'])}</span><h3>{html.escape(r['entry_month'])} — {html.escape(r['category'])}</h3><p><b>{html.escape(r['entry_type'])}:</b> {_money(r['amount'])}</p><p class="muted">{html.escape(r['source_name'] or '')} {html.escape(r['notes'] or '')}</p></article>''' for r in rows) or '<div class="empty">No financial entries yet.</div>'
+    quick_status=html.escape(connection['status'] if connection else 'Not Connected')
+    return page('Add Financial Information',f'''<div class="hero"><span class="badge">FINANCIAL PLANNING</span><h1>Add / Connect Financial Information</h1><p class="muted">Choose the method that fits your business. QuickBooks is optional.</p></div><div class="grid"><article class="card"><h2>Enter My Numbers</h2><p>Record revenue, sales, and expenses by month.</p></article><a class="moreitem" href="{url_for('financial_upload')}">Upload Financial Records<br><small>CSV or XLSX • review before import</small></a><a class="moreitem" href="{url_for('financial_forecast')}">Build From My Business Plan<br><small>Use information already provided</small></a><a class="moreitem" href="{url_for('financial_quickbooks')}">Connect QuickBooks<br><small>Optional • read-only • {quick_status}</small></a></div><form class="card" method="post"><h2>Enter My Numbers</h2><div class="grid"><div><label>Month</label><input class="input" type="month" name="entry_month" required></div><div><label>Type</label><select class="input" name="entry_type"><option>Revenue</option><option>Expense</option><option>Sales</option></select></div><div><label>Category</label><input class="input" name="category" placeholder="Rent, services, marketing, payroll..." required></div><div><label>Amount</label><input class="input" type="number" min="0" step="0.01" name="amount" required></div></div><label>Notes</label><textarea class="input" name="notes"></textarea><button class="btn">Save Financial Entry</button></form><h2>Saved Financial History</h2>{cards}''','business')
+
+def _parse_financial_upload(upload):
+    name=secure_filename(upload.filename or ''); ext=Path(name).suffix.lower(); raw=upload.read()
+    if ext=='.csv':
+        decoded=raw.decode('utf-8-sig'); records=list(csv.DictReader(io.StringIO(decoded)))
+    elif ext=='.xlsx':
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            raise ValueError('Excel support is unavailable. Upload a CSV or install openpyxl.')
+        sheet=load_workbook(io.BytesIO(raw),read_only=True,data_only=True).active; values=list(sheet.iter_rows(values_only=True)); headers=[str(x or '').strip() for x in (values[0] if values else [])]; records=[dict(zip(headers,row)) for row in values[1:]]
+    else: raise ValueError('Use a CSV or XLSX file.')
+    normalized=[]
+    for index,row in enumerate(records[:500],2):
+        lower={str(k).strip().lower():v for k,v in row.items()}
+        month=str(lower.get('month') or lower.get('date') or '')[:7]
+        typ=str(lower.get('type') or lower.get('entry_type') or 'Expense').title()
+        if typ not in {'Revenue','Expense','Sales'}: typ='Expense'
+        category=str(lower.get('category') or lower.get('description') or 'Other').strip()[:120]
+        amount=_financial_number(lower.get('amount') or lower.get('value'))
+        if re.fullmatch(r'\d{4}-\d{2}',month) and amount>=0: normalized.append({'row':index,'entry_month':month,'entry_type':typ,'category':category,'amount':amount,'include':True})
+    if not normalized: raise ValueError('No usable rows found. Include Month (YYYY-MM), Type, Category, and Amount columns.')
+    return name,ext.lstrip('.').upper(),normalized
+
+@app.route('/business-development/financial-planning/upload',methods=['GET','POST'])
+@login_required
+def financial_upload():
+    u=current_user()
+    if request.method=='POST':
+        upload=request.files.get('financial_file')
+        try: filename,file_type,records=_parse_financial_upload(upload) if upload and upload.filename else (_ for _ in ()).throw(ValueError('Choose a CSV or XLSX file.'))
+        except ValueError as exc: flash(str(exc),'error'); return redirect(url_for('financial_upload'))
+        conn=db(); cur=conn.execute('INSERT INTO financial_imports(user_id,filename,file_type,status,payload,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(u['id'],filename,file_type,'Pending Review',json.dumps(records),now(),now())); import_id=cur.lastrowid; conn.commit(); conn.close(); return redirect(url_for('financial_import_review',import_id=import_id))
+    return page('Upload Financial Records',f'''<div class="hero"><span class="badge">FINANCIAL PLANNING</span><h1>Upload Financial Records</h1><p class="muted">Upload CSV or XLSX files with Month (YYYY-MM), Type, Category and Amount columns. You will review every row before import; the system never changes transaction amounts silently.</p></div><form class="card" method="post" enctype="multipart/form-data"><input class="input" type="file" name="financial_file" accept=".csv,.xlsx" required><button class="btn">Upload for Review</button></form>''','business')
+
+@app.route('/business-development/financial-planning/import/<int:import_id>',methods=['GET','POST'])
+@login_required
+def financial_import_review(import_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM financial_imports WHERE id=? AND user_id=?',(import_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    try: records=json.loads(row['payload'] or '[]')
+    except Exception: records=[]
+    if request.method=='POST':
+        if row['status']=='Imported': conn.close(); flash('This file was already imported.','info'); return redirect(url_for('financial_entries'))
+        selected=set(request.form.getlist('include'))
+        for index,item in enumerate(records):
+            if str(index) in selected: conn.execute('INSERT INTO financial_entries(user_id,entry_month,entry_type,category,amount,source_type,source_name,notes,import_batch_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(u['id'],item['entry_month'],item['entry_type'],item['category'],item['amount'],'ACTUAL',row['filename'],'Imported after member review',import_id,now(),now()))
+        conn.execute("UPDATE financial_imports SET status='Imported',updated_at=? WHERE id=? AND user_id=?",(now(),import_id,u['id'])); conn.commit(); conn.close(); flash('Selected financial records imported.','success'); return redirect(url_for('financial_entries'))
+    conn.close(); items=''.join(f'''<label class="card"><input type="checkbox" name="include" value="{i}" checked> <b>{html.escape(x['entry_month'])} • {html.escape(x['entry_type'])} • {html.escape(x['category'])}</b><br>{_money(x['amount'])}</label>''' for i,x in enumerate(records))
+    return page('Review Financial Import',f'''<div class="hero"><span class="badge">PENDING REVIEW</span><h1>Review {html.escape(row['filename'])}</h1><p class="muted">Uncheck any row that should not become part of your Business Journal.</p></div><form method="post">{items}<button class="btn">Confirm Selected Records</button></form>''','business')
+
+@app.route('/business-development/financial-planning/actual-vs-forecast')
+@login_required
+def financial_actual_vs_forecast():
+    u=current_user(); forecast=_latest_financial_forecast(u['id']); month=request.args.get('month') or datetime.now().strftime('%Y-%m'); conn=db(); rows=conn.execute('SELECT entry_type,SUM(amount) total FROM financial_entries WHERE user_id=? AND entry_month=? GROUP BY entry_type',(u['id'],month)).fetchall(); conn.close(); actual={r['entry_type']:_financial_number(r['total']) for r in rows}; projected=(forecast['calculations'] if forecast else {}); revenue=actual.get('Revenue',0)+actual.get('Sales',0); expenses=actual.get('Expense',0); profit=revenue-expenses
+    cards=f'''<div class="grid"><article class="card"><span class="badge">REVENUE</span><p><b>Projected</b><br>{_money(projected.get('monthly_revenue'))}</p><p><b>Actual / Member Entered</b><br>{_money(revenue)}</p><p><b>Difference</b><br>{_money(revenue-_financial_number(projected.get('monthly_revenue')))}</p></article><article class="card"><span class="badge">EXPENSES</span><p><b>Projected</b><br>{_money(projected.get('monthly_expenses'))}</p><p><b>Actual / Member Entered</b><br>{_money(expenses)}</p><p><b>Difference</b><br>{_money(expenses-_financial_number(projected.get('monthly_expenses')))}</p></article><article class="card"><span class="badge">PROFIT / LOSS</span><p><b>Projected</b><br>{_money(projected.get('operating_profit_loss'))}</p><p><b>Actual / Member Entered</b><br>{_money(profit)}</p><p><b>Difference</b><br>{_money(profit-_financial_number(projected.get('operating_profit_loss')))}</p></article></div>'''
+    explanation=f"For {month}, recorded revenue is {_money(revenue)} and recorded expenses are {_money(expenses)}. Net recorded profit/loss is {_money(profit)}."
+    return page('Actual vs Forecast',f'''<div class="hero"><span class="badge">FINANCIAL PLANNING</span><h1>Actual vs. Forecast</h1><p class="muted">Actual/imported and member-entered history stays separate from projected values.</p></div><form class="card" method="get"><label>Month</label><input class="input" type="month" name="month" value="{html.escape(month,quote=True)}"><button class="out">View Month</button></form>{cards}<article class="card"><h2>Plain-Language Summary</h2><p>{html.escape(explanation)}</p></article>''','business')
+
+def _financial_scenario_answer(question,forecast):
+    c=(forecast or {}).get('calculations',{}); a=(forecast or {}).get('assumptions',{}); q=question.lower(); revenue=_financial_number(c.get('monthly_revenue')); expenses=_financial_number(c.get('monthly_expenses')); price=_financial_number(a.get('service_price')) or _financial_number(a.get('product_price'))
+    target_match=re.search(r'\$?([0-9][0-9,]*(?:\.\d+)?)',question); target=_financial_number(target_match.group(1)) if target_match else 0
+    if 'break even' in q: return f"Your current forecast estimates break-even revenue at {_money(c.get('break_even_revenue'))} per month, or approximately {c.get('sales_to_break_even',0)} sales at the current average price."
+    if ('how many' in q or 'need to sell' in q) and target and price: return f"At an average sale price of {_money(price)}, reaching {_money(target)} in monthly revenue requires approximately {math.ceil(target/price)} sales before considering refunds or unpaid invoices."
+    if 'raise' in q and target:
+        changed=round(revenue*(1+target/100),2); return f"If prices rose {target:g}% and sales volume stayed the same, projected monthly revenue would be about {_money(changed)}, a change of {_money(changed-revenue)}. This is a scenario, not guaranteed performance."
+    if ('decrease' in q or 'drop' in q) and target:
+        changed=round(revenue*(1-target/100),2); return f"If sales decreased {target:g}%, projected monthly revenue would be about {_money(changed)} and projected operating profit/loss would be about {_money(changed-expenses)}."
+    if 'marketing' in q and target: return f"Adding {_money(target)} in monthly marketing would increase projected monthly expenses to {_money(expenses+target)}. Revenue would need to improve by at least {_money(target)} just to preserve the current operating result."
+    return f"Your current forecast shows {_money(revenue)} projected monthly revenue, {_money(expenses)} projected monthly expenses, and {_money(c.get('operating_profit_loss'))} projected operating profit/loss. Ask about break-even, a revenue target, a percentage price change, a sales decrease, or added marketing spending for a deterministic scenario."
+
+@app.route('/business-development/financial-planning/ask',methods=['GET','POST'])
+@login_required
+def financial_ask():
+    u=current_user(); forecast=_latest_financial_forecast(u['id'])
+    if request.method=='POST':
+        question=request.form.get('question','').strip()[:2000]
+        if not question: flash('Enter a question about your numbers.','error')
+        else:
+            answer=_financial_scenario_answer(question,forecast)
+            conn=db(); conn.execute('INSERT INTO financial_questions(user_id,question,answer,created_at) VALUES(?,?,?,?)',(u['id'],question,answer,now())); conn.commit(); conn.close(); flash('Scenario calculated from your saved forecast.','success')
+    conn=db(); rows=conn.execute('SELECT * FROM financial_questions WHERE user_id=? ORDER BY id DESC LIMIT 20',(u['id'],)).fetchall(); conn.close(); history=''.join(f'''<article class="card"><h3>{html.escape(r['question'])}</h3><p>{html.escape(r['answer'])}</p></article>''' for r in rows)
+    return page('Ask About My Numbers',f'''<div class="hero"><span class="badge">FINANCIAL PLANNING</span><h1>Ask About My Numbers</h1><p class="muted">Explore traceable planning scenarios. The assistant does not modify accounting records, move money, apply for funding, file taxes, or guarantee performance.</p></div><form class="card" method="post"><textarea class="input" name="question" placeholder="How many clients do I need each month to break even?" required></textarea><button class="btn">Calculate Scenario</button></form>{history}''','business')
+
+@app.route('/business-development/financial-planning/quickbooks')
+@login_required
+def financial_quickbooks():
+    configured=bool(os.environ.get('QUICKBOOKS_CLIENT_ID') and os.environ.get('QUICKBOOKS_CLIENT_SECRET') and os.environ.get('QUICKBOOKS_REDIRECT_URI'))
+    status='Ready for official authorization setup' if configured else 'Not configured'
+    return page('Connect QuickBooks',f'''<div class="hero"><span class="badge">OPTIONAL CONNECTION</span><h1>Connect QuickBooks</h1><p class="muted">QuickBooks is optional. The connection must use official QuickBooks Online authorization and is read-only for analysis. The Seasons Within never asks for or stores your QuickBooks password and never creates, edits, or deletes transactions.</p></div><article class="card"><h2>{status}</h2><p>{'QuickBooks credentials are configured, but owner authorization must be completed through the official OAuth flow before any data can be read.' if configured else 'Continue with Enter My Numbers, Upload Financial Records, or Build From My Business Plan. An administrator can configure the official QuickBooks OAuth credentials later.'}</p><a class="out" href="{url_for('financial_entries')}">Choose Another Method</a></article>''','business')
+
 @app.route('/business-journal')
 @login_required
 def business_journal_workspace():
     u=current_user(); answers=_business_plan_answers(u['id']); name=html.escape(answers.get('business_name') or 'Your business')
     conn=db(); saved=conn.execute('SELECT COUNT(*) n FROM saved_funding_opportunities WHERE user_id=?',(u['id'],)).fetchone()['n']; proposals=conn.execute('SELECT COUNT(*) n FROM business_proposals WHERE user_id=?',(u['id'],)).fetchone()['n']; certs=conn.execute('SELECT COUNT(*) n FROM business_certifications WHERE user_id=?',(u['id'],)).fetchone()['n']; conn.close()
-    links=f'''<div class="grid"><a class="moreitem" href="{url_for('journal',category='Business')}">1. Business Notes & Records<br><small>Existing private Business Journal</small></a><a class="moreitem" href="{url_for('business_certifications')}">2. Licenses & Certifications<br><small>{certs} saved records</small></a><a class="moreitem" href="{url_for('funding_opportunities')}">3. Funding Matches<br><small>Grants and loans selected for {name}</small></a><a class="moreitem" href="{url_for('funding_search')}">4. Grant Search<br><small>City, county, state and federal grants</small></a><a class="moreitem" href="{url_for('loan_search')}">5. Loan Search<br><small>Legitimate business financing programs</small></a><a class="moreitem" href="{url_for('saved_opportunities')}">6. Saved Opportunities<br><small>{saved} saved</small></a><a class="moreitem" href="{url_for('proposal_builder')}">7. Proposal Builder<br><small>{proposals} proposals</small></a><a class="moreitem" href="{url_for('funding_calendar')}">8. Funding Calendar / Deadlines<br><small>Track applications and due dates</small></a></div>'''
+    links=f'''<div class="grid"><a class="moreitem" href="{url_for('journal',category='Business')}">1. Business Notes & Records<br><small>Existing private Business Journal</small></a><a class="moreitem" href="{url_for('business_certifications')}">2. Licenses & Certifications<br><small>{certs} saved records</small></a><a class="moreitem" href="{url_for('funding_opportunities')}">3. Funding Matches<br><small>Grants and loans selected for {name}</small></a><a class="moreitem" href="{url_for('funding_search')}">4. Grant Search<br><small>City, county, state and federal grants</small></a><a class="moreitem" href="{url_for('loan_search')}">5. Loan Search<br><small>Legitimate business financing programs</small></a><a class="moreitem" href="{url_for('saved_opportunities')}">6. Saved Opportunities<br><small>{saved} saved</small></a><a class="moreitem" href="{url_for('proposal_builder')}">7. Proposal Builder<br><small>{proposals} proposals</small></a><a class="moreitem" href="{url_for('funding_calendar')}">8. Funding Calendar / Deadlines<br><small>Track applications and due dates</small></a><a class="moreitem" href="{url_for('financial_planning')}">9. Financial Planning & Forecasting<br><small>Build projections, understand your numbers, and compare goals with performance</small></a></div>'''
     education='''<div class="grid"><article class="card"><h3>Grants</h3><p>Funding that generally does not have to be repaid when the award terms are followed. Eligibility, approved uses, deadlines and reporting rules can be strict.</p></article><article class="card"><h3>Business Loans</h3><p>Borrowed funding normally repaid under lender terms. Qualification may depend on business history, revenue, credit, collateral and ability to repay.</p></article><article class="card"><h3>Proposals & Applications</h3><p>Your application explains the business, funding need, use of funds, expected results, budget and other information required by the source.</p></article></div>'''
     return page('Business Journal',f'''<div class="hero"><span class="badge">BUSINESS JOURNAL</span><h1>Business Development</h1><p><b>Funding, preparation and proposal tools for your business.</b></p><p class="muted">Business Development helps you understand funding options, prepare your business, identify grants and loans that may fit your needs, and build stronger applications. Your saved Business Plan helps identify relevant opportunities and requirements you may still need to complete.</p></div>{education}{links}''','business')
 
@@ -9385,9 +9669,9 @@ def proposal_builder():
 def proposal_new(opportunity_id):
     u=current_user(); conn=db(); opp=conn.execute('SELECT * FROM saved_funding_opportunities WHERE id=? AND user_id=?',(opportunity_id,u['id'])).fetchone()
     if not opp: conn.close(); abort(404)
-    a=_business_plan_answers(u['id'])
+    a=_business_plan_answers(u['id']); financial=_latest_financial_forecast(u['id'])
     if request.method=='POST':
-        payload=dict(a); payload.update({'opportunity_title':opp['title'],'request_amount':request.form.get('request_amount','').strip(),'project_period':request.form.get('project_period','').strip(),'executive_summary':request.form.get('executive_summary','').strip(),'statement_of_need':request.form.get('statement_of_need','').strip(),'project_description':request.form.get('project_description','').strip(),'use_of_funds':request.form.get('use_of_funds','').strip(),'outcomes':request.form.get('outcomes','').strip(),'timeline':request.form.get('timeline','').strip(),'budget':request.form.get('budget','').strip(),'sustainability':request.form.get('sustainability','').strip(),'community_impact':request.form.get('community_impact','').strip(),'opportunity_questions':request.form.get('opportunity_questions','').strip()})
+        payload=dict(a); payload.update({'opportunity_title':opp['title'],'request_amount':request.form.get('request_amount','').strip(),'project_period':request.form.get('project_period','').strip(),'executive_summary':request.form.get('executive_summary','').strip(),'statement_of_need':request.form.get('statement_of_need','').strip(),'project_description':request.form.get('project_description','').strip(),'use_of_funds':request.form.get('use_of_funds','').strip(),'outcomes':request.form.get('outcomes','').strip(),'timeline':request.form.get('timeline','').strip(),'budget':request.form.get('budget','').strip(),'sustainability':request.form.get('sustainability','').strip(),'community_impact':request.form.get('community_impact','').strip(),'opportunity_questions':request.form.get('opportunity_questions','').strip(),'financial_forecast':financial['calculations'] if financial else {},'financial_forecast_version':financial['version'] if financial else None})
         title=f"{a.get('business_name') or 'Business'} — {opp['title']}"
         doc=f'''# Proposal Working Draft\n\n## Applicant\n{a.get('business_name') or a.get('name') or ''}\n\n## Opportunity\n{opp['title']} — {opp['agency']}\n\n## Executive Summary\n{payload['executive_summary']}\n\n## Business Description\n{a.get('business_description') or a.get('mission','')}\n\n## Statement of Need\n{payload['statement_of_need']}\n\n## Project Description\n{payload['project_description']}\n\n## Funding Request and Use of Funds\n{payload['request_amount']}\n\n{payload['use_of_funds']}\n\n## Goals and Expected Outcomes\n{payload['outcomes']}\n\n## Timeline\n{payload['timeline']}\n\n## Budget\n{payload['budget']}\n\n## Sustainability\n{payload['sustainability']}\n\n## Community / Economic Impact\n{payload['community_impact']}\n\n## Supporting Requirements\n{payload['opportunity_questions']}'''
         cur=conn.execute('INSERT INTO business_proposals(user_id,opportunity_id,version,title,payload,document_text,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],opportunity_id,1,title,json.dumps(payload),doc,'Draft',now(),now())); pid=cur.lastrowid; conn.commit(); conn.close(); flash('Proposal draft saved.','success'); return redirect(url_for('proposal_view',proposal_id=pid))
