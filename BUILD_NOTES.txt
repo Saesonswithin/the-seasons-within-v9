@@ -129,3 +129,16 @@ FOCUSED MULTI-PASS FUNDING SEARCH — 2026-08-27
 - Business Match, Application Readiness and Eligibility Confidence remain separate.
 - Duplicate discoveries prefer the verified original program page.
 - Existing Business Journal saving and Proposal Builder handoffs remain unchanged.
+
+MANUAL GRANT SEARCH SEPARATION — 2026-08-27
+
+- Automatic Funding Matches remain driven by the saved Business Plan.
+- Manual Grant Search begins with the member's typed keyword and does not append
+  unrelated Business Plan industries, services or goals to discovery queries.
+- Location, stage, funding purpose and status remain filters while the keyword stays primary.
+- Manual discovery expands from city through county, regional, state, federal and
+  national/private sources without changing the member's subject.
+- The Business Plan is applied after discovery to calculate and explain Business Match.
+- Search Coverage shows geographic levels rather than internal search-engine phrases.
+- Unrelated cached grants are excluded from manual results.
+- Loan Search and all unrelated application features remain unchanged.

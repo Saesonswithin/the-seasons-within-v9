@@ -9496,6 +9496,69 @@ def _deep_live_funding_search(facts,funding_type,level='All',manual_location='')
     merged=_merge_opportunities(discovered); merged.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
     return merged[:40],plan,errors
 
+def _manual_grant_variations(keyword):
+    """Keep manual discovery centered on the member's words, never their plan categories."""
+    phrase=re.sub(r'\s+',' ',_clean_text(keyword)).strip()[:120]
+    if not phrase: return []
+    topic=re.sub(r'\s+(?:grants?|grant funding|funding)$','',phrase,flags=re.I).strip() or phrase
+    variations=[topic,f'{topic} grant',f'{topic} small business grant',f'{topic} entrepreneur funding',f'{topic} program funding']
+    lower=topic.lower()
+    related={
+        'wellness':['well-being grant','health and wellness funding','community wellness grant'],
+        'technology':['technology innovation grant','small business technology funding'],
+        'community garden':['community gardening grant','urban agriculture funding'],
+        'mental wellness':['mental wellness funding','community mental health and wellness grant']}
+    for key,items in related.items():
+        if key in lower: variations.extend(items)
+    out=[]; seen=set()
+    for value in variations:
+        normalized=re.sub(r'\W+',' ',value.lower()).strip()
+        if normalized and normalized not in seen: seen.add(normalized); out.append(value)
+    return out[:8]
+
+def _manual_grant_search_plan(facts,keyword,level='All',manual_location='',stage='',purpose=''):
+    local_facts=dict(facts); manual=_clean_text(manual_location)
+    if manual and level=='All':
+        parts=[x.strip() for x in manual.split(',') if x.strip()]
+        local_facts['city']=parts[0] if parts else manual; local_facts['state']=parts[-1] if len(parts)>1 else facts.get('state',''); local_facts['county']='Wayne' if local_facts['city'].lower()=='detroit' else ''
+    geography=_funding_geography_terms(local_facts,level,manual); variations=_manual_grant_variations(keyword); plan=[]; filters=' '.join(x for x in (_clean_text(stage),_clean_text(purpose)) if x)
+    primary=variations[0] if variations else _clean_text(keyword)
+    for geo_level,geo in geography:
+        plan.append({'level':geo_level,'location':geo,'focus':primary,'pass':'manual keyword','query':f'{geo} {primary} grant official'})
+        if geo_level in {'City','County','Regional','State'}: plan.append({'level':geo_level,'location':geo,'focus':primary,'pass':'manual keyword funding programs','query':f'{geo} {primary} funding program official'})
+        if geo_level=='State' and filters: plan.append({'level':'State','location':geo,'focus':primary,'pass':'member-selected filters','query':f'{geo} {primary} grant {filters} official'})
+    for variation in variations[1:5]: plan.append({'level':'National/Private','location':'United States','focus':variation,'pass':'closely related manual-keyword variation','query':f'{variation} official application'})
+    unique=[]; seen=set()
+    for item in plan:
+        key=re.sub(r'\W+',' ',item['query'].lower()).strip()
+        if key not in seen: seen.add(key); unique.append(item)
+    return unique[:18]
+
+def _manual_grants_gov_search(keyword):
+    terms=_manual_grant_variations(keyword)[:6]; found=[]; errors=[]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures={pool.submit(_grants_gov_search,term):term for term in terms}
+        for future in as_completed(futures):
+            try: found.extend(future.result())
+            except Exception as exc: errors.append(f'{futures[future]}: {type(exc).__name__}')
+    return _merge_opportunities(found),errors
+
+def _deep_live_manual_grant_search(facts,keyword,level='All',manual_location='',stage='',purpose=''):
+    plan=_manual_grant_search_plan(facts,keyword,level,manual_location,stage,purpose); discovered=[]; errors=[]
+    configured=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
+    if not configured: return [],plan,['Live web search is not configured. Configure Brave, Bing, or Google Programmable Search credentials.']
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures={pool.submit(_configured_funding_web_search,item['query'],8):item for item in plan}
+        for future in as_completed(futures):
+            meta=futures[future]
+            try:
+                web_results,provider=future.result()
+                for result in web_results:
+                    item=_web_result_to_opportunity(result,meta,'Grant',provider)
+                    if item: discovered.append(item)
+            except Exception as exc: errors.append(f"{meta['location'] or meta['level']}: {type(exc).__name__}")
+    return _merge_opportunities(discovered)[:40],plan,errors
+
 def _expanded_grants_gov_search(facts,manual_keyword=''):
     profile=_funding_search_profile(facts)
     terms=[manual_keyword,profile['industry'],profile['primary_activity'],profile['naics']]+profile['needs'][:4]+profile['secondary_activities'][:2]
@@ -10149,7 +10212,7 @@ def funding_opportunities():
 @app.route('/business-development/funding/search',methods=['GET','POST'])
 @login_required
 def funding_search():
-    u=current_user(); facts=_business_funding_facts(u['id']); keyword=(request.form.get('keyword') if request.method=='POST' else request.args.get('keyword')) or _personalized_funding_keyword(facts); keyword=keyword.strip()[:180]
+    u=current_user(); facts=_business_funding_facts(u['id']); keyword=(request.form.get('keyword','') if request.method=='POST' else request.args.get('keyword','')).strip()[:180]
     level=request.values.get('level','All'); location=request.values.get('location',', '.join(x for x in (facts['city'],facts['county'],facts['state']) if x)); stage=request.values.get('stage',facts['stage']); purpose=request.values.get('purpose',facts['purpose']); status_filter=request.values.get('status','Open'); sort=request.values.get('sort','Best Match'); search_facts=dict(facts); search_facts.update({'stage':stage,'purpose':purpose})
     if location.strip():
         if level=='City': search_facts['city']=location.strip()
@@ -10157,17 +10220,20 @@ def funding_search():
         elif level=='State': search_facts['state']=location.strip()
     live=[]; warning=''; search_plan=[]; search_errors=[]
     if request.method=='POST':
-        federal,federal_errors=_expanded_grants_gov_search(search_facts,keyword)
-        web_live,search_plan,web_errors=_deep_live_funding_search(search_facts,'Grant',level,location)
-        live=_merge_opportunities(federal,web_live); search_errors=federal_errors+web_errors
-        for o in live:
-            if o.get('source')=='Grants.gov' or _verification_state(o)['active_verified']: _cache_funding_opportunity(o)
-        if search_errors: warning='Some live sources could not be reached. The results below include the official sources that responded.'
+        if not keyword: warning='Enter what you want to search for, such as Wellness, Technology grants, or Community garden grants.'
+        else:
+            federal,federal_errors=_manual_grants_gov_search(keyword)
+            web_live,search_plan,web_errors=_deep_live_manual_grant_search(search_facts,keyword,level,location,stage,purpose)
+            live=_merge_opportunities(federal,web_live); search_errors=federal_errors+web_errors
+            for o in live:
+                if o.get('source')=='Grants.gov' or _verification_state(o)['active_verified']: _cache_funding_opportunity(o)
+            if search_errors: warning='Some live sources could not be reached. The search continued through the remaining available sources.'
     try: stored=_stored_funding_opportunities('Grant')
     except Exception:
         app.logger.exception('Stored grant cache could not be read')
         stored=[]
-    results=_merge_opportunities(live,stored if request.method=='POST' else [])
+    manual_terms=_tokens(keyword); relevant_cache=[o for o in stored if manual_terms and manual_terms & _tokens(o.get('title',''),o.get('description',''),o.get('eligibility',''),o.get('funding_uses',''))]
+    results=_merge_opportunities(live,relevant_cache if request.method=='POST' else [])
     if level!='All': results=[o for o in results if o.get('government_level')==level]
     if status_filter!='All':
         allowed={'Open':{'OPEN','CLOSING SOON','ROLLING','RECURRING'},'Upcoming':{'UPCOMING','OPENING SOON'},'Rolling':{'ROLLING'},'Closed':{'CLOSED','CLOSED — EXPECTED TO RETURN','DEADLINE PASSED'}}.get(status_filter,{status_filter.upper()}); results=[o for o in results if _opportunity_status(o.get('deadline',''),o.get('status','')) in allowed]
@@ -10188,20 +10254,23 @@ def funding_search():
     finally:
         conn.close()
     options=lambda values,current: ''.join(f'<option{" selected" if x==current else ""}>{html.escape(x)}</option>' for x in values)
-    progress='''<div id="funding-search-progress" class="card" style="display:none"><h2>Searching for funding opportunities…</h2><p id="funding-progress-text">Building searches from your Business Plan…</p><div class="progress"><span id="funding-progress-bar" style="width:8%"></span></div></div><script>function beginFundingSearch(){const box=document.getElementById('funding-search-progress'),text=document.getElementById('funding-progress-text'),bar=document.getElementById('funding-progress-bar');box.style.display='block';const steps=['Searching city programs…','Searching county programs…','Searching regional programs…','Searching state programs…','Searching federal programs…','Searching foundation and corporate programs…','Checking official eligibility requirements…','Comparing opportunities with your Business Plan…'];let i=0;text.textContent=steps[0];bar.style.width='12%';window.fundingProgressTimer=setInterval(()=>{i=Math.min(i+1,steps.length-1);text.textContent=steps[i];bar.style.width=(12+Math.round(84*i/(steps.length-1)))+'%'},900);box.scrollIntoView({behavior:'smooth',block:'center'});return true}</script>'''
-    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Grants Inside The Seasons Within</h2><p class="muted">Your saved Business Plan prefilled this search. Adjust it only when you want broader or different results.</p><label><b>Search grants</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><div class="grid"><div><label>Geographic level</label><select class="input" name="level">{options(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div><div><label>Business Stage</label><select class="input" name="stage">{options(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Funding Purpose</label><select class="input" name="purpose">{options(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Research','Other'],purpose)}</select></div><div><label>Status</label><select class="input" name="status">{options(['Open','Upcoming','Rolling','Closed','All'],status_filter)}</select></div><div><label>Sort</label><select class="input" name="sort">{options(['Best Match','Deadline Soonest','Newly Added','Local First','Funding Amount'],sort)}</select></div></div><button class="btn">Search Grants</button></form>{progress}'''
+    progress='''<div id="funding-search-progress" class="card" style="display:none"><h2>Searching for grant opportunities…</h2><p id="funding-progress-text">Preparing searches centered on your keyword…</p><div class="progress"><span id="funding-progress-bar" style="width:8%"></span></div></div><script>function beginFundingSearch(){const box=document.getElementById('funding-search-progress'),text=document.getElementById('funding-progress-text'),bar=document.getElementById('funding-progress-bar');box.style.display='block';const steps=['Searching city programs…','Searching county programs…','Searching regional programs…','Searching state programs…','Searching federal programs…','Searching foundation and corporate programs…','Checking official eligibility requirements…','Comparing discovered grants with your Business Plan…'];let i=0;text.textContent=steps[0];bar.style.width='12%';window.fundingProgressTimer=setInterval(()=>{i=Math.min(i+1,steps.length-1);text.textContent=steps[i];bar.style.width=(12+Math.round(84*i/(steps.length-1)))+'%'},900);box.scrollIntoView({behavior:'smooth',block:'center'});return true}</script>'''
+    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Grants Inside The Seasons Within</h2><p class="muted">Enter what you want to find. Your words control discovery; your Business Plan is used afterward to explain and rank the grants found.</p><label><b>Search grants</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}" placeholder="Examples: Wellness, Technology grants, Community garden grants" required><div class="grid"><div><label>Geographic level</label><select class="input" name="level">{options(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div><div><label>Business Stage</label><select class="input" name="stage">{options(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Funding Purpose</label><select class="input" name="purpose">{options(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Research','Other'],purpose)}</select></div><div><label>Status</label><select class="input" name="status">{options(['Open','Upcoming','Rolling','Closed','All'],status_filter)}</select></div><div><label>Sort</label><select class="input" name="sort">{options(['Best Match','Deadline Soonest','Newly Added','Local First','Funding Amount'],sort)}</select></div></div><button class="btn">Search Grants</button></form>{progress}'''
     # Search may retain a traceable record that needs rechecking, but it is
     # visibly separated from current verified results and cannot be saved as active.
     verified=[o for o in results if _verification_state(o)['active_verified']]
     verify=[o for o in results if not _verification_state(o)['active_verified'] and _opportunity_status(o.get('deadline',''),o.get('status',''))!='CLOSED']
-    if request.method!='POST': body='<div class="empty">Press Search Grants to perform a new live search using your Business Plan and the fields above.</div>'
+    if request.method!='POST': body='<div class="empty">Enter a grant topic above. Manual search follows your keyword; automatic Business Plan matching remains available in Funding Matches.</div>'
     else: body=(''.join(_funding_card(o,search_facts) for o in verified[:20]) or '<div class="empty"><b>No verified active opportunity was confirmed in this search.</b><p>The system completed the broader search and lists any potentially useful unverified or recurring programs below. Adjust the location, purpose, or status to search again.</p></div>')
     if verify: body+='<section><h2>Needs Verification</h2><p class="muted">These traceable official-source records are not active matches until their current status is confirmed.</p>'+''.join(_funding_card(o,search_facts) for o in verify[:8])+'</section>'
     if request.method=='POST' and search_plan:
-        searched=''.join(f'<li>{html.escape(x["location"] or x["level"])} — {html.escape(x["query"])}</li>' for x in search_plan)
-        body+=f'<details class="card"><summary>Search coverage</summary><p>The search broadened from the member location through federal and national/private sources.</p><ol>{searched}</ol></details>'
+        coverage=[]
+        for item in search_plan:
+            label=item['location'] or item['level']
+            if label and label not in coverage: coverage.append(label)
+        body+=f'''<details class="card"><summary>Search coverage</summary><p><b>{' → '.join(html.escape(x) for x in coverage)}</b></p><p class="muted">Every level remained centered on “{html.escape(keyword)}.” Internal search-engine phrases are intentionally not displayed.</p></details>'''
     education='''<article class="card"><h2>What Is a Grant?</h2><p>Grants are financial support from governments, corporations, foundations and other organizations that generally does not have to be repaid when every award requirement is followed.</p><div class="grid"><details><summary><b>Eligibility</b></summary><p>You must meet the program's published requirements before applying.</p></details><details><summary><b>Approved Uses</b></summary><p>Funds may be used only for the expenses and activities authorized by the award.</p></details><details><summary><b>Deadlines</b></summary><p>Application and spending deadlines must be followed.</p></details><details><summary><b>Reporting Rules</b></summary><p>Receipts, financial accounting, progress or performance reports may be required.</p></details><details><summary><b>Consequences</b></summary><p>Failure to follow an award can cause loss of funding, repayment, disqualification or a clawback.</p></details></div><a class="out" target="_blank" rel="noopener" href="https://www.grants.gov/search-grants">Search Federal Grants on Grants.gov</a></article>'''
-    return page('Grant Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant Search</h1><p class="muted">Each submitted search checks live federal and web sources, then verifies original program pages and ranks actual opportunities against the saved Business Plan. The database is used only as a cache.</p></div>{education}{form}{('<div class="notice">'+html.escape(warning)+'</div>') if warning else ''}{body}''','business')
+    return page('Grant Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant Search</h1><p class="muted">Manual search follows the words you enter across live federal and web sources. After discovery and source verification, your saved Business Plan helps explain and rank results; it does not replace your keyword.</p></div>{education}{form}{('<div class="notice">'+html.escape(warning)+'</div>') if warning else ''}{body}''','business')
 
 @app.route('/business-development/loans',methods=['GET','POST'])
 @login_required
