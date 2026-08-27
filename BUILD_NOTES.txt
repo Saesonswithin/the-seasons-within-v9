@@ -105,3 +105,12 @@ LIVE GRANT & LOAN SEARCH UPGRADE — 2026-08-27
 - Business Plan Match, Application Readiness and Eligibility Strength remain separate and are never presented as approval probability.
 - Verified discoveries may be cached for speed, saved to the existing Business Journal, and passed to the existing Proposal Builder.
 - The existing Business Development design, navigation, forms and unrelated application systems were not redesigned.
+
+BUSINESS JOURNAL DISPLAY-LOCATION CORRECTION — 2026-08-27
+
+- The nine numbered Business Development cards remain unchanged as tools and navigation.
+- The My Saved Business Journal record display no longer appears underneath those tools.
+- Existing member-owned credentials, grants, loans, applications, proposals, deadlines,
+  financial records and business tasks are displayed in the existing My Business Journal.
+- View-in-journal links now open the correct category inside My Business Journal.
+- No saved records, database tables or authenticated user ownership relationships were deleted or migrated.

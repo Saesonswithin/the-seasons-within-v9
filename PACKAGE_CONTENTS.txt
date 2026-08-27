@@ -11,6 +11,8 @@ Included:
 - Live Grant Search and Loan Search using saved Business Plan criteria
 - City, county, regional, state, federal and national/private search expansion
 - Official-source verification, match ranking, progress feedback and cache support
+- Business Journal display-location correction: Business Development remains tools-only
+  while saved records are organized in the existing My Business Journal
 
 Intentionally excluded:
 - Local database files and member data
