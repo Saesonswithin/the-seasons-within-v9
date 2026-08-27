@@ -13,6 +13,8 @@ Included:
 - Official-source verification, match ranking, progress feedback and cache support
 - Business Journal display-location correction: Business Development remains tools-only
   while saved records are organized in the existing My Business Journal
+- Focused multi-pass Grant and Loan discovery using separate Business Plan funding
+  categories, local-to-national expansion, eligibility confidence and duplicate removal
 
 Intentionally excluded:
 - Local database files and member data

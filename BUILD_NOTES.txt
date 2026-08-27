@@ -114,3 +114,18 @@ BUSINESS JOURNAL DISPLAY-LOCATION CORRECTION — 2026-08-27
   financial records and business tasks are displayed in the existing My Business Journal.
 - View-in-journal links now open the correct category inside My Business Journal.
 - No saved records, database tables or authenticated user ownership relationships were deleted or migrated.
+
+FOCUSED MULTI-PASS FUNDING SEARCH — 2026-08-27
+
+- Grant and Loan searches remain separate and keep their existing forms, routes and design.
+- Saved Business Plan evidence is separated into location, industry, activities, stage,
+  structure, funding needs, NAICS and voluntarily supplied eligibility categories.
+- The search runs short focused passes from city through county, regional, state,
+  federal and national/private sources instead of one oversized combined phrase.
+- Related-funding passes cover applicable equipment, technology, marketing, expansion,
+  working-capital, property, training, hiring, community, creative, tourism and rural needs.
+- Unknown eligibility fields no longer receive artificial partial match credit.
+- Location conflicts and closed deadlines substantially reduce the Business Match score.
+- Business Match, Application Readiness and Eligibility Confidence remain separate.
+- Duplicate discoveries prefer the verified original program page.
+- Existing Business Journal saving and Proposal Builder handoffs remain unchanged.
