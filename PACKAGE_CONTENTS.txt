@@ -1,5 +1,5 @@
-THE SEASONS WITHIN — CORRECTED WORKING BUILD
-Packaged: 2026-08-26
+THE SEASONS WITHIN — LIVE GRANT & LOAN SEARCH BUILD
+Packaged: 2026-08-27
 
 Included:
 - Current application source
@@ -8,11 +8,18 @@ Included:
 - Existing Seasons Within logo asset
 - Financial Planning & Forecasting additions
 - Business Development funding-page production-schema compatibility repair
+- Live Grant Search and Loan Search using saved Business Plan criteria
+- City, county, regional, state, federal and national/private search expansion
+- Official-source verification, match ranking, progress feedback and cache support
 
 Intentionally excluded:
 - Local database files and member data
 - Python cache files
 - API keys, database credentials, and environment secrets
+- Uploaded member media and previous ZIP archives
 
 Deployment configuration must provide DATABASE_URL and any required API/service
-credentials through the hosting environment. They are not stored in this archive.
+credentials through the hosting environment. Live web discovery requires either
+BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY together with
+GOOGLE_CSE_ID. Reviewed non-government source domains may be configured through
+FUNDING_TRUSTED_DOMAINS. Credentials are not stored in this archive.

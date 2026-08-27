@@ -95,3 +95,13 @@ BUSINESS DEVELOPMENT FUNDING ROUTE REPAIR — 2026-08-26
 - Funding Matches, Grant Search and Loan Search now tolerate older production schemas with missing optional business, certification and generated-plan columns.
 - Temporary opportunity-source, cache or search-history failures no longer take down the full Business Development page.
 - Proposal Builder, existing member data, authentication, visual design and unrelated application systems remain unchanged.
+
+LIVE GRANT & LOAN SEARCH UPGRADE — 2026-08-27
+
+- The existing Grant Search and Loan Search forms now trigger live external discovery instead of depending only on cached database listings.
+- Search criteria are prefilled from the authenticated member's saved Business Plan and broaden from city through county, regional, state, federal and national/private sources.
+- Federal grants continue to use Grants.gov; broader discovery supports configured Brave, Bing or Google Programmable Search credentials.
+- Results are checked against original source pages, ranked by Business Plan relevance, and displayed inside The Seasons Within before the member opens the official program.
+- Business Plan Match, Application Readiness and Eligibility Strength remain separate and are never presented as approval probability.
+- Verified discoveries may be cached for speed, saved to the existing Business Journal, and passed to the existing Proposal Builder.
+- The existing Business Development design, navigation, forms and unrelated application systems were not redesigned.

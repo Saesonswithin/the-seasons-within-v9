@@ -31,6 +31,10 @@ import hashlib
 import difflib
 import io
 import csv
+import socket
+import ipaddress
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from html.parser import HTMLParser
 from collections import Counter
 
 app = Flask(__name__)
@@ -9287,17 +9291,191 @@ def _personalized_funding_keyword(facts):
                 words.append(word)
     return ' '.join(words[:12]) or 'small business'
 
+def _funding_geography_terms(facts,level='All',manual_location=''):
+    city=_clean_text(facts.get('city')); county=_clean_text(facts.get('county')); state=_clean_text(facts.get('state')); manual=_clean_text(manual_location)
+    if manual:
+        parts=[x.strip() for x in manual.split(',') if x.strip()]
+        if level=='City': city=parts[0] if parts else manual
+        elif level=='County': county=(parts[0] if parts else manual).removesuffix(' County')
+        elif level=='State': state=parts[-1] if parts else manual
+    region=[]
+    if city.lower()=='detroit' or county.lower()=='wayne': region=['Metro Detroit','Southeast Michigan']
+    elif city: region=[f'{city} metropolitan area']
+    elif county: region=[f'{county} County region']
+    ordered=[('City',city),('County',(county+' County') if county else ''),('Regional',region[0] if region else ''),('Regional',region[1] if len(region)>1 else ''),('State',state),('Federal','United States federal'),('National/Private','national')]
+    if level!='All': ordered=[x for x in ordered if x[0]==level or (level=='Federal' and x[0]=='National/Private')]
+    seen=set(); out=[]
+    for label,value in ordered:
+        key=value.lower()
+        if value and key not in seen: seen.add(key); out.append((label,value))
+    return out
+
+def _deep_funding_queries(facts,funding_type,level='All',manual_location=''):
+    geography=_funding_geography_terms(facts,level,manual_location)
+    industry=_clean_text(facts.get('industry') or facts.get('services') or 'small business')
+    stage=_clean_text(facts.get('stage') or 'small business')
+    purpose=_clean_text(facts.get('purpose') or facts.get('goals') or ('business growth' if funding_type=='Grant' else 'working capital'))
+    naics=_clean_text(facts.get('naics')); raw=facts.get('raw') or {}; ownership=' '.join(_clean_text(raw.get(k,'')) for k in ('ownership','owner_demographics','minority_owned','women_owned','veteran_owned','disadvantaged_business'))
+    product='grant funding opportunity application' if funding_type=='Grant' else 'business loan financing program application'
+    queries=[]
+    for geo_label,geo in geography:
+        queries.append({'level':geo_label,'location':geo,'query':f'{geo} {industry} {stage} {purpose} {product} official'})
+        if geo_label in {'City','County','Regional','State'}: queries.append({'level':geo_label,'location':geo,'query':f'{geo} small business economic development {"grant" if funding_type=="Grant" else "loan microloan CDFI"} program official'})
+    if naics: queries.append({'level':'Federal','location':'United States','query':f'NAICS {naics} {product} site:.gov'})
+    if ownership.strip(): queries.append({'level':'All','location':_clean_text(facts.get('state')),'query':f'{_clean_text(facts.get("state"))} {ownership} small business {product} official'})
+    if funding_type=='Loan': queries.extend([{'level':'Federal','location':'United States','query':f'{industry} {stage} SBA lender microloan official'},{'level':'National/Private','location':'United States','query':f'{industry} {purpose} CDFI mission based lender official'}])
+    else: queries.extend([{'level':'Federal','location':'United States','query':f'{industry} {purpose} federal grant opportunity site:grants.gov'},{'level':'National/Private','location':'United States','query':f'{industry} small business foundation corporate grant official application'}])
+    unique=[]; seen=set()
+    for item in queries:
+        key=item['query'].lower()
+        if key not in seen: seen.add(key); unique.append(item)
+    return unique[:12]
+
+def _trusted_funding_domain(url):
+    try: host=(urllib.parse.urlparse(url).hostname or '').lower().strip('.')
+    except Exception: return False
+    if not host: return False
+    if host.endswith('.gov') or host.endswith('.edu'): return True
+    configured={x.strip().lower().strip('.') for x in os.environ.get('FUNDING_TRUSTED_DOMAINS','').split(',') if x.strip()}
+    return any(host==domain or host.endswith('.'+domain) for domain in configured)
+
+def _brave_web_search(query,count=10):
+    token=os.environ.get('BRAVE_SEARCH_API_KEY','').strip()
+    if not token: raise RuntimeError('Live web funding search is not configured. Set BRAVE_SEARCH_API_KEY.')
+    endpoint=os.environ.get('BRAVE_SEARCH_API_URL','https://api.search.brave.com/res/v1/web/search').strip()
+    params=urllib.parse.urlencode({'q':query,'count':max(1,min(int(count),20)),'country':'us','search_lang':'en','safesearch':'moderate','freshness':'py'})
+    req=urllib.request.Request(endpoint+'?'+params,headers={'Accept':'application/json','X-Subscription-Token':token,'User-Agent':'The-Seasons-Within/1.0','Cache-Control':'no-cache'})
+    with urllib.request.urlopen(req,timeout=20) as response: payload=json.loads(response.read().decode('utf-8'))
+    return [x for x in ((payload.get('web') or {}).get('results') or []) if isinstance(x,dict)]
+
+def _bing_web_search(query,count=10):
+    token=os.environ.get('BING_SEARCH_API_KEY','').strip()
+    if not token: raise RuntimeError('BING_SEARCH_API_KEY is not configured.')
+    endpoint=os.environ.get('BING_SEARCH_API_URL','https://api.bing.microsoft.com/v7.0/search').strip()
+    params=urllib.parse.urlencode({'q':query,'count':max(1,min(int(count),20)),'mkt':'en-US','safeSearch':'Moderate','responseFilter':'Webpages'})
+    req=urllib.request.Request(endpoint+'?'+params,headers={'Accept':'application/json','Ocp-Apim-Subscription-Key':token,'User-Agent':'The-Seasons-Within/1.0'})
+    with urllib.request.urlopen(req,timeout=20) as response: payload=json.loads(response.read().decode('utf-8'))
+    return [{'title':x.get('name',''),'url':x.get('url',''),'description':x.get('snippet','')} for x in ((payload.get('webPages') or {}).get('value') or []) if isinstance(x,dict)]
+
+def _google_cse_search(query,count=10):
+    token=os.environ.get('GOOGLE_CSE_API_KEY','').strip(); cx=os.environ.get('GOOGLE_CSE_ID','').strip()
+    if not token or not cx: raise RuntimeError('GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID are not configured.')
+    endpoint='https://www.googleapis.com/customsearch/v1'; wanted=max(1,min(int(count),10))
+    params=urllib.parse.urlencode({'key':token,'cx':cx,'q':query,'num':wanted,'safe':'active'})
+    req=urllib.request.Request(endpoint+'?'+params,headers={'Accept':'application/json','User-Agent':'The-Seasons-Within/1.0'})
+    with urllib.request.urlopen(req,timeout=20) as response: payload=json.loads(response.read().decode('utf-8'))
+    return [{'title':x.get('title',''),'url':x.get('link',''),'description':x.get('snippet','')} for x in (payload.get('items') or []) if isinstance(x,dict)]
+
+def _configured_funding_web_search(query,count=10):
+    """Use one configured live search provider; every result is later checked against its original page."""
+    if os.environ.get('BRAVE_SEARCH_API_KEY','').strip(): return _brave_web_search(query,count),'Brave Search API'
+    if os.environ.get('BING_SEARCH_API_KEY','').strip(): return _bing_web_search(query,count),'Bing Web Search API'
+    if os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip(): return _google_cse_search(query,count),'Google Programmable Search'
+    raise RuntimeError('Configure BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY plus GOOGLE_CSE_ID.')
+
+class _FundingPageText(HTMLParser):
+    def __init__(self): super().__init__(); self.parts=[]; self.skip=0
+    def handle_starttag(self,tag,attrs):
+        if tag in {'script','style','svg','noscript'}: self.skip+=1
+    def handle_endtag(self,tag):
+        if tag in {'script','style','svg','noscript'} and self.skip: self.skip-=1
+    def handle_data(self,data):
+        if not self.skip and data.strip(): self.parts.append(data.strip())
+
+def _safe_public_page_text(url):
+    parsed=urllib.parse.urlparse(url)
+    if parsed.scheme!='https' or not parsed.hostname: return ''
+    try:
+        for info in socket.getaddrinfo(parsed.hostname,443,type=socket.SOCK_STREAM):
+            address=ipaddress.ip_address(info[4][0])
+            if not address.is_global: return ''
+    except Exception: return ''
+    req=urllib.request.Request(url,headers={'User-Agent':'The-Seasons-Within/1.0','Accept':'text/html,application/xhtml+xml'})
+    try:
+        with urllib.request.urlopen(req,timeout=10) as response:
+            if 'html' not in (response.headers.get('Content-Type') or '').lower(): return ''
+            raw=response.read(350000).decode(response.headers.get_content_charset() or 'utf-8','replace')
+        parser=_FundingPageText(); parser.feed(raw); return re.sub(r'\s+',' ',' '.join(parser.parts))[:120000]
+    except Exception: return ''
+
+def _published_field(text,patterns,default=''):
+    for pattern in patterns:
+        match=re.search(pattern,text,re.I)
+        if match: return _clean_text(match.group(1))[:500]
+    return default
+
+def _web_result_to_opportunity(result,query_meta,funding_type,provider='Live web search'):
+    url=_clean_text(result.get('url')); title=_clean_text(result.get('title')); snippet=_clean_text(result.get('description'))
+    if not url or not title: return None
+    host=(urllib.parse.urlparse(url).hostname or '').lower(); lower=' '.join((title,snippet,url)).lower()
+    blocked=('best grants','top grants','grant list','loans you should','blog/','/blog','news article','lead generation')
+    if any(x in lower for x in blocked): return None
+    page=_safe_public_page_text(url) if _trusted_funding_domain(url) else ''
+    evidence=(snippet+' '+page[:70000]).strip(); official=_trusted_funding_domain(url) and bool(page)
+    amount=_published_field(evidence,[r'((?:\$[\d,]+(?:\.\d{2})?)(?:\s*(?:-|–|to)\s*\$[\d,]+(?:\.\d{2})?)?)'])
+    deadline=_published_field(evidence,[r'(?:deadline|due date|applications? due)\s*[:\-]?\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+20\d{2})',r'(?:deadline|due date)\s*[:\-]?\s*(20\d{2}-\d{2}-\d{2})'])
+    if re.search(r'\brolling\b',evidence,re.I): deadline='Rolling'
+    reported=''
+    if re.search(r'\bapplications? (?:are )?open\b|\bnow accepting\b',evidence,re.I): reported='OPEN'
+    if re.search(r'\bopening soon\b|\bopens? (?:on|in)\b',evidence,re.I): reported='OPENING SOON'
+    if re.search(r'\brecurring\b|\bannual program\b',evidence,re.I): reported='RECURRING'
+    if re.search(r'\bclosed\b',evidence,re.I): reported='CLOSED — EXPECTED TO RETURN' if re.search(r'\bannual|recurring|next round|return\b',evidence,re.I) else 'CLOSED'
+    source_name=_clean_text(result.get('profile',{}).get('long_name') if isinstance(result.get('profile'),dict) else '') or host.removeprefix('www.')
+    eligibility=_published_field(evidence,[r'(?:eligibility|eligible applicants?|who can apply)\s*[:\-]?\s*(.{30,700}?)(?=(?:deadline|award|funding|apply|application)\s*[:\-]|$)'])
+    uses=_published_field(evidence,[r'(?:eligible uses|use of funds|funds may be used for|approved uses)\s*[:\-]?\s*(.{20,600}?)(?=(?:ineligible|deadline|application|required)\s*[:\-]|$)'])
+    contact_email=_published_field(evidence,[r'([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})'])
+    source_id=hashlib.sha256(url.encode()).hexdigest()[:24]
+    return {'source':source_name,'source_id':'web-'+source_id,'title':title,'agency':source_name,'opportunity_type':funding_type,'government_level':query_meta.get('level') or 'National/Private','service_area':query_meta.get('location') or 'Not published by funding source','amount_text':amount or 'Not published by funding source','deadline':deadline,'open_date':'','status':_opportunity_status(deadline,reported),'eligibility':eligibility or 'Not published by funding source','required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[],'funding_uses':[uses] if uses else [],'description':snippet,'source_url':url,'application_url':url,'eligibility_url':url,'contact_name':'','contact_email':contact_email,'contact_phone':'','last_verified_at':now(),'official_source_verified':official,'discovered_via':provider,'search_query':query_meta.get('query','')}
+
+def _deep_live_funding_search(facts,funding_type,level='All',manual_location=''):
+    plan=_deep_funding_queries(facts,funding_type,level,manual_location); discovered=[]; errors=[]
+    if not (os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip())): return [],plan,['Live web search is not configured. Configure Brave, Bing, or Google Programmable Search credentials.']
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures={pool.submit(_configured_funding_web_search,item['query'],8):item for item in plan}
+        for future in as_completed(futures):
+            meta=futures[future]
+            try:
+                web_results,provider=future.result()
+                for result in web_results:
+                    item=_web_result_to_opportunity(result,meta,funding_type,provider)
+                    if item: discovered.append(item)
+            except Exception as exc: errors.append(f"{meta['location'] or meta['level']}: {type(exc).__name__}")
+    merged=_merge_opportunities(discovered); merged.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
+    return merged[:40],plan,errors
+
+def _expanded_grants_gov_search(facts,manual_keyword=''):
+    terms=[manual_keyword,_clean_text(facts.get('industry')),_clean_text(facts.get('purpose')),_clean_text(facts.get('services')),_clean_text(facts.get('naics'))]
+    terms=[x for x in terms if x]; unique=[]
+    for term in terms:
+        cleaned=' '.join(re.findall(r'[A-Za-z0-9&/-]{3,}',term))[:120]
+        if cleaned and cleaned.lower() not in {x.lower() for x in unique}: unique.append(cleaned)
+    if not unique: unique=['small business']
+    found=[]; errors=[]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures={pool.submit(_grants_gov_search,term):term for term in unique[:5]}
+        for future in as_completed(futures):
+            try: found.extend(future.result())
+            except Exception as exc: errors.append(f'{futures[future]}: {type(exc).__name__}')
+    return _merge_opportunities(found),errors
+
 def _tokens(*values):
     return {w for w in re.findall(r'[a-z0-9]{3,}', ' '.join(_clean_text(v).lower() for v in values)) if w not in {'business','funding','grant','loan','small','with','from','that','this','your','program'}}
 
 def _opportunity_status(deadline,reported=''):
     status=_clean_text(reported).upper()
-    if status in {'OPEN','UPCOMING','ROLLING','CLOSING SOON','CLOSED','NEEDS VERIFICATION'}: return status
+    if status in {'OPEN','OPENING SOON','UPCOMING','ROLLING','RECURRING','CLOSING SOON','CLOSED','CLOSED — EXPECTED TO RETURN','DEADLINE PASSED','UNVERIFIED','NEEDS VERIFICATION'}: return status
     if not deadline: return 'NEEDS VERIFICATION'
     if 'rolling' in deadline.lower(): return 'ROLLING'
     try:
-        dt=datetime.fromisoformat(deadline[:10]).date(); days=(dt-datetime.now(timezone.utc).date()).days
-        if days<0: return 'CLOSED'
+        raw=deadline.strip().replace(',',''); dt=None
+        try: dt=datetime.fromisoformat(raw[:10]).date()
+        except Exception:
+            for fmt in ('%B %d %Y','%b %d %Y'):
+                try: dt=datetime.strptime(raw,fmt).date(); break
+                except Exception: pass
+        if not dt: return 'NEEDS VERIFICATION'
+        days=(dt-datetime.now(timezone.utc).date()).days
+        if days<0: return 'DEADLINE PASSED'
         if days<=14: return 'CLOSING SOON'
         return 'OPEN'
     except Exception: return 'NEEDS VERIFICATION'
@@ -9325,18 +9503,19 @@ def _verification_state(opp):
     status=_opportunity_status(opp.get('deadline',''),opp.get('status',''))
     reasons=[]
     server_vetted=bool(opp.get('official_source_verified'))
+    if opp.get('discovered_via') and not server_vetted: reasons.append('the official page could not be retrieved for verification')
     if not (_official_funding_url(official_url) or server_vetted): reasons.append('official opportunity source is not confirmed')
     if not (_official_funding_url(application_url) or server_vetted): reasons.append('official application page is not confirmed')
-    if status=='NEEDS VERIFICATION': reasons.append('current opening status or deadline is not confirmed')
-    if status=='CLOSED': reasons.append('the published deadline has passed or the source reports closed')
+    if status in {'NEEDS VERIFICATION','UNVERIFIED'}: reasons.append('current opening status or deadline is not confirmed')
+    if status in {'CLOSED','CLOSED — EXPECTED TO RETURN','DEADLINE PASSED'}: reasons.append('the published deadline has passed or the source reports closed')
     if not checked: reasons.append('last checked date is missing')
     elif checked:
         try:
             age=(datetime.now(timezone.utc)-datetime.fromisoformat(checked.replace('Z','+00:00'))).days
             if age>14: reasons.append('official-source check is more than 14 days old')
         except Exception: reasons.append('last checked date needs confirmation')
-    active=status in {'OPEN','UPCOMING','ROLLING','CLOSING SOON'} and not reasons
-    return {'active_verified':active,'label':('VERIFIED '+status if active else ('CLOSED' if status=='CLOSED' else 'NEEDS VERIFICATION')),'status':status,'reasons':reasons,'last_checked':checked or 'Not checked'}
+    active=status in {'OPEN','OPENING SOON','UPCOMING','ROLLING','RECURRING','CLOSING SOON'} and not reasons
+    return {'active_verified':active,'label':('VERIFIED '+status if active else (status if status in {'CLOSED','CLOSED — EXPECTED TO RETURN','DEADLINE PASSED'} else 'UNVERIFIED')),'status':status,'reasons':reasons,'last_checked':checked or 'Not checked'}
 
 def _funding_analysis(opp,facts):
     hay=' '.join(_clean_text(opp.get(k,'')) for k in ('title','agency','description','eligibility','eligible_industries','eligible_business_stages','funding_uses','service_area','state')).lower()
@@ -9464,6 +9643,8 @@ def _funding_card(opp,facts):
     level=_clean_text(opp.get('government_level')) or 'Federal'; typ=_clean_text(opp.get('opportunity_type')) or 'Funding'; deadline=_clean_text(opp.get('deadline')) or 'Not provided by official source'; amount=_clean_text(opp.get('amount_text')) or 'Not provided by official source'
     def official(value): return html.escape(_clean_text(value) or 'Not provided by official source')
     checklist=''.join(f'''<li><b>{html.escape(c['label'])}</b> — {html.escape(c['state'])}<br><small>{html.escape(c['detail'] or '')}</small></li>''' for c in analysis['checks'])
+    requirement_total=len(analysis['checks']); requirement_met=sum(1 for c in analysis['checks'] if c['state']=='✓ Appears Met')
+    eligibility_strength=('Known Conflict' if analysis['conflicts'] else ('Strong' if requirement_met>=4 and len(analysis['gaps'])<=2 else ('Moderate' if requirement_met>=2 else 'Needs Review')))
     packed=html.escape(json.dumps(opp),quote=True)
     tool_label='Build Cash-Flow Statement' if typ.lower()=='loan' else ('Start Government Proposal' if typ.lower() in {'contract','government contract'} else 'Create Grant Budget')
     verification_notes=''.join(f'<li>{html.escape(x)}</li>' for x in verification['reasons'])
@@ -9483,7 +9664,7 @@ def _funding_card(opp,facts):
         actions=f'''<div class="actions"><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><button class="btn">Save to Business Journal</button></form><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><input type="hidden" name="next_action" value="eligibility"><button class="out">{eligibility_label}</button></form><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><input type="hidden" name="next_action" value="financial"><button class="out">{tool_label}</button></form><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><input type="hidden" name="next_action" value="proposal"><button class="out">{proposal_label}</button></form><form method="post" action="{url_for('save_funding_opportunity')}"><input type="hidden" name="opportunity" value="{packed}"><input type="hidden" name="next_action" value="calendar"><button class="out">{calendar_label}</button></form></div>'''
     source_url=html.escape(opp.get('source_url') or '#',quote=True); application_url=html.escape(opp.get('application_url') or opp.get('source_url') or '#',quote=True); eligibility_url=html.escape(opp.get('eligibility_url') or opp.get('source_url') or '#',quote=True)
     loan_details=f'''<br><b>Published rate / structure:</b> {official(opp.get('interest_rate') or opp.get('rate_structure'))}<br><b>Term:</b> {official(opp.get('term'))}<br><b>Fees:</b> {official(opp.get('fees'))}<br><b>Credit requirements:</b> {official(opp.get('credit_requirements'))}<br><b>Collateral requirements:</b> {official(opp.get('collateral_requirements'))}<br><b>Business-age requirement:</b> {official(opp.get('time_in_business'))}<br><b>Revenue requirement:</b> {official(opp.get('revenue_requirement'))}''' if typ.lower()=='loan' else f'''<br><b>Prohibited uses:</b> {official(opp.get('prohibited_uses'))}<br><b>Reporting requirements:</b> {official(opp.get('reporting_requirements'))}<br><b>Matching-fund requirement:</b> {official(opp.get('matching_funds'))}<br><b>Recurring / renewal status:</b> {official(opp.get('recurring_status'))}'''
-    return f'''<article class="card funding-card"><div class="actions"><span class="badge">{html.escape(typ.upper())}</span><span class="badge">{html.escape(level.upper())}</span><span class="badge">{html.escape(verification['label'])}</span><span class="badge">{html.escape(analysis['rank'])}</span></div><h3>{html.escape(_clean_text(opp.get('title')))}</h3><p><b>Source:</b> {official(opp.get('agency') or opp.get('source'))}</p><p><b>Funding:</b> {html.escape(amount)}<br><b>Open date:</b> {official(opp.get('open_date'))}<br><b>Deadline:</b> {html.escape(deadline)}</p><div class="grid"><div><b>Business Plan Match: {analysis['match_score']}%</b><br><small>Published-rule alignment, not approval odds.</small></div><div><b>Application Readiness: {analysis['readiness_score']}%</b><br><small>Preparation completed, not approval odds.</small></div></div><details><summary class="out">View Details</summary><h3>Why We Matched This to Your Business</h3><p>{html.escape(analysis['match_reason'])}</p><h3>Matches, Conflicts & Needs Verification</h3><ul>{checklist}</ul>{('<h3>Before You Apply</h3><ul>'+verification_notes+'</ul>') if verification_notes else ''}<p><b>Location / Service Area:</b> {official(opp.get('service_area'))}<br><b>Industry eligibility:</b> {official(opp.get('eligible_industries'))}<br><b>Applicant type / eligibility:</b> {official(opp.get('eligibility'))}<br><b>Business Stage Eligible:</b> {official(opp.get('eligible_business_stages'))}<br><b>Approved Uses:</b> {official(opp.get('funding_uses'))}{loan_details}<br><b>Required Certifications / Registrations:</b> {official(opp.get('required_certifications'))}<br><b>Application requirements / documents:</b> {official(opp.get('required_documents'))}<br><b>Official Contact:</b> {official(opp.get('contact_name'))}<br><b>Email:</b> {official(opp.get('contact_email'))}<br><b>Phone:</b> {official(opp.get('contact_phone'))}<br><b>Last Checked:</b> {html.escape(verification['last_checked'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{source_url}">Official Opportunity Page</a><a class="out" target="_blank" rel="noopener" href="{eligibility_url}">Eligibility Requirements</a><a class="out" target="_blank" rel="noopener" href="{application_url}">Official Application</a></div></details>{actions}</article>'''
+    return f'''<article class="card funding-card"><div class="actions"><span class="badge">{html.escape(typ.upper())}</span><span class="badge">{html.escape(level.upper())}</span><span class="badge">{html.escape(verification['label'])}</span><span class="badge">{html.escape(analysis['rank'])}</span></div><h3>{html.escape(_clean_text(opp.get('title')))}</h3><p><b>Source:</b> {official(opp.get('agency') or opp.get('source'))}</p><p><b>Funding:</b> {html.escape(amount)}<br><b>Open date:</b> {official(opp.get('open_date'))}<br><b>Deadline:</b> {html.escape(deadline)}</p><div class="grid"><div><b>Business Plan Match: {analysis['match_score']}%</b><br><small>Published-rule alignment, not approval odds.</small></div><div><b>Application Readiness: {analysis['readiness_score']}%</b><br><small>Preparation completed, not approval odds.</small></div><div><b>Eligibility Strength: {html.escape(eligibility_strength)}</b><br><small>Known requirements met: {requirement_met} of {requirement_total}; unknown items are not counted as met.</small></div></div><details><summary class="out">View Requirements</summary><h3>Why We Matched This to Your Business</h3><p>{html.escape(analysis['match_reason'])}</p><h3>Your Business vs. Requirements</h3><ul>{checklist}</ul>{('<h3>Before You Apply</h3><ul>'+verification_notes+'</ul>') if verification_notes else ''}<p><b>Location / Service Area:</b> {official(opp.get('service_area'))}<br><b>Industry eligibility:</b> {official(opp.get('eligible_industries'))}<br><b>Applicant type / eligibility:</b> {official(opp.get('eligibility'))}<br><b>Business Stage Eligible:</b> {official(opp.get('eligible_business_stages'))}<br><b>Approved Uses:</b> {official(opp.get('funding_uses'))}{loan_details}<br><b>Required Certifications / Registrations:</b> {official(opp.get('required_certifications'))}<br><b>Application requirements / documents:</b> {official(opp.get('required_documents'))}<br><b>Official Contact:</b> {official(opp.get('contact_name'))}<br><b>Email:</b> {official(opp.get('contact_email'))}<br><b>Phone:</b> {official(opp.get('contact_phone'))}<br><b>Last Checked:</b> {html.escape(verification['last_checked'])}</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="{source_url}">View Official Program</a><a class="out" target="_blank" rel="noopener" href="{eligibility_url}">Eligibility Requirements</a><a class="out" target="_blank" rel="noopener" href="{application_url}">Official Application</a></div></details>{actions}</article>'''
 
 def _financial_number(value):
     """Convert member/imported numeric text without inventing a value."""
@@ -9893,24 +10074,26 @@ def funding_search():
         if level=='City': search_facts['city']=location.strip()
         elif level=='County': search_facts['county']=location.strip().removesuffix(' County')
         elif level=='State': search_facts['state']=location.strip()
-    live=[]; warning=''
-    try: live=_grants_gov_search(keyword)
-    except Exception: warning='The official Grants.gov service could not be reached at this moment. Please retry without losing your saved work.'
-    for o in live: _cache_funding_opportunity(o)
+    live=[]; warning=''; search_plan=[]; search_errors=[]
+    if request.method=='POST':
+        federal,federal_errors=_expanded_grants_gov_search(search_facts,keyword)
+        web_live,search_plan,web_errors=_deep_live_funding_search(search_facts,'Grant',level,location)
+        live=_merge_opportunities(federal,web_live); search_errors=federal_errors+web_errors
+        for o in live:
+            if o.get('source')=='Grants.gov' or _verification_state(o)['active_verified']: _cache_funding_opportunity(o)
+        if search_errors: warning='Some live sources could not be reached. The results below include the official sources that responded.'
     try: stored=_stored_funding_opportunities('Grant')
     except Exception:
         app.logger.exception('Stored grant cache could not be read')
         stored=[]
-    results=_merge_opportunities(stored,live)
-    query_tokens=_tokens(keyword,purpose,stage)
-    if query_tokens: results=[o for o in results if query_tokens & _tokens(o.get('title',''),o.get('description',''),o.get('eligible_industries',''),o.get('funding_uses',''))]
+    results=_merge_opportunities(live,stored if request.method=='POST' else [])
     if level!='All': results=[o for o in results if o.get('government_level')==level]
     if status_filter!='All':
-        allowed={'Open':{'OPEN','CLOSING SOON'},'Upcoming':{'UPCOMING'},'Rolling':{'ROLLING'},'Closed':{'CLOSED'}}.get(status_filter,{status_filter.upper()}); results=[o for o in results if _opportunity_status(o.get('deadline',''),o.get('status','')) in allowed]
+        allowed={'Open':{'OPEN','CLOSING SOON','ROLLING','RECURRING'},'Upcoming':{'UPCOMING','OPENING SOON'},'Rolling':{'ROLLING'},'Closed':{'CLOSED','CLOSED — EXPECTED TO RETURN','DEADLINE PASSED'}}.get(status_filter,{status_filter.upper()}); results=[o for o in results if _opportunity_status(o.get('deadline',''),o.get('status','')) in allowed]
     if sort=='Deadline Soonest': results.sort(key=lambda o:o.get('deadline') or '9999')
     elif sort=='Newly Added': results=list(reversed(results))
-    elif sort=='Local First': results.sort(key=lambda o:['City','County','State','Federal'].index(o.get('government_level','Federal')))
-    else: results.sort(key=lambda o:_funding_analysis(o,search_facts)['match_score'],reverse=True)
+    elif sort=='Local First': results.sort(key=lambda o:{'City':0,'County':1,'Regional':2,'State':3,'Federal':4,'National/Private':5}.get(o.get('government_level'),6))
+    else: results.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,search_facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
     # Search history is useful, but an older/mid-migration history table must
     # never prevent the member from seeing live official grant results.
     conn=db()
@@ -9924,15 +10107,20 @@ def funding_search():
     finally:
         conn.close()
     options=lambda values,current: ''.join(f'<option{" selected" if x==current else ""}>{html.escape(x)}</option>' for x in values)
-    form=f'''<form class="card" method="post"><h2>Search Grants Inside The Seasons Within</h2><p class="muted">Your saved Business Plan prefilled this search. Adjust it only when you want broader or different results.</p><label><b>Search grants</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><div class="grid"><div><label>Geographic level</label><select class="input" name="level">{options(['All','City','County','State','Federal'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div><div><label>Business Stage</label><select class="input" name="stage">{options(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Funding Purpose</label><select class="input" name="purpose">{options(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Research','Other'],purpose)}</select></div><div><label>Status</label><select class="input" name="status">{options(['Open','Upcoming','Rolling','Closed','All'],status_filter)}</select></div><div><label>Sort</label><select class="input" name="sort">{options(['Best Match','Deadline Soonest','Newly Added','Local First','Funding Amount'],sort)}</select></div></div><button class="btn">Search Grants</button></form>'''
+    progress='''<div id="funding-search-progress" class="card" style="display:none"><h2>Searching for funding opportunities…</h2><p id="funding-progress-text">Building searches from your Business Plan…</p><div class="progress"><span id="funding-progress-bar" style="width:8%"></span></div></div><script>function beginFundingSearch(){const box=document.getElementById('funding-search-progress'),text=document.getElementById('funding-progress-text'),bar=document.getElementById('funding-progress-bar');box.style.display='block';const steps=['Searching city programs…','Searching county programs…','Searching regional programs…','Searching state programs…','Searching federal programs…','Searching foundation and corporate programs…','Checking official eligibility requirements…','Comparing opportunities with your Business Plan…'];let i=0;text.textContent=steps[0];bar.style.width='12%';window.fundingProgressTimer=setInterval(()=>{i=Math.min(i+1,steps.length-1);text.textContent=steps[i];bar.style.width=(12+Math.round(84*i/(steps.length-1)))+'%'},900);box.scrollIntoView({behavior:'smooth',block:'center'});return true}</script>'''
+    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Grants Inside The Seasons Within</h2><p class="muted">Your saved Business Plan prefilled this search. Adjust it only when you want broader or different results.</p><label><b>Search grants</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}"><div class="grid"><div><label>Geographic level</label><select class="input" name="level">{options(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div><div><label>Business Stage</label><select class="input" name="stage">{options(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Funding Purpose</label><select class="input" name="purpose">{options(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Research','Other'],purpose)}</select></div><div><label>Status</label><select class="input" name="status">{options(['Open','Upcoming','Rolling','Closed','All'],status_filter)}</select></div><div><label>Sort</label><select class="input" name="sort">{options(['Best Match','Deadline Soonest','Newly Added','Local First','Funding Amount'],sort)}</select></div></div><button class="btn">Search Grants</button></form>{progress}'''
     # Search may retain a traceable record that needs rechecking, but it is
     # visibly separated from current verified results and cannot be saved as active.
     verified=[o for o in results if _verification_state(o)['active_verified']]
     verify=[o for o in results if not _verification_state(o)['active_verified'] and _opportunity_status(o.get('deadline',''),o.get('status',''))!='CLOSED']
-    body=(''.join(_funding_card(o,search_facts) for o in verified[:12]) or '<div class="empty">No current verified official grant results matched this Business Plan.</div>')
+    if request.method!='POST': body='<div class="empty">Press Search Grants to perform a new live search using your Business Plan and the fields above.</div>'
+    else: body=(''.join(_funding_card(o,search_facts) for o in verified[:20]) or '<div class="empty"><b>No verified active opportunity was confirmed in this search.</b><p>The system completed the broader search and lists any potentially useful unverified or recurring programs below. Adjust the location, purpose, or status to search again.</p></div>')
     if verify: body+='<section><h2>Needs Verification</h2><p class="muted">These traceable official-source records are not active matches until their current status is confirmed.</p>'+''.join(_funding_card(o,search_facts) for o in verify[:8])+'</section>'
+    if request.method=='POST' and search_plan:
+        searched=''.join(f'<li>{html.escape(x["location"] or x["level"])} — {html.escape(x["query"])}</li>' for x in search_plan)
+        body+=f'<details class="card"><summary>Search coverage</summary><p>The search broadened from the member location through federal and national/private sources.</p><ol>{searched}</ol></details>'
     education='''<article class="card"><h2>What Is a Grant?</h2><p>Grants are financial support from governments, corporations, foundations and other organizations that generally does not have to be repaid when every award requirement is followed.</p><div class="grid"><details><summary><b>Eligibility</b></summary><p>You must meet the program's published requirements before applying.</p></details><details><summary><b>Approved Uses</b></summary><p>Funds may be used only for the expenses and activities authorized by the award.</p></details><details><summary><b>Deadlines</b></summary><p>Application and spending deadlines must be followed.</p></details><details><summary><b>Reporting Rules</b></summary><p>Receipts, financial accounting, progress or performance reports may be required.</p></details><details><summary><b>Consequences</b></summary><p>Failure to follow an award can cause loss of funding, repayment, disqualification or a clawback.</p></details></div><a class="out" target="_blank" rel="noopener" href="https://www.grants.gov/search-grants">Search Federal Grants on Grants.gov</a></article>'''
-    return page('Grant Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant Search</h1><p class="muted">City, county, state, federal, foundation and corporate grants belong here. Current live federal results come from Grants.gov; other results must be stored from an authoritative official source before display.</p></div>{education}{form}{('<div class="notice">'+html.escape(warning)+'</div>') if warning else ''}{body}''','business')
+    return page('Grant Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Grant Search</h1><p class="muted">Each submitted search checks live federal and web sources, then verifies original program pages and ranks actual opportunities against the saved Business Plan. The database is used only as a cache.</p></div>{education}{form}{('<div class="notice">'+html.escape(warning)+'</div>') if warning else ''}{body}''','business')
 
 @app.route('/business-development/loans',methods=['GET','POST'])
 @login_required
@@ -9942,24 +10130,35 @@ def loan_search():
         if level=='City': search_facts['city']=location.strip()
         elif level=='County': search_facts['county']=location.strip().removesuffix(' County')
         elif level=='State': search_facts['state']=location.strip()
-    for o in official: _cache_funding_opportunity(o)
+    live=[]; search_plan=[]; search_errors=[]; warning=''
+    if request.method=='POST':
+        web_live,search_plan,search_errors=_deep_live_funding_search(search_facts,'Loan',level,location)
+        live=_merge_opportunities(official,web_live)
+        for o in live:
+            if o.get('source')=='SBA.gov' or _verification_state(o)['active_verified']: _cache_funding_opportunity(o)
+        if search_errors: warning='Some live sources could not be reached. The results below include the official sources that responded.'
     try: stored=_stored_funding_opportunities('Loan')
     except Exception:
         app.logger.exception('Stored loan cache could not be read')
         stored=[]
-    programs=_merge_opportunities(stored,official)
+    programs=_merge_opportunities(live,stored if request.method=='POST' else [])
     purpose_tokens=_tokens(purpose)
     if purpose_tokens: programs=[o for o in programs if purpose_tokens & _tokens(o.get('funding_uses',''),o.get('description',''),o.get('title',''))] or programs
     if level!='All': programs=[o for o in programs if o.get('government_level')==level]
-    programs.sort(key=lambda o:_funding_analysis(o,search_facts)['match_score'],reverse=True)
+    programs.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,search_facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
     opts=lambda values,current: ''.join(f'<option{" selected" if x==current else ""}>{html.escape(x)}</option>' for x in values)
-    form=f'''<form class="card" method="post"><h2>Search Loans Inside The Seasons Within</h2><p class="muted">Your Business Plan prefills the comparison. Results are official programs, not links to lender-list articles.</p><div class="grid"><div><label>Funding amount</label><input class="input" name="amount" value="{html.escape(amount,quote=True)}"></div><div><label>Purpose</label><select class="input" name="purpose">{opts(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Other'],purpose)}</select></div><div><label>Business stage</label><select class="input" name="stage">{opts(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Geographic level</label><select class="input" name="level">{opts(['All','City','County','State','Federal'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div></div><button class="btn">Search Loans</button></form>'''
+    progress='''<div id="funding-search-progress" class="card" style="display:none"><h2>Searching for financing opportunities…</h2><p id="funding-progress-text">Building searches from your Business Plan…</p><div class="progress"><span id="funding-progress-bar" style="width:8%"></span></div></div><script>function beginFundingSearch(){const box=document.getElementById('funding-search-progress'),text=document.getElementById('funding-progress-text'),bar=document.getElementById('funding-progress-bar');box.style.display='block';const steps=['Searching city loan programs…','Searching county financing programs…','Searching regional and CDFI programs…','Searching state loan programs…','Searching SBA and federal programs…','Searching microloan and mission-based lenders…','Checking official qualification requirements…','Comparing financing with your Business Plan…'];let i=0;text.textContent=steps[0];bar.style.width='12%';window.fundingProgressTimer=setInterval(()=>{i=Math.min(i+1,steps.length-1);text.textContent=steps[i];bar.style.width=(12+Math.round(84*i/(steps.length-1)))+'%'},900);box.scrollIntoView({behavior:'smooth',block:'center'});return true}</script>'''
+    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Loans Inside The Seasons Within</h2><p class="muted">Your Business Plan prefills the search. Each submitted search checks live city-to-national sources and original lender/program pages.</p><div class="grid"><div><label>Funding amount</label><input class="input" name="amount" value="{html.escape(amount,quote=True)}"></div><div><label>Purpose</label><select class="input" name="purpose">{opts(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Other'],purpose)}</select></div><div><label>Business stage</label><select class="input" name="stage">{opts(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Geographic level</label><select class="input" name="level">{opts(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div></div><button class="btn">Search Loans</button></form>{progress}'''
     verified=[o for o in programs if _verification_state(o)['active_verified'] and _funding_analysis(o,search_facts)['match_score']>=35]
     verify=[o for o in programs if not _verification_state(o)['active_verified']]
-    cards=''.join(_funding_card(o,search_facts) for o in verified[:12]) or '<div class="empty">No current verified official loan program matched this Business Plan.</div>'
+    if request.method!='POST': cards='<div class="empty">Press Search Loans to perform a new live search using your Business Plan and the fields above.</div>'
+    else: cards=''.join(_funding_card(o,search_facts) for o in verified[:20]) or '<div class="empty"><b>No verified active financing program was confirmed in this search.</b><p>The broader search completed and any potentially useful unverified or recurring programs appear below. Adjust the location, purpose, or stage to search again.</p></div>'
     if verify: cards+='<section><h2>Needs Verification</h2>'+''.join(_funding_card(o,search_facts) for o in verify[:8])+'</section>'
+    if request.method=='POST' and search_plan:
+        searched=''.join(f'<li>{html.escape(x["location"] or x["level"])} — {html.escape(x["query"])}</li>' for x in search_plan)
+        cards+=f'<details class="card"><summary>Search coverage</summary><p>The search broadened from the member location through regional, state, SBA, CDFI, and national sources.</p><ol>{searched}</ol></details>'
     education=f'''<article class="card"><h2>What Is a Business Loan?</h2><p>A business loan is money borrowed by a company and repaid under the lender's terms, usually with interest or financing costs.</p><div class="grid"><details><summary><b>Term Loans</b></summary><p>Traditional financing repaid on a defined schedule.</p></details><details><summary><b>SBA Loans</b></summary><p>Loans through participating lenders supported by SBA programs.</p></details><details><summary><b>Lines of Credit</b></summary><p>Revolving financing that may be borrowed, repaid and borrowed again under lender terms.</p></details><details><summary><b>Equipment Financing</b></summary><p>Financing for machinery or equipment, sometimes secured by the purchased asset.</p></details></div><h3>What lenders may review</h3><p>Time in business, revenue and cash flow, personal or business credit, collateral, financing purpose and ability to repay.</p><div class="actions"><a class="out" target="_blank" rel="noopener" href="https://www.sba.gov/funding-programs/loans">Explore SBA Loan Programs</a><a class="out" href="{url_for('business_credit')}">Build My Business Credit</a></div></article>'''
-    return page('Loan Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Business Loan Search</h1><p class="muted">Official business financing pathways only. Rates are shown only when an official lender publishes them. Participating lenders make their own decisions.</p></div>{education}{form}{cards}''','business')
+    return page('Loan Search',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Business Loan Search</h1><p class="muted">Each submitted search checks live web sources, verifies original lender/program pages, and ranks actual financing against the saved Business Plan. The database is used only as a cache.</p></div>{education}{form}{('<div class="notice">'+html.escape(warning)+'</div>') if warning else ''}{cards}''','business')
 
 @app.route('/business-development/funding/save',methods=['POST'])
 @login_required
