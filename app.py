@@ -9592,7 +9592,9 @@ def _manual_grant_search_plan(facts,keyword,level='All',manual_location='',stage
 def _manual_grants_gov_search(keyword):
     terms=_manual_grant_variations(keyword)[:6]; found=[]; errors=[]
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futures={pool.submit(_grants_gov_search,term):term for term in terms}
+        futures={pool.submit(_grants_gov_search,term):f'Grants.gov — {term}' for term in terms}
+        if os.environ.get('SIMPLER_GRANTS_API_KEY','').strip():
+            futures.update({pool.submit(_simpler_grants_search,term):f'Simpler.Grants.gov — {term}' for term in terms})
         for future in as_completed(futures):
             try: found.extend(future.result())
             except Exception as exc: errors.append(f'{futures[future]}: {type(exc).__name__}')
@@ -9624,7 +9626,9 @@ def _expanded_grants_gov_search(facts,manual_keyword=''):
     if not unique: unique=['small business']
     found=[]; errors=[]
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futures={pool.submit(_grants_gov_search,term):term for term in unique[:8]}
+        futures={pool.submit(_grants_gov_search,term):f'Grants.gov — {term}' for term in unique[:8]}
+        if os.environ.get('SIMPLER_GRANTS_API_KEY','').strip():
+            futures.update({pool.submit(_simpler_grants_search,term):f'Simpler.Grants.gov — {term}' for term in unique[:8]})
         for future in as_completed(futures):
             try: found.extend(future.result())
             except Exception as exc: errors.append(f'{futures[future]}: {type(exc).__name__}')
@@ -9746,23 +9750,74 @@ def _funding_analysis(opp,facts):
     reason=(f"This {str(opp.get('opportunity_type','funding')).lower()} appears relevant to {facts['business_name'] or 'your business'} because " + (', '.join(x.lower() for x in strengths[:3]) if strengths else 'its official requirements overlap parts of your saved business information') + '. ' + (f"Before applying, verify {', '.join(x.lower() for x in gaps[:2])}." if gaps else 'Review the official notice before applying.'))
     return {'match_score':match,'readiness_score':readiness,'eligibility_confidence':eligibility_confidence,'eligibility_requirements_met':met,'eligibility_requirements_known':len(known),'checks':checks,'strengths':strengths,'gaps':gaps,'conflicts':conflicts,'rank':rank,'match_reason':reason,'readiness_items':readiness_items,'required_documents':required_docs}
 
+def _grants_gov_detail(opportunity_id):
+    """Retrieve published detail for one Grants.gov result; no API key is required."""
+    req=urllib.request.Request('https://api.grants.gov/v1/api/fetchOpportunity',data=json.dumps({'opportunityId':int(opportunity_id)}).encode(),headers={'Content-Type':'application/json','User-Agent':'The-Seasons-Within/1.0'},method='POST')
+    with urllib.request.urlopen(req,timeout=20) as resp: payload=json.loads(resp.read().decode('utf-8'))
+    return payload.get('data',payload) if isinstance(payload,dict) else {}
+
+def _published_amount(floor,ceiling,estimated=''):
+    def money(value):
+        raw=_clean_text(value).replace('$','').replace(',','')
+        try: return '${:,.0f}'.format(float(raw))
+        except Exception: return ''
+    low=money(floor); high=money(ceiling)
+    if low and high: return low if low==high else f'{low}–{high}'
+    return high or low or money(estimated) or ''
+
 def _grants_gov_search(keyword):
     body={'keyword':keyword or 'small business','oppStatuses':'posted|forecasted','rows':25}
     req=urllib.request.Request('https://api.grants.gov/v1/api/search2',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','User-Agent':'The-Seasons-Within/1.0'},method='POST')
     with urllib.request.urlopen(req,timeout=25) as resp: data=json.loads(resp.read().decode('utf-8'))
     root=data.get('data',data) if isinstance(data,dict) else {}; hits=root.get('oppHits') or root.get('opportunities') or root.get('results') or []
     out=[]
-    for item in hits[:25]:
+    for index,item in enumerate(hits[:25]):
         if not isinstance(item,dict): continue
         oid=str(item.get('id') or item.get('opportunityId') or item.get('number') or item.get('opportunityNumber') or '')
-        title=_clean_text(item.get('title') or item.get('opportunityTitle') or 'Federal funding opportunity'); agency=_clean_text(item.get('agencyName') or item.get('agency') or '')
-        description=_clean_text(item.get('synopsis') or item.get('description') or '')
-        eligibility=_clean_text(item.get('eligibilities') or item.get('eligibleApplicants') or '')
+        detail={}
+        if index<5 and oid.isdigit():
+            try: detail=_grants_gov_detail(oid)
+            except Exception: detail={}
+        synopsis=detail.get('synopsis') if isinstance(detail.get('synopsis'),dict) else {}
+        title=_clean_text(detail.get('opportunityTitle') or item.get('title') or item.get('opportunityTitle') or 'Federal funding opportunity'); agency=_clean_text(synopsis.get('agencyName') or item.get('agencyName') or item.get('agency') or '')
+        description=_clean_text(synopsis.get('synopsisDesc') or item.get('synopsis') or item.get('description') or '')
+        applicants=synopsis.get('applicantTypes') or item.get('eligibilities') or item.get('eligibleApplicants') or ''
+        eligibility=', '.join(_clean_text(x.get('description')) for x in applicants if isinstance(x,dict)) if isinstance(applicants,list) else _clean_text(applicants)
         # Exclude clearly international/diplomatic and defense/research notices from ordinary small-business results.
         excluded=' '.join((title,agency,description)).lower()
         if any(x in excluded for x in ('embassy ','department of defense','dod ','foreign assistance','international development','latvia','tunisia','indonesia')): continue
-        deadline=_clean_text(item.get('closeDate') or item.get('closeDateDesc') or item.get('deadline') or '')
-        out.append({'source':'Grants.gov','source_id':oid or hashlib.sha256(title.encode()).hexdigest()[:20],'title':title,'agency':agency,'opportunity_type':'Grant','government_level':'Federal','service_area':'United States / see official notice','amount_text':_clean_text(item.get('awardCeiling') or item.get('estimatedFunding') or ''),'deadline':deadline,'open_date':_clean_text(item.get('openDate') or item.get('postDate') or ''),'status':_opportunity_status(deadline,item.get('status','')),'eligibility':eligibility,'required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[],'funding_uses':[],'description':description,'source_url':('https://www.grants.gov/search-results-detail/'+urllib.parse.quote(oid)) if oid else 'https://www.grants.gov/search-results','application_url':('https://www.grants.gov/search-results-detail/'+urllib.parse.quote(oid)) if oid else 'https://www.grants.gov/search-results','last_verified_at':now()})
+        deadline=_clean_text(synopsis.get('responseDate') or detail.get('originalDueDateDesc') or item.get('closeDate') or item.get('closeDateDesc') or item.get('deadline') or '')
+        contact_name=_clean_text(synopsis.get('agencyContactName')); contact_email=_clean_text(synopsis.get('agencyContactEmail')); contact_phone=_clean_text(synopsis.get('agencyContactPhone'))
+        amount=_published_amount(synopsis.get('awardFloor') or synopsis.get('awardFloorFormatted'),synopsis.get('awardCeiling') or synopsis.get('awardCeilingFormatted'),item.get('estimatedFunding'))
+        funding_uses=[_clean_text(x.get('description')) for x in (synopsis.get('fundingActivityCategories') or []) if isinstance(x,dict) and _clean_text(x.get('description'))]
+        official=('https://www.grants.gov/search-results-detail/'+urllib.parse.quote(oid)) if oid else 'https://www.grants.gov/search-results'
+        out.append({'source':'Grants.gov','source_id':oid or hashlib.sha256(title.encode()).hexdigest()[:20],'title':title,'agency':agency,'opportunity_type':'Grant','government_level':'Federal','service_area':'United States / see official notice','amount_text':amount or 'Not published by funding source','deadline':deadline,'open_date':_clean_text(synopsis.get('postingDate') or item.get('openDate') or item.get('postDate') or ''),'status':_opportunity_status(deadline,item.get('oppStatus') or item.get('status','')),'eligibility':eligibility or 'Not published by funding source','required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[],'funding_uses':funding_uses,'description':description,'source_url':official,'application_url':official,'eligibility_url':official,'contact_name':contact_name,'contact_email':contact_email,'contact_phone':contact_phone,'matching_funds':'Required' if synopsis.get('costSharing') is True else ('Not required' if synopsis.get('costSharing') is False else ''),'last_verified_at':now(),'official_source_verified':True})
+    return out
+
+def _simpler_grants_search(keyword):
+    """Optional official federal search. Configure SIMPLER_GRANTS_API_KEY server-side."""
+    token=os.environ.get('SIMPLER_GRANTS_API_KEY','').strip()
+    if not token: return []
+    endpoint=os.environ.get('SIMPLER_GRANTS_API_URL','https://api.simpler.grants.gov/v1/opportunities/search').strip()
+    body={'query':keyword or 'small business','filters':{'opportunity_status':{'one_of':['posted','forecasted']}},'pagination':{'page_offset':1,'page_size':25,'sort_order':[{'order_by':'relevancy','sort_direction':'descending'}]}}
+    req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers={'Accept':'application/json','Content-Type':'application/json','X-API-Key':token,'User-Agent':'The-Seasons-Within/1.0'},method='POST')
+    with urllib.request.urlopen(req,timeout=25) as resp: payload=json.loads(resp.read().decode('utf-8'))
+    root=payload.get('data',payload) if isinstance(payload,dict) else {}; hits=root.get('opportunities') or root.get('results') or root.get('items') or []
+    out=[]
+    for raw in hits[:25]:
+        if not isinstance(raw,dict): continue
+        item=raw.get('opportunity') if isinstance(raw.get('opportunity'),dict) else raw
+        oid=_clean_text(item.get('opportunity_id') or item.get('id') or item.get('opportunity_number'))
+        title=_clean_text(item.get('opportunity_title') or item.get('title')); agency_value=item.get('agency') or item.get('agency_name') or ''
+        agency=_clean_text(agency_value.get('agency_name') if isinstance(agency_value,dict) else agency_value)
+        if not title or not oid: continue
+        summary=item.get('summary') if isinstance(item.get('summary'),dict) else {}
+        deadline=_clean_text(summary.get('close_date') or item.get('close_date')); status=_clean_text(item.get('opportunity_status') or item.get('status'))
+        award_floor=summary.get('award_floor') or item.get('award_floor'); award_ceiling=summary.get('award_ceiling') or item.get('award_ceiling')
+        applicants=item.get('applicant_types') or summary.get('applicant_types') or []
+        eligibility=', '.join(_clean_text(x.get('description') if isinstance(x,dict) else x) for x in applicants) if isinstance(applicants,list) else _clean_text(applicants)
+        official='https://simpler.grants.gov/opportunity/'+urllib.parse.quote(oid)
+        out.append({'source':'Simpler.Grants.gov','source_id':oid,'title':title,'agency':agency or 'Federal agency — see official notice','opportunity_type':'Grant','government_level':'Federal','service_area':'United States / see official notice','amount_text':_published_amount(award_floor,award_ceiling) or 'Not published by funding source','deadline':deadline,'open_date':_clean_text(summary.get('post_date') or item.get('post_date')),'status':_opportunity_status(deadline,status),'eligibility':eligibility or 'Not published by funding source','required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[],'funding_uses':[],'description':_clean_text(summary.get('summary_description') or item.get('description')),'source_url':official,'application_url':official,'eligibility_url':official,'contact_name':'','contact_email':'','contact_phone':'','last_verified_at':now(),'official_source_verified':True})
     return out
 
 def _official_loan_programs():
@@ -10253,8 +10308,10 @@ def business_requirement_delete(requirement_key):
 def funding_opportunities():
     u=current_user(); facts=_business_funding_facts(u['id']); kind=request.args.get('type','all').lower(); level=request.args.get('level','all').title()
     keyword=_personalized_funding_keyword(facts); grants=[]; warning=''
-    try: grants=_grants_gov_search(keyword)
-    except Exception: warning='The official Grants.gov service could not be reached just now. Saved and official loan programs remain available.'
+    try:
+        grants,official_errors=_expanded_grants_gov_search(facts)
+        if official_errors: warning='One official federal source could not be reached. Matching continued through the other available sources.'
+    except Exception: warning='The official federal grant services could not be reached just now. Saved and official loan programs remain available.'
     opportunities=grants+_official_loan_programs()
     for opp in opportunities: _cache_funding_opportunity(opp)
     if kind in {'grant','loan'}: opportunities=[o for o in opportunities if o.get('opportunity_type','').lower()==kind]
