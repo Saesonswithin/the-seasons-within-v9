@@ -1,5 +1,5 @@
-THE SEASONS WITHIN — LIVE GRANT & LOAN SEARCH BUILD
-Packaged: 2026-08-27
+THE SEASONS WITHIN — BUSINESS INSURANCE & LEGAL PROTECTION BUILD
+Packaged: 2026-08-28
 
 Included:
 - Current application source
@@ -17,6 +17,9 @@ Included:
   categories, local-to-national expansion, eligibility confidence and duplicate removal
 - Manual Grant Search separated from automatic Business Plan matching so the member's
   typed keyword controls discovery and the Business Plan is applied afterward for scoring
+- New card 10: Business Insurance & Legal Protection, personalized from saved Business Plan facts
+- Existing Business Journal integration for saved protection records and legal checklist progress
+- Private member-owned quote/policy documents and existing-calendar insurance renewal tracking
 
 Intentionally excluded:
 - Local database files and member data

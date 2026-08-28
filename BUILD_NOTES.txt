@@ -142,3 +142,12 @@ MANUAL GRANT SEARCH SEPARATION — 2026-08-27
 - Search Coverage shows geographic levels rather than internal search-engine phrases.
 - Unrelated cached grants are excluded from manual results.
 - Loan Search and all unrelated application features remain unchanged.
+
+BUSINESS INSURANCE & LEGAL PROTECTION — 2026-08-28
+
+- Added card 10 after the existing nine Business Development cards without changing their order or behavior.
+- Personalized insurance education uses saved Business Plan facts and distinguishes legal, contractual, recommended and professional-review classifications.
+- Provider discovery links only to verified provider pages and does not invent prices, premiums, limits or coverage.
+- Saved recommendations, provider research, checklist progress, policy details, notes and renewal dates remain owned by the authenticated member.
+- Policy and quote documents are private, ownership-checked downloads.
+- Insurance renewal dates reuse the existing calendar, and licensing items link to the existing Licenses & Certifications workspace.
