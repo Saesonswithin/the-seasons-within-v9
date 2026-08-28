@@ -10230,23 +10230,84 @@ def _business_legal_checklist(facts):
     if online: items.append({'key':'privacy','title':'Privacy, data protection, and online terms','classification':'Needs Professional Review','source_url':'https://www.ftc.gov/business-guidance/privacy-security/data-security','note':'Review customer information, security, privacy notices, online terms, and breach-response duties.'})
     items.append({'key':'industry','title':'Industry-specific legal review','classification':'Needs Professional Review','source_url':url_for('business_certifications'),'note':'Use the existing licensing roadmap and official agencies for regulated activities.'}); return items
 
+def _insurance_search_profile(facts,coverage='',location=''):
+    """Translate Business Plan facts into compact insurance-search evidence."""
+    raw=facts.get('raw') or {}; text=' '.join(_clean_text(x) for x in (facts.get('industry'),facts.get('services'),facts.get('goals'),facts.get('purpose'),raw)).lower()
+    place=_clean_text(location) or ', '.join(x for x in (facts.get('city'),facts.get('state')) if x)
+    state=_clean_text(facts.get('state')); industry=_clean_text(facts.get('industry'))
+    operations=[]; classifications=[]
+    groups=[
+        (('yoga','wellness','reiki','retreat','meditation','class','participant'), 'wellness classes retreats', '713940'),
+        (('restaurant','food','cater','bakery','meal','beverage','kitchen'), 'food service catering', '722320'),
+        (('consult','coach','professional service'), 'consulting professional services', '541611'),
+        (('technology','software','platform','app','customer data','member data'), 'technology software data services', '541511'),
+        (('retail','product','ecommerce','online shop','inventory'), 'retail product sales', '454110'),
+        (('beauty','salon','esthetic','cosmet'), 'beauty personal care services', '812112')]
+    for words,label,naics in groups:
+        if any(word in text for word in words): operations.append(label); classifications.append(naics)
+    if not operations: operations.append(_clean_text(facts.get('services') or industry) or 'small business')
+    employees=bool(_clean_text(facts.get('employees')) and _clean_text(facts.get('employees')).lower() not in {'0','none','no'})
+    return {'coverage':_clean_text(coverage) or 'business insurance','place':place,'state':state,'industry':industry or operations[0],'operations':operations[:4],'naics':classifications[:3],'employees':employees}
+
+def _insurance_search_queries(profile):
+    """Progressive query plan; kept separate so a future quote API can reuse the profile."""
+    coverage=profile['coverage']; place=profile['place']; state=profile['state']; queries=[]
+    for operation in profile['operations'][:3]:
+        queries.append(f'{coverage} insurance {operation} {place} official provider quote')
+    queries.append(f'{coverage} insurance {profile["industry"]} {state} official provider')
+    for naics in profile['naics']: queries.append(f'{coverage} insurance NAICS {naics} {state} official provider')
+    for operation in profile['operations'][:2]: queries.append(f'specialty {coverage} insurance {operation} {state} official')
+    queries.extend([f'commercial insurance carrier {coverage} small business {state} official quote',f'licensed commercial insurance broker {coverage} {state} official'])
+    unique=[]; seen=set()
+    for query in queries:
+        key=re.sub(r'\W+',' ',query.lower()).strip()
+        if key not in seen: seen.add(key); unique.append(query)
+    return unique[:12]
+
+def _insurance_result(row,profile,provider):
+    url=_clean_text(row.get('url')); title=_clean_text(row.get('title')); snippet=_clean_text(row.get('description'))
+    if not url.startswith('https://') or not title: return None
+    lower=' '.join((title,snippet,url)).lower()
+    if any(x in lower for x in ('best insurance','top insurance','affiliate','blog/','/blog','news article','press release','review of')): return None
+    coverage=profile['coverage']; coverage_words=[x for x in re.findall(r'[a-z]{4,}',coverage.lower()) if x not in {'insurance','coverage','business'}]
+    page_text=_safe_public_page_text(url); evidence=' '.join((title,snippet,page_text[:70000])).lower()
+    commercial=bool(re.search(r'\b(business|commercial|small business)\b',evidence))
+    coverage_supported=not coverage_words or any(word in evidence for word in coverage_words)
+    provider_supported=bool(re.search(r'\b(insurance|insurer|carrier|broker|agency|coverage|policy|quote)\b',evidence))
+    if not (commercial and coverage_supported and provider_supported): return None
+    host=(urllib.parse.urlparse(url).hostname or '').lower().removeprefix('www.')
+    state_terms=[profile['state'].lower(),profile['place'].lower()]
+    state_verified=any(term and term in evidence for term in state_terms)
+    operation_verified=[x for x in profile['operations'] if any(w in evidence for w in x.split() if len(w)>4)]
+    if state_verified and operation_verified: fit='Strong Business Fit'
+    elif operation_verified or state_verified: fit='Possible Business Fit'
+    elif 'specialty' in evidence: fit='Specialty Provider'
+    else: fit='Eligibility Requires Confirmation'
+    displayed_name=re.sub(r'\s*[|\-–—].*$','',title).strip() or host
+    why=f'This provider page references {coverage} for business or commercial customers.'
+    if operation_verified: why+=f' Its published information is relevant to {operation_verified[0]} identified in your Business Plan.'
+    if state_verified: why+=f' The page also references {profile["state"] or profile["place"]}.'
+    else: why+=' Availability for your exact location requires provider confirmation.'
+    return {'key':hashlib.sha256(url.encode()).hexdigest()[:24],'name':displayed_name[:180],'provider_name':host,'classification':fit,'coverage_types':[coverage],'what_it_is':f'Coverage available: {coverage}. '+(snippet or 'Official provider page located during the insurance search.'),'why':why,'protects':'Coverage depends on the policy offered and purchased. Contact provider for quote; no premium, deductible, limit, or eligibility is assumed.','example':'Review the provider page, request written terms, and compare exclusions, limits, deductibles, and endorsements.','state_considerations':f'{"Published information references the saved location." if state_verified else "Eligibility and state availability require provider confirmation."}','questions':['Does this provider serve my exact location and business operations?','Which exclusions, limits, deductibles, and endorsements apply?','Can I receive a written quote and specimen policy?'],'source_url':url,'quote_url':url,'last_checked':now(),'discovered_via':provider,'page_verified':bool(page_text)}
+
 def _insurance_search(facts,coverage='',location=''):
     configured=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
     if not configured: return [],['The existing approved web-search provider is not configured.']
-    place=_clean_text(location) or ', '.join(x for x in (facts.get('city'),facts.get('state')) if x); industry=_clean_text(facts.get('industry') or facts.get('services')) or 'small business'; coverage=_clean_text(coverage) or 'business insurance'; queries=[f'{place} {industry} {coverage} insurance provider official quote',f'{facts.get("state","")} small business {coverage} insurance carrier official',f'{industry} {coverage} business insurance official provider',f'{place} independent business insurance agent {coverage} official']; found=[]; errors=[]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures={pool.submit(_configured_funding_web_search,q,8):q for q in queries}
+    profile=_insurance_search_profile(facts,coverage,location); queries=_insurance_search_queries(profile); found=[]; errors=[]
+    with ThreadPoolExecutor(max_workers=min(6,len(queries))) as pool:
+        futures={pool.submit(_configured_funding_web_search,q,10):q for q in queries}
         for future in as_completed(futures):
             try:
                 rows,provider=future.result()
                 for row in rows:
-                    url=_clean_text(row.get('url')); title=_clean_text(row.get('title')); snippet=_clean_text(row.get('description')); lower=' '.join((title,snippet,url)).lower()
-                    if not url.startswith('https://') or any(x in lower for x in ('best insurance','top insurance','compare quotes','affiliate','blog/','/blog','news article')): continue
-                    page_text=_safe_public_page_text(url)
-                    if not page_text or not re.search(r'\b(business|commercial)\b.{0,80}\b(insurance|coverage|quote)\b|\b(insurance|coverage)\b.{0,80}\b(business|commercial)\b',page_text[:50000],re.I): continue
-                    host=(urllib.parse.urlparse(url).hostname or '').lower().removeprefix('www.'); found.append({'key':hashlib.sha256(url.encode()).hexdigest()[:24],'name':title,'provider_name':host,'classification':'Provider Website Found — Confirm Licensing and Terms','coverage_types':[coverage],'what_it_is':snippet or 'Provider page located during the insurance search.','why':f'The page references business or commercial insurance related to {industry}, {coverage}, or {place}. Confirm availability and terms directly.','protects':'Coverage depends entirely on the policy offered and purchased. Contact provider for quote/details.','example':'Request written information and compare it with other providers.','state_considerations':f'Confirm provider and producer authorization for {place or "the saved location"}.','questions':['Does this provider serve my location and industry?','Which exclusions, limits, deductibles, and endorsements apply?','Can I receive a written quote and specimen policy?'],'source_url':url,'quote_url':url,'last_checked':now(),'discovered_via':provider})
-            except Exception as exc: errors.append(type(exc).__name__)
-    unique={}; [unique.setdefault(x['provider_name'],x) for x in found]; return sorted(unique.values(),key=lambda x:x['provider_name'].lower())[:12],errors
+                    item=_insurance_result(row,profile,provider)
+                    if item: found.append(item)
+            except Exception as exc: errors.append({'query':futures[future],'error':type(exc).__name__})
+    rank={'Strong Business Fit':0,'Possible Business Fit':1,'Specialty Provider':2,'Eligibility Requires Confirmation':3}; unique={}
+    for item in found:
+        old=unique.get(item['provider_name'])
+        if not old or rank[item['classification']]<rank[old['classification']]: unique[item['provider_name']]=item
+    return sorted(unique.values(),key=lambda x:(rank[x['classification']],x['provider_name'].lower()))[:12],errors
 
 @app.route('/business-development/protection',methods=['GET','POST'])
 @login_required
@@ -10257,8 +10318,11 @@ def business_protection():
     def record_card(item,kind='Recommendation'):
         payload={'record_kind':kind,'item_key':item['key'],'title':item['name'],'classification':item['classification'],'provider_name':item.get('provider_name',''),'coverage_types':item.get('coverage_types',[item['name']]),'what_it_is':item['what_it_is'],'why_matched':item['why'],'protects':item['protects'],'example_situation':item['example'],'state_considerations':item['state_considerations'],'questions':item['questions'],'source_url':item['source_url'],'quote_url':item.get('quote_url',item['source_url']),'last_checked':item['last_checked']}; packed=html.escape(json.dumps(payload),quote=True); existing=saved.get(item['key'])
         save=(f'''<span class="badge">SAVED</span><a class="out" href="{url_for('business_protection_edit',record_id=existing['id'])}">View Saved Item</a>''' if existing else f'''<form method="post" action="{url_for('business_protection_save')}"><input type="hidden" name="record" value="{packed}"><button class="btn">Save to Business Journal</button></form>''')
-        return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{html.escape(item['name'])}</h3><p><b>What it is:</b> {html.escape(item['what_it_is'])}</p><p><b>Why it was matched to your business:</b> {html.escape(item['why'])}</p><details><summary class="out">What Could Happen Without Coverage?</summary><p><b>What it generally protects:</b> {html.escape(item['protects'])}</p><p><b>Example for your business:</b> {html.escape(item['example'])}</p><p><b>Why this matters:</b> Without appropriate coverage, the business may have to pay certain uncovered loss, defense, settlement, judgment, recovery, or interruption costs itself.</p><p><b>State/local considerations:</b> {html.escape(item['state_considerations'])}</p><h4>Questions to ask</h4><ul>{''.join('<li>'+html.escape(q)+'</li>' for q in item['questions'])}</ul></details><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(item.get('quote_url') or item['source_url'],quote=True)}">{'Contact / Quote' if kind=='Provider' else 'Official Education'}</a><a class="out" href="{url_for('business_protection',coverage=item['name'])}#insurance-search">Find Coverage</a>{save}</div></article>'''
-    review=''.join(record_card(x) for x in recommendations); provider_cards=''.join(record_card(x,'Provider') for x in results) or ('<div class="empty">No provider search has been run yet.</div>' if request.method!='POST' else '<div class="empty">No provider website could be verified from the available sources. Try broader criteria; no provider was invented.</div>')
+        if kind=='Provider':
+            return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{html.escape(item['name'])}</h3><p><b>Provider:</b> {html.escape(item.get('provider_name') or '')}</p><p><b>Coverage available:</b> {html.escape(', '.join(item.get('coverage_types') or []))}</p><p><b>Why this provider may fit your business:</b> {html.escape(item['why'])}</p><p><b>State availability:</b> {html.escape(item['state_considerations'])}</p><p class="muted">Contact provider for quote. Eligibility requires provider confirmation unless the provider confirms it during its application process.</p><details><summary class="out">Questions to Ask Before Applying</summary><ul>{''.join('<li>'+html.escape(q)+'</li>' for q in item['questions'])}</ul></details><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(item['source_url'],quote=True)}">Visit Provider</a><a class="out" target="_blank" rel="noopener" href="{html.escape(item.get('quote_url') or item['source_url'],quote=True)}">Get Quote / Start Application</a>{save}</div></article>'''
+        coverage_label=html.escape(item['name'])
+        return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{coverage_label}</h3><p><b>What it is:</b> {html.escape(item['what_it_is'])}</p><p><b>What it generally covers:</b> {html.escape(item['protects'])}</p><p><b>Why this is recommended for your business:</b> {html.escape(item['why'])}</p><details><summary class="out">What Could Happen Without Coverage?</summary><p><b>Example for your business:</b> {html.escape(item['example'])}</p><p><b>Why this matters:</b> Without appropriate coverage, the business may have to pay certain uncovered loss, defense, settlement, judgment, recovery, or interruption costs itself.</p><p><b>State/local considerations:</b> {html.escape(item['state_considerations'])}</p><h4>Questions to ask</h4><ul>{''.join('<li>'+html.escape(q)+'</li>' for q in item['questions'])}</ul></details><div class="actions"><a class="out" href="{url_for('business_protection',coverage=item['name'])}#insurance-search">Find {coverage_label} Coverage</a>{save}</div></article>'''
+    review=''.join(record_card(x) for x in recommendations); provider_cards=''.join(record_card(x,'Provider') for x in results) or ('<div class="empty">No provider search has been run yet.</div>' if request.method!='POST' else '<div class="empty">No verified providers were found after the activity, industry, classification, specialty-provider, and state-level searches. No provider or coverage was invented. Try a broader business location or confirm that live web search is configured.</div>')
     checklist_cards=[]
     for item in checklist:
         old=progress.get(item['key']); current=old['status'] if old else 'Not Started'; notes=old['notes'] if old else ''; options=''.join(f'<option{" selected" if current==x else ""}>{x}</option>' for x in ('Not Started','Reviewing','Complete','Needs Professional Review')); checklist_cards.append(f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{html.escape(item['title'])}</h3><p>{html.escape(item['note'])}</p><form method="post" action="{url_for('business_legal_checklist_save')}"><input type="hidden" name="item_key" value="{html.escape(item['key'],quote=True)}"><label>Status</label><select class="input" name="status">{options}</select><label>Notes</label><textarea class="input" name="notes">{html.escape(notes)}</textarea><div class="actions"><a class="out" href="{html.escape(item['source_url'],quote=True)}">{'View in Licenses & Certifications' if item['key'] in {'licenses-link','industry'} else 'View Official / Existing Resource'}</a><button class="btn">Save Checklist Progress</button></div></form></article>''')
