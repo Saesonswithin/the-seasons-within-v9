@@ -9460,11 +9460,24 @@ def _google_cse_search(query,count=10):
     return [{'title':x.get('title',''),'url':x.get('link',''),'description':x.get('snippet','')} for x in (payload.get('items') or []) if isinstance(x,dict)]
 
 def _configured_funding_web_search(query,count=10):
-    """Use one configured live search provider; every result is later checked against its original page."""
-    if os.environ.get('BRAVE_SEARCH_API_KEY','').strip(): return _brave_web_search(query,count),'Brave Search API'
-    if os.environ.get('BING_SEARCH_API_KEY','').strip(): return _bing_web_search(query,count),'Bing Web Search API'
-    if os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip(): return _google_cse_search(query,count),'Google Programmable Search'
-    raise RuntimeError('Configure BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY plus GOOGLE_CSE_ID.')
+    """Search every configured provider independently and combine their discoveries."""
+    providers=[]
+    if os.environ.get('BRAVE_SEARCH_API_KEY','').strip(): providers.append(('Brave Search API',_brave_web_search))
+    if os.environ.get('BING_SEARCH_API_KEY','').strip(): providers.append(('Bing Web Search API',_bing_web_search))
+    if os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip(): providers.append(('Google Programmable Search',_google_cse_search))
+    if not providers: raise RuntimeError('Configure BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY plus GOOGLE_CSE_ID.')
+    rows=[]; succeeded=[]; failures=[]
+    with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+        futures={pool.submit(fn,query,count):name for name,fn in providers}
+        for future in as_completed(futures):
+            try: rows.extend(future.result()); succeeded.append(futures[future])
+            except Exception as exc: failures.append(f'{futures[future]}: {type(exc).__name__}')
+    if not succeeded: raise RuntimeError('All configured web-search providers failed: '+'; '.join(failures))
+    unique={}
+    for row in rows:
+        url=_clean_text(row.get('url')).lower().rstrip('/')
+        if url: unique.setdefault(url,row)
+    return list(unique.values()),' + '.join(sorted(succeeded))
 
 class _FundingPageText(HTMLParser):
     def __init__(self): super().__init__(); self.parts=[]; self.skip=0
@@ -9503,8 +9516,13 @@ def _web_result_to_opportunity(result,query_meta,funding_type,provider='Live web
     host=(urllib.parse.urlparse(url).hostname or '').lower(); lower=' '.join((title,snippet,url)).lower()
     blocked=('best grants','top grants','grant list','loans you should','blog/','/blog','news article','lead generation')
     if any(x in lower for x in blocked): return None
-    page=_safe_public_page_text(url) if _trusted_funding_domain(url) else ''
-    evidence=(snippet+' '+page[:70000]).strip(); official=_trusted_funding_domain(url) and bool(page)
+    page=_safe_public_page_text(url)
+    evidence=(title+' '+snippet+' '+page[:70000]).strip()
+    required_word='grant' if funding_type=='Grant' else r'loan|lending|financing|microloan|line of credit'
+    program_evidence=bool(page and re.search(rf'\b({required_word})\b',evidence,re.I) and re.search(r'\b(apply|application|eligib|qualif|deadline|rolling|amount|borrow|funds?|program)\w*\b',evidence,re.I))
+    original_organization=not any(x in host for x in ('facebook.com','linkedin.com','youtube.com','instagram.com','reddit.com','medium.com','wikipedia.org'))
+    official=bool(original_organization and (_trusted_funding_domain(url) or program_evidence))
+    if not official: return None
     amount=_published_field(evidence,[r'((?:\$[\d,]+(?:\.\d{2})?)(?:\s*(?:-|–|to)\s*\$[\d,]+(?:\.\d{2})?)?)'])
     deadline=_published_field(evidence,[r'(?:deadline|due date|applications? due)\s*[:\-]?\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+20\d{2})',r'(?:deadline|due date)\s*[:\-]?\s*(20\d{2}-\d{2}-\d{2})'])
     if re.search(r'\brolling\b',evidence,re.I): deadline='Rolling'
@@ -9526,7 +9544,9 @@ def _web_result_to_opportunity(result,query_meta,funding_type,provider='Live web
     repayment_requirements=_published_field(evidence,[r'((?:repayment|monthly payments?|payment schedule)\s*[:\-]?\s*[^.;]{10,180})']) if funding_type=='Loan' else ''
     startup_eligibility='Startup eligible' if re.search(r'\bstartups?\b|\bnew businesses?\b',evidence,re.I) and not re.search(r'\bstartups? (?:are )?not eligible\b',evidence,re.I) else ''
     source_id=hashlib.sha256(url.encode()).hexdigest()[:24]
-    return {'source':source_name,'source_id':'web-'+source_id,'title':title,'agency':source_name,'opportunity_type':funding_type,'government_level':query_meta.get('level') or 'National/Private','service_area':query_meta.get('location') or 'Not published by funding source','amount_text':amount or 'Not published by funding source','deadline':deadline,'open_date':'','status':_opportunity_status(deadline,reported),'eligibility':eligibility or 'Not published by funding source','required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[startup_eligibility] if startup_eligibility else [],'funding_uses':[uses] if uses else [],'description':snippet,'source_url':url,'application_url':url,'eligibility_url':url,'contact_name':'','contact_email':contact_email,'contact_phone':'','time_in_business':time_in_business,'revenue_requirement':revenue_requirement,'employee_requirement':employee_requirement,'credit_requirements':credit_requirement,'collateral_requirements':collateral_requirement,'personal_guarantee':personal_guarantee,'repayment_requirements':repayment_requirements,'last_verified_at':now(),'official_source_verified':official,'discovered_via':provider,'search_query':query_meta.get('query',''),'search_focus':query_meta.get('focus',''),'search_pass':query_meta.get('pass','')}
+    interest_rate=_published_field(evidence,[r'((?:interest rate|rate|apr)\s*(?:of|is|:|-)?\s*(?:from|as low as|up to)?\s*\d+(?:\.\d+)?\s*%)']) if funding_type=='Loan' else ''
+    term=_published_field(evidence,[r'((?:loan term|repayment term|term)\s*(?:of|is|:|-)?\s*(?:up to)?\s*\d+\s*(?:months?|years?))']) if funding_type=='Loan' else ''
+    return {'source':source_name,'source_id':'web-'+source_id,'title':title,'agency':source_name,'opportunity_type':funding_type,'government_level':query_meta.get('level') or 'National/Private','service_area':query_meta.get('location') or 'Not published by funding source','amount_text':amount or 'Not published by funding source','deadline':deadline,'open_date':'','status':_opportunity_status(deadline,reported),'eligibility':eligibility or 'Not published by funding source','required_certifications':[],'required_documents':[],'eligible_industries':[],'eligible_business_stages':[startup_eligibility] if startup_eligibility else [],'funding_uses':[uses] if uses else [],'description':snippet,'source_url':url,'application_url':url,'eligibility_url':url,'contact_name':'','contact_email':contact_email,'contact_phone':'','time_in_business':time_in_business,'revenue_requirement':revenue_requirement,'employee_requirement':employee_requirement,'interest_rate':interest_rate or ('Rate determined by lender' if funding_type=='Loan' else ''),'term':term or ('Not published by lender' if funding_type=='Loan' else ''),'credit_requirements':credit_requirement,'collateral_requirements':collateral_requirement,'personal_guarantee':personal_guarantee,'repayment_requirements':repayment_requirements,'last_verified_at':now(),'official_source_verified':official,'discovered_via':provider,'search_query':query_meta.get('query',''),'search_focus':query_meta.get('focus',''),'search_pass':query_meta.get('pass','')}
 
 def _deep_live_funding_search(facts,funding_type,level='All',manual_location=''):
     plan=_deep_funding_queries(facts,funding_type,level,manual_location); discovered=[]; errors=[]
@@ -9544,7 +9564,7 @@ def _deep_live_funding_search(facts,funding_type,level='All',manual_location='')
     merged=_merge_opportunities(discovered); merged.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
     return merged[:40],plan,errors
 
-def _manual_loan_search_plan(facts,amount='',purpose='',stage='',level='All',manual_location=''):
+def _manual_loan_search_plan(facts,amount='',purpose='',stage='',level='All',manual_location='',keyword=''):
     """Build loan-only searches from the submitted form, from local to national."""
     local_facts=dict(facts); manual=_clean_text(manual_location)
     if manual:
@@ -9557,31 +9577,32 @@ def _manual_loan_search_plan(facts,amount='',purpose='',stage='',level='All',man
         elif level=='County': local_facts['county']=(parts[0] if parts else manual).removesuffix(' County')
         elif level=='State': local_facts['state']=parts[-1] if parts else manual
     geography=_funding_geography_terms(local_facts,level,'')
-    submitted=' '.join(x for x in (_clean_text(stage),_clean_text(purpose),_clean_text(amount)) if x).strip()
-    purpose_term=_clean_text(purpose) or 'small business'; stage_term=_clean_text(stage) or 'small business'; plan=[]
+    member_terms=re.sub(r'\s+',' ',_clean_text(keyword)).strip()[:120]
+    submitted=' '.join(x for x in (member_terms,_clean_text(stage),_clean_text(purpose),_clean_text(amount)) if x).strip()
+    primary=member_terms or _clean_text(purpose) or 'small business financing'; purpose_term=_clean_text(purpose) or primary; stage_term=_clean_text(stage) or 'small business'; plan=[]
     def add(search_level,location,focus,pass_name):
         query=re.sub(r'\s+',' ',f'{location} {focus} official').strip()
         plan.append({'level':search_level,'location':location,'focus':focus,'pass':pass_name,'query':query})
     for geo_level,geo in geography:
         if geo_level=='City':
-            add(geo_level,geo,f'{stage_term} business loan {purpose_term} {amount}','city business financing'); add(geo_level,geo,f'microloan CDFI community business lender {purpose_term}','city community lenders')
+            add(geo_level,geo,f'{primary} business loan {stage_term} {amount}','member terms — city financing'); add(geo_level,geo,f'{primary} microloan CDFI community business lender','member terms — city community lenders')
         elif geo_level=='County':
-            add(geo_level,geo,f'small business loan economic development {submitted}','county financing programs'); add(geo_level,geo,f'CDFI microloan community development lender {purpose_term}','county community lenders')
-        elif geo_level=='Regional': add(geo_level,geo,f'small business financing CDFI community bank credit union {submitted}','regional lenders')
+            add(geo_level,geo,f'{primary} business loan economic development {submitted}','member terms — county financing'); add(geo_level,geo,f'{primary} CDFI microloan community development lender','member terms — county community lenders')
+        elif geo_level=='Regional': add(geo_level,geo,f'{primary} financing CDFI community bank credit union {submitted}','member terms — regional lenders')
         elif geo_level=='State':
-            add(geo_level,geo,f'state economic development small business loan {submitted}','state financing programs'); add(geo_level,geo,f'{stage_term} microloan CDFI {purpose_term} {amount}','state CDFI and microloan programs')
+            add(geo_level,geo,f'{primary} state economic development business loan {submitted}','member terms — state financing'); add(geo_level,geo,f'{primary} {stage_term} microloan CDFI {amount}','member terms — state CDFI and microloan')
         elif geo_level=='Federal':
-            add(geo_level,'United States',f'SBA {stage_term} business loan {purpose_term} {amount}','SBA and federal programs'); add(geo_level,'United States',f'SBA microloan participating lender {purpose_term}','SBA participating lenders')
+            add(geo_level,'United States',f'{primary} SBA {stage_term} business loan {amount}','member terms — SBA and federal'); add(geo_level,'United States',f'{primary} SBA microloan participating lender','member terms — SBA lenders')
         elif geo_level=='National/Private':
-            add(geo_level,'United States',f'{stage_term} business financing {purpose_term} {amount} bank credit union','national established lenders'); add(geo_level,'United States',f'{stage_term} microloan CDFI mission based lender {purpose_term}','national CDFI and nonprofit lenders')
+            add(geo_level,'United States',f'{primary} {stage_term} financing {amount} bank credit union','member terms — national lenders'); add(geo_level,'United States',f'{primary} microloan CDFI nonprofit lender','member terms — national mission lenders')
     unique=[]; seen=set()
     for item in plan:
         key=re.sub(r'\W+',' ',item['query'].lower()).strip()
         if key not in seen: seen.add(key); unique.append(item)
     return unique[:18]
 
-def _deep_live_manual_loan_search(facts,amount='',purpose='',stage='',level='All',manual_location=''):
-    plan=_manual_loan_search_plan(facts,amount,purpose,stage,level,manual_location); discovered=[]; errors=[]
+def _deep_live_manual_loan_search(facts,amount='',purpose='',stage='',level='All',manual_location='',keyword=''):
+    plan=_manual_loan_search_plan(facts,amount,purpose,stage,level,manual_location,keyword); discovered=[]; errors=[]
     configured=(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
     if not configured: return [],plan,['Live web search is not configured. Configure Brave, Bing, or Google Programmable Search credentials.']
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -9762,6 +9783,8 @@ def _funding_analysis(opp,facts):
     add('Business location requirement',25,geo_met,geo or level)
     ft=_tokens(facts['industry'],facts['services']); ot=_tokens(opp.get('eligible_industries',''),opp.get('description',''),opp.get('title',''))
     add('Industry alignment',15,bool(ft & ot) if ft and ot else 'verify',', '.join(sorted(ft & ot)[:5]) or 'Published industry scope needs review')
+    member_terms=_tokens(facts.get('member_search_terms','')); result_terms=_tokens(opp.get('title',''),opp.get('description',''),opp.get('eligibility',''),opp.get('funding_uses',''))
+    if member_terms: add('Member search-term alignment',25,bool(member_terms & result_terms),', '.join(sorted(member_terms & result_terms)[:6]) or 'The discovered page does not clearly reflect the member-entered terms')
     stages=_clean_text(opp.get('eligible_business_stages',''))
     add('Business stage requirement',10,(facts['stage'].lower() in stages.lower() or ('startup' in facts['stage'].lower() and 'startup eligible' in stages.lower())) if facts['stage'] and stages else ('verify' if facts['stage'] else None),stages or 'Not provided by official source')
     uses=_tokens(facts['purpose'],facts['goals']); opp_uses=_tokens(opp.get('funding_uses',''),opp.get('description',''))
@@ -10322,7 +10345,8 @@ def business_protection():
             return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{html.escape(item['name'])}</h3><p><b>Provider:</b> {html.escape(item.get('provider_name') or '')}</p><p><b>Coverage available:</b> {html.escape(', '.join(item.get('coverage_types') or []))}</p><p><b>Why this provider may fit your business:</b> {html.escape(item['why'])}</p><p><b>State availability:</b> {html.escape(item['state_considerations'])}</p><p class="muted">Contact provider for quote. Eligibility requires provider confirmation unless the provider confirms it during its application process.</p><details><summary class="out">Questions to Ask Before Applying</summary><ul>{''.join('<li>'+html.escape(q)+'</li>' for q in item['questions'])}</ul></details><div class="actions"><a class="out" target="_blank" rel="noopener" href="{html.escape(item['source_url'],quote=True)}">Visit Provider</a><a class="out" target="_blank" rel="noopener" href="{html.escape(item.get('quote_url') or item['source_url'],quote=True)}">Get Quote / Start Application</a>{save}</div></article>'''
         coverage_label=html.escape(item['name'])
         return f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{coverage_label}</h3><p><b>What it is:</b> {html.escape(item['what_it_is'])}</p><p><b>What it generally covers:</b> {html.escape(item['protects'])}</p><p><b>Why this is recommended for your business:</b> {html.escape(item['why'])}</p><details><summary class="out">What Could Happen Without Coverage?</summary><p><b>Example for your business:</b> {html.escape(item['example'])}</p><p><b>Why this matters:</b> Without appropriate coverage, the business may have to pay certain uncovered loss, defense, settlement, judgment, recovery, or interruption costs itself.</p><p><b>State/local considerations:</b> {html.escape(item['state_considerations'])}</p><h4>Questions to ask</h4><ul>{''.join('<li>'+html.escape(q)+'</li>' for q in item['questions'])}</ul></details><div class="actions"><a class="out" href="{url_for('business_protection',coverage=item['name'])}#insurance-search">Find {coverage_label} Coverage</a>{save}</div></article>'''
-    review=''.join(record_card(x) for x in recommendations); provider_cards=''.join(record_card(x,'Provider') for x in results) or ('<div class="empty">No provider search has been run yet.</div>' if request.method!='POST' else '<div class="empty">No verified providers were found after the activity, industry, classification, specialty-provider, and state-level searches. No provider or coverage was invented. Try a broader business location or confirm that live web search is configured.</div>')
+    broaden_insurance=f'''<form method="post"><input type="hidden" name="coverage" value="{html.escape(coverage,quote=True)}"><input type="hidden" name="location" value="{html.escape(facts.get('state',''),quote=True)}"><button class="out">Broaden My Search</button></form>'''
+    review=''.join(record_card(x) for x in recommendations); provider_cards=''.join(record_card(x,'Provider') for x in results) or ('<div class="empty">No provider search has been run yet.</div>' if request.method!='POST' else f'<div class="empty">No verified providers were found after the activity, industry, classification, specialty-provider, and state-level searches. No provider or coverage was invented.{broaden_insurance}</div>')
     checklist_cards=[]
     for item in checklist:
         old=progress.get(item['key']); current=old['status'] if old else 'Not Started'; notes=old['notes'] if old else ''; options=''.join(f'<option{" selected" if current==x else ""}>{x}</option>' for x in ('Not Started','Reviewing','Complete','Needs Professional Review')); checklist_cards.append(f'''<article class="card"><span class="badge">{html.escape(item['classification'])}</span><h3>{html.escape(item['title'])}</h3><p>{html.escape(item['note'])}</p><form method="post" action="{url_for('business_legal_checklist_save')}"><input type="hidden" name="item_key" value="{html.escape(item['key'],quote=True)}"><label>Status</label><select class="input" name="status">{options}</select><label>Notes</label><textarea class="input" name="notes">{html.escape(notes)}</textarea><div class="actions"><a class="out" href="{html.escape(item['source_url'],quote=True)}">{'View in Licenses & Certifications' if item['key'] in {'licenses-link','industry'} else 'View Official / Existing Resource'}</a><button class="btn">Save Checklist Progress</button></div></form></article>''')
@@ -10573,7 +10597,7 @@ def funding_opportunities():
 @login_required
 def funding_search():
     u=current_user(); facts=_business_funding_facts(u['id']); keyword=(request.form.get('keyword','') if request.method=='POST' else request.args.get('keyword','')).strip()[:180]
-    level=request.values.get('level','All'); location=request.values.get('location',', '.join(x for x in (facts['city'],facts['county'],facts['state']) if x)); stage=request.values.get('stage',facts['stage']); purpose=request.values.get('purpose',facts['purpose']); status_filter=request.values.get('status','Open'); sort=request.values.get('sort','Best Match'); search_facts=dict(facts); search_facts.update({'stage':stage,'purpose':purpose})
+    level=request.values.get('level','All'); location=request.values.get('location',', '.join(x for x in (facts['city'],facts['county'],facts['state']) if x)); stage=request.values.get('stage',facts['stage']); purpose=request.values.get('purpose',facts['purpose']); status_filter=request.values.get('status','Open'); sort=request.values.get('sort','Best Match'); search_facts=dict(facts); search_facts.update({'stage':stage,'purpose':purpose,'member_search_terms':keyword})
     if location.strip():
         if level=='City': search_facts['city']=location.strip()
         elif level=='County': search_facts['county']=location.strip().removesuffix(' County')
@@ -10621,7 +10645,9 @@ def funding_search():
     verified=[o for o in results if _verification_state(o)['active_verified']]
     verify=[o for o in results if not _verification_state(o)['active_verified'] and _opportunity_status(o.get('deadline',''),o.get('status',''))!='CLOSED']
     if request.method!='POST': body='<div class="empty">Enter a grant topic above. Manual search follows your keyword; automatic Business Plan matching remains available in Funding Matches.</div>'
-    else: body=(''.join(_funding_card(o,search_facts) for o in verified[:20]) or '<div class="empty"><b>No verified active opportunity was confirmed in this search.</b><p>The system completed the broader search and lists any potentially useful unverified or recurring programs below. Adjust the location, purpose, or status to search again.</p></div>')
+    else:
+        broaden=f'''<form method="post"><input type="hidden" name="keyword" value="{html.escape(keyword,quote=True)}"><input type="hidden" name="level" value="All"><input type="hidden" name="location" value="{html.escape(facts['state'],quote=True)}"><input type="hidden" name="stage" value="{html.escape(stage,quote=True)}"><input type="hidden" name="purpose" value="{html.escape(purpose,quote=True)}"><input type="hidden" name="status" value="All"><button class="out">Broaden My Search</button></form>'''
+        body=(''.join(_funding_card(o,search_facts) for o in verified[:20]) or f'<div class="empty"><b>No verified matching opportunities were located after the full search.</b><p>Potentially useful unverified or recurring programs appear below. You can broaden the geography and status while keeping “{html.escape(keyword)}” as the primary topic.</p>{broaden}</div>')
     if verify: body+='<section><h2>Needs Verification</h2><p class="muted">These traceable official-source records are not active matches until their current status is confirmed.</p>'+''.join(_funding_card(o,search_facts) for o in verify[:8])+'</section>'
     if request.method=='POST' and search_plan:
         coverage=[]
@@ -10635,14 +10661,14 @@ def funding_search():
 @app.route('/business-development/loans',methods=['GET','POST'])
 @login_required
 def loan_search():
-    u=current_user(); facts=_business_funding_facts(u['id']); amount=request.values.get('amount',facts['amount']); purpose=request.values.get('purpose',facts['purpose']); stage=request.values.get('stage',facts['stage']); level=request.values.get('level','All'); location=request.values.get('location',', '.join(x for x in (facts['city'],facts['county'],facts['state']) if x)); search_facts=dict(facts); search_facts.update({'amount':amount,'purpose':purpose,'stage':stage}); official=_official_loan_programs()
+    u=current_user(); facts=_business_funding_facts(u['id']); keyword=request.values.get('keyword','').strip()[:180]; amount=request.values.get('amount',facts['amount']); purpose=request.values.get('purpose',facts['purpose']); stage=request.values.get('stage',facts['stage']); level=request.values.get('level','All'); location=request.values.get('location',', '.join(x for x in (facts['city'],facts['county'],facts['state']) if x)); search_facts=dict(facts); search_facts.update({'amount':amount,'purpose':purpose,'stage':stage,'member_search_terms':keyword}); official=_official_loan_programs()
     if location.strip():
         if level=='City': search_facts['city']=location.strip()
         elif level=='County': search_facts['county']=location.strip().removesuffix(' County')
         elif level=='State': search_facts['state']=location.strip()
     live=[]; search_plan=[]; search_errors=[]; warning=''
     if request.method=='POST':
-        web_live,search_plan,search_errors=_deep_live_manual_loan_search(search_facts,amount,purpose,stage,level,location)
+        web_live,search_plan,search_errors=_deep_live_manual_loan_search(search_facts,amount,purpose,stage,level,location,keyword)
         live=_merge_opportunities(official,web_live)
         for o in live:
             if o.get('source')=='SBA.gov' or _verification_state(o)['active_verified']: _cache_funding_opportunity(o)
@@ -10658,11 +10684,13 @@ def loan_search():
     programs.sort(key=lambda o:(_verification_state(o)['active_verified'],_funding_analysis(o,search_facts)['match_score'],_trusted_funding_domain(o.get('source_url',''))),reverse=True)
     opts=lambda values,current: ''.join(f'<option{" selected" if x==current else ""}>{html.escape(x)}</option>' for x in values)
     progress='''<div id="funding-search-progress" class="card" style="display:none"><h2>Searching for financing opportunities…</h2><p id="funding-progress-text">Building searches from your Business Plan…</p><div class="progress"><span id="funding-progress-bar" style="width:8%"></span></div></div><script>function beginFundingSearch(){const box=document.getElementById('funding-search-progress'),text=document.getElementById('funding-progress-text'),bar=document.getElementById('funding-progress-bar');box.style.display='block';const steps=['Searching city loan programs…','Searching county financing programs…','Searching regional and CDFI programs…','Searching state loan programs…','Searching SBA and federal programs…','Searching microloan and mission-based lenders…','Checking official qualification requirements…','Comparing financing with your Business Plan…'];let i=0;text.textContent=steps[0];bar.style.width='12%';window.fundingProgressTimer=setInterval(()=>{i=Math.min(i+1,steps.length-1);text.textContent=steps[i];bar.style.width=(12+Math.round(84*i/(steps.length-1)))+'%'},900);box.scrollIntoView({behavior:'smooth',block:'center'});return true}</script>'''
-    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Loans Inside The Seasons Within</h2><p class="muted">Your Business Plan prefills the search. Each submitted search checks live city-to-national sources and original lender/program pages.</p><div class="grid"><div><label>Funding amount</label><input class="input" name="amount" value="{html.escape(amount,quote=True)}"></div><div><label>Purpose</label><select class="input" name="purpose">{opts(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Other'],purpose)}</select></div><div><label>Business stage</label><select class="input" name="stage">{opts(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Geographic level</label><select class="input" name="level">{opts(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div></div><button class="btn">Search Loans</button></form>{progress}'''
+    form=f'''<form class="card" method="post" onsubmit="return beginFundingSearch()"><h2>Search Loans Inside The Seasons Within</h2><p class="muted">Enter what you want to find. Your words control discovery; your Business Plan is used afterward to explain and rank financing found across city-to-national sources.</p><label><b>Search loans or financing</b></label><input class="input" name="keyword" value="{html.escape(keyword,quote=True)}" placeholder="Examples: wellness startup loans, equipment financing, working-capital microloan"><div class="grid"><div><label>Funding amount</label><input class="input" name="amount" value="{html.escape(amount,quote=True)}"></div><div><label>Purpose</label><select class="input" name="purpose">{opts(['','Startup','Equipment','Technology','Marketing','Hiring','Expansion','Working Capital','Property','Training','Other'],purpose)}</select></div><div><label>Business stage</label><select class="input" name="stage">{opts(['','Idea/Pre-launch','Startup','Operating','Growth'],stage)}</select></div><div><label>Geographic level</label><select class="input" name="level">{opts(['All','City','County','Regional','State','Federal','National/Private'],level)}</select></div><div><label>City, county or state</label><input class="input" name="location" value="{html.escape(location,quote=True)}"></div></div><button class="btn">Search Loans</button></form>{progress}'''
     verified=[o for o in programs if _verification_state(o)['active_verified']]
     verify=[o for o in programs if not _verification_state(o)['active_verified']]
     if request.method!='POST': cards='<div class="empty">Press Search Loans to perform a new live search using your Business Plan and the fields above.</div>'
-    else: cards=''.join(_funding_card(o,search_facts) for o in verified[:20]) or '<div class="empty"><b>No verified active financing program was confirmed in this search.</b><p>The broader search completed and any potentially useful unverified or recurring programs appear below. Adjust the location, purpose, or stage to search again.</p></div>'
+    else:
+        broaden=f'''<form method="post"><input type="hidden" name="keyword" value="{html.escape(keyword,quote=True)}"><input type="hidden" name="amount" value="{html.escape(amount,quote=True)}"><input type="hidden" name="purpose" value="{html.escape(purpose,quote=True)}"><input type="hidden" name="stage" value="{html.escape(stage,quote=True)}"><input type="hidden" name="level" value="All"><input type="hidden" name="location" value="{html.escape(facts['state'],quote=True)}"><button class="out">Broaden My Search</button></form>'''
+        cards=''.join(_funding_card(o,search_facts) for o in verified[:20]) or f'<div class="empty"><b>No verified matching financing was located after the full search.</b><p>Potentially useful programs that still need verification appear below. Broaden the geography while keeping your member-entered financing terms primary.</p>{broaden}</div>'
     if verify: cards+='<section><h2>Needs Verification</h2>'+''.join(_funding_card(o,search_facts) for o in verify[:8])+'</section>'
     if request.method=='POST' and search_plan:
         coverage=[]
