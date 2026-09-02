@@ -5283,7 +5283,7 @@ def _affiliate_code_for(user_id, create=False):
 
 def _affiliate_summary(user):
     conn=db()
-    rows=conn.execute('''SELECT ar.created_at referral_date,u.id,u.name,u.email,u.conscious_paid,u.business_dev_paid
+    rows=conn.execute('''SELECT ar.created_at referral_date,u.id,u.name,u.email,u.conscious_paid
                          FROM affiliate_referrals ar
                          JOIN users u ON u.id=ar.referred_user_id
                          WHERE ar.referrer_id=?
@@ -5295,8 +5295,6 @@ def _affiliate_summary(user):
     inactive=[r for r in rows if not bool(r['conscious_paid']) or not referrer_active]
     active_count=len(active)
     recurring=(2+(active_count-1)) if active_count else 0
-    qualifying_plan=[r for r in active if bool(r['business_dev_paid'])]
-    plan_bonus=len(qualifying_plan)*10
     return {
         'rows':rows,
         'active':active,
@@ -5304,9 +5302,6 @@ def _affiliate_summary(user):
         'active_count':active_count,
         'inactive_count':len(inactive),
         'recurring':recurring,
-        'qualifying_plan_count':len(qualifying_plan),
-        'plan_bonus':plan_bonus,
-        'current_total':recurring+plan_bonus,
         'referrer_active':referrer_active,
     }
 
@@ -5358,14 +5353,10 @@ def earn_while_you_grow():
     referral_rows=[]
     for r in summary['rows']:
         active=summary['referrer_active'] and bool(r['conscious_paid'])
-        plan=active and bool(r['business_dev_paid'])
         status='Active Upgraded Member' if active else 'Inactive for Commission'
         amount='$2 or $1/month based on active count' if active else '$0/month'
         referral_rows.append(f'''<article class="card"><h3>{html.escape(r['name'])}</h3>
-        <p class="muted">{status}</p><div class="grid">
-        <div class="fact"><small>Recurring Status</small><b>{amount}</b></div>
-        <div class="fact"><small>Professional Business Plan Bonus</small><b>{'$10 qualifying bonus' if plan else '$0 currently qualifying'}</b></div>
-        </div></article>''')
+        <p class="muted">{status}</p><div class="fact"><small>Recurring Status</small><b>{amount}</b></div></article>''')
     community_html=''.join(referral_rows) or '<div class="empty"><h3>Your direct-referral community will appear here</h3><p class="muted">Only people who personally join through your referral link are connected to your Earn While You Grow Community.</p></div>'
 
     active_n=summary['active_count']
@@ -5375,6 +5366,10 @@ def earn_while_you_grow():
         <b>Current recurring commission:</b> ${summary['recurring']:.2f}/month</p>'''
     else:
         recurring_breakdown='<p><b>Current recurring commission:</b> $0.00/month</p>'
+
+    professional_access=bool(u['business_dev_paid'] or u['is_admin'])
+    professional_url=url_for('business_journal_workspace') if professional_access else url_for('payment_info',product='business-development',next=url_for('business_plan'))
+    professional_label='Open Professional Business Development' if professional_access else 'Upgrade to Professional Business Development — $10.99/mo'
 
     content=f'''<div class="hero paid"><span class="badge gold">🌱 EARN WHILE YOU GROW</span>
     <h1>Share The Seasons Within. Grow Your Community.</h1>
@@ -5393,13 +5388,11 @@ def earn_while_you_grow():
     <div class="grid">
       <article class="card paid"><small>ACTIVE DIRECT REFERRALS</small><h1>{summary['active_count']}</h1><p class="muted">Currently qualifying for recurring commission.</p></article>
       <article class="card paid"><small>CURRENT RECURRING COMMISSION</small><h1>${summary['recurring']:.2f}/mo</h1><p class="muted">Based on current active qualifying memberships.</p></article>
-      <article class="card paid"><small>QUALIFYING BUSINESS PLAN BONUSES</small><h1>${summary['plan_bonus']:.2f}</h1><p class="muted">{summary['qualifying_plan_count']} qualifying direct referral(s) currently show a Professional Business Plan purchase.</p></article>
       <article class="card"><small>INACTIVE FOR COMMISSION</small><h1>{summary['inactive_count']}</h1><p class="muted">Still part of your referral history, but not currently generating recurring commission.</p></article>
     </div>
 
     <article class="card"><span class="badge">YOUR COMMISSION BREAKDOWN</span><h2>How the current amount is calculated</h2>
     {recurring_breakdown}
-    <p><b>Professional Business Plan:</b> qualifying direct-referral purchase = $10 one-time bonus.</p>
     <p class="muted small">Amounts shown here are program calculations based on current qualifying account status. They are not guaranteed earnings or a promise of future income. Payout processing must be connected to an approved payment system before funds are distributed.</p></article>
 
     <article class="card"><span class="badge">COMMISSION EXAMPLES</span><h2>How the formula scales</h2>
@@ -5416,10 +5409,12 @@ def earn_while_you_grow():
     <div class="topspace"><span class="badge heart">MY EARN WHILE YOU GROW COMMUNITY</span><h2>My Direct Referrals</h2></div>
     {community_html}
 
-    <article class="card"><span class="badge">UPGRADED MEMBER WORKSPACE</span><h2>Your business plan is only the beginning.</h2>
-    <p class="muted">The $79.99 Professional Business Plan gives you a roadmap. The $10.99/month upgraded membership keeps The Seasons Within working with you as you grow.</p>
-    <p>Use <b>My Business Journal</b> to continue developing goals, services, pricing, target customers, marketing strategies, milestones, monthly revenue goals, expenses, ideas and action steps. You do not need to own a business to use Earn While You Grow.</p>
-    <div class="actions"><a class="out" href="{url_for('journal',category='Business')}">Open My Business Journal</a><a class="out" href="{url_for('business_dashboard')}">My Business Dashboard</a></div></article>'''
+    <article class="card"><span class="badge">FREE BUSINESS PLAN + PROFESSIONAL BUSINESS DEVELOPMENT</span><h2>Your Free Business Plan Package is only the beginning.</h2>
+    <p class="muted">The Seasons Within provides a <b>Free Business Plan Package</b> to help members create their business foundation and roadmap.</p>
+    <p>Members who want continued professional business-development support can upgrade to <b>Professional Business Development — $10.99/month</b>.</p>
+    <p><b>Private Business Records • Certifications • Funding • Grants • Loans • Contracts • Proposals • Business Development Resources</b></p>
+    <p>You do not need to own a business to use Earn While You Grow.</p>
+    <div class="actions"><a class="btn" href="{professional_url}">{professional_label}</a><a class="out" href="{url_for('business_dashboard')}">Open My Business Journal</a><a class="out" href="{url_for('business_dashboard')}">My Business Dashboard</a></div></article>'''
     return page('Earn While You Grow',content,'membership')
 
 
