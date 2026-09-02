@@ -1409,6 +1409,23 @@ def business_development_required(fn):
     return wrapper
 
 
+@app.before_request
+def professional_business_development_access():
+    """Protect only the existing advanced Business Development workspace/tools."""
+    advanced_business_path=(request.path=='/business-journal' or request.path.startswith('/business-development/'))
+    if not advanced_business_path:
+        return None
+    user=current_user()
+    if not user:
+        session.pop('user_id',None)
+        flash('Please log in to continue.','info')
+        return redirect(url_for('login',next=request.path))
+    if not bool(user['business_dev_paid'] or user['is_admin']):
+        flash('Professional Business Development is available with the $10.99/month upgrade.','info')
+        return redirect(url_for('payment_info',product='business-development',next=url_for('business_plan')))
+    return None
+
+
 @app.route('/admin/account-storage-status')
 @login_required
 def account_storage_status():
@@ -5458,10 +5475,10 @@ def home():
         businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
     other=regular_business_cards(businesses)
 
-    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
+    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
-    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><a class="btn" href="{url_for('business_plan')}">Free Business Plan Package</a></article></div>'''
+    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article></div>'''
     return page('Home',content,'home')
 
 @app.route('/join', methods=['GET','POST'])
@@ -9234,7 +9251,7 @@ def business_book(business_id,calendar_id):
 @login_required
 def business_dashboard():
     u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); plan=conn.execute("SELECT id FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); intake=conn.execute('SELECT user_id FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); unread=conn.execute('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']; conn.close()
-    if b and (plan or intake): return redirect(url_for('business_plan'))
+    if b or plan or intake: return redirect(url_for('business_plan'))
     if not b:
         return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business Dashboard</h1><p class="muted">You do not have a Hosted Business App. You can create a free Hosted Business App or begin your Free Business Plan Package without hosting a business.</p></div><div class="grid"><article class="card paid"><span class="badge gold">FREE HOSTED BUSINESS APP</span><h2>Do you host a business?</h2><p class="muted">Create your Hosted Business App to unlock your Business Journal, Inbox, Calendar and bookings.</p><a class="btn" href="{url_for('business_builder',step=1)}">Create My FREE Hosted App</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>Free Business Plan Package</h2><p class="muted">Create a professional Business Plan, Marketing Strategy and 90-Day Launch Plan without creating or hosting a business app.</p><a class="btn" href="{url_for('business_plan')}">Free Business Plan Package</a></article></div>''','community')
     logo=business_media_src(b['logo_name'])
@@ -11144,12 +11161,15 @@ def _business_journal_saved_records(user_id):
 @business_development_required
 def business_plan():
     u=current_user(); conn=db(); row=conn.execute("SELECT * FROM business_plans WHERE user_id=? AND status='Generated' AND document_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close()
-    workspace_links=f'''<div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{url_for('business_journal_workspace')}">Business Development<br><small>Private records • certifications • funding • proposals</small></a></div>'''
-    professional_upgrade=('' if bool(u['business_dev_paid'] or u['is_admin']) else f'''<a class="btn" href="{url_for('payment_info',product='business-development')}">Upgrade — $10.99/mo</a>''')
+    professional_access=bool(u['business_dev_paid'] or u['is_admin'])
+    professional_url=url_for('business_journal_workspace') if professional_access else url_for('payment_info',product='business-development',next=url_for('business_plan'))
+    professional_label='Business Development' if professional_access else 'Professional Business Development — Upgrade $10.99/mo'
+    professional_note='Private records • certifications • funding • proposals' if professional_access else 'Unlock the advanced tools inside this existing workspace'
+    workspace_links=f'''<div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
     if not row:
-        content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Business Development Workspace</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a>{professional_upgrade}</div></div>{workspace_links}'''
+        content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Business Development Workspace</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a></div></div>{workspace_links}'''
     else:
-        content=f'''<div class="hero"><span class="badge">MY BUSINESS JOURNAL • PLAN VERSION {row['version']}</span><h1>Business Development Workspace</h1><p class="muted">Review the complete generated plan in document view, download the PDF, or update your questionnaire to create another saved version.</p><div class="actions"><a class="btn" href="{url_for('business_plan_document',plan_id=row['id'])}">View Document</a><a class="out" href="{url_for('business_plan_pdf',plan_id=row['id'])}">Download PDF</a><a class="out" href="{url_for('startup')}">Update Questionnaire</a>{professional_upgrade}</div></div>{workspace_links}'''
+        content=f'''<div class="hero"><span class="badge">MY BUSINESS JOURNAL • PLAN VERSION {row['version']}</span><h1>Business Development Workspace</h1><p class="muted">Review the complete generated plan in document view, download the PDF, or update your questionnaire to create another saved version.</p><div class="actions"><a class="btn" href="{url_for('business_plan_document',plan_id=row['id'])}">View Document</a><a class="out" href="{url_for('business_plan_pdf',plan_id=row['id'])}">Download PDF</a><a class="out" href="{url_for('startup')}">Update Questionnaire</a></div></div>{workspace_links}'''
     return page('My Business Journal',content+_business_journal_saved_records(u['id']),'business')
 
 @app.route('/business-plan/versions')
@@ -11375,7 +11395,9 @@ def payment_info(product):
     if product=='conscious-coordination':
         extra=f'''<article class="card"><h2>Included with Full Conscious Coordination</h2><p>Full individualized Conscious Coordination reports • deeper member compatibility • full descriptions for another member’s coordination categories • Earn While You Grow direct-referral tools.</p><p class="muted">A business account is not required. The free Hosted Business App remains separate from this monthly upgrade.</p><a class="out" href="{url_for('earn_while_you_grow')}">See How Earn While You Grow Works</a></article>'''
     else:
-        extra='''<article class="card"><h2>Professional Business Development</h2><p class="muted">Advanced business-development access includes grants, loans, contracts, funding opportunities and advanced business-development resources. The Free Business Plan Package remains free.</p></article>'''
+        return_url=request.args.get('next') or url_for('business_plan')
+        if not return_url.startswith('/') or return_url.startswith('//'): return_url=url_for('business_plan')
+        extra=f'''<article class="card"><h2>Professional Business Development</h2><p class="muted">Advanced business-development access includes grants, loans, contracts, funding opportunities and advanced business-development resources. The Free Business Plan Package remains free.</p><a class="out" href="{html.escape(return_url,quote=True)}">Return to Business Development Workspace</a></article>'''
     return page('Payment Setup',f'''<div class="hero paid"><span class="badge gold">PAYMENT INTEGRATION</span><h1>{name}</h1><h2>{price}</h2><p class="muted">Paid access must only be granted after a verified payment-provider webhook confirms the purchase. This build does not simulate paid access.</p></div>{extra}''','membership')
 
 @app.route('/health')
