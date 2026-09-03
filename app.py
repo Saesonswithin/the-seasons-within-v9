@@ -1841,16 +1841,25 @@ def _module_order(b):
     return [x for x in chosen if x in known]+[x for x in known if x not in chosen]
 
 def _plan_prefill_for_user(user_id):
-    conn=db(); row=conn.execute('SELECT payload FROM business_plan_intake WHERE user_id=?',(user_id,)).fetchone(); conn.close()
-    if not row: return {}
-    payload=_safe_json(row['payload'])
+    payload=_business_plan_answers(user_id)
+    if not payload: return {}
     aliases={
-        'name':['business_name','business name','name'], 'category':['industry','industry_sector','industry / sector'],
-        'owner_title':['type_of_business','business_type','type of business'],
-        'description':['business_description','mission_statement','mission statement'],
-        'story':['business_story','additional_information'], 'offers':['products_services','products/services','unique_selling_proposition'],
-        'location':['location','service_area','state'], 'contact_email':['email'], 'contact_phone':['phone'],
-        'website':['website'], 'tagline':['tagline','unique_selling_proposition']
+        'name':['business_name','business name'],
+        'category':['industry','industry_sector','industry / sector','business_category'],
+        'owner_title':['owner_title','type_of_business','business_type','type of business'],
+        'description':['business_description','business_summary','marketing_description','mission','mission_statement','mission statement'],
+        'story':['business_story','founder_story','purpose','additional_info','additional_information'],
+        'offers':['products_services','products_and_services','products/services','services','products','revenue_sources'],
+        'features':['app_features','hosted_app_features'],
+        'location':['business_location','location','service_area'],
+        'contact_email':['business_email','contact_email','email'],
+        'contact_phone':['business_phone','contact_phone','phone'],
+        'website':['website','business_website'],
+        'tagline':['tagline','usp','unique_selling_proposition'],
+        'retreat_service_area':['service_area','business_location','location'],
+        'retreat_delivery_mode':['delivery_mode','online_or_in_person','online_in_person'],
+        'retreat_price_range':['pricing_information','pricing','price_range'],
+        'retreat_availability':['hours_or_availability','hours','availability'],
     }
     normalized={str(k).strip().lower().replace('-','_'):v for k,v in payload.items()}
     result={}
@@ -1858,7 +1867,12 @@ def _plan_prefill_for_user(user_id):
         for name in names:
             key=name.strip().lower().replace('-','_')
             value=normalized.get(key)
-            if value not in (None,'',[]): result[target]=str(value); break
+            if value not in (None,'',[]):
+                result[target]=', '.join(str(x) for x in value) if isinstance(value,list) else str(value)
+                break
+    if not result.get('location'):
+        city=str(normalized.get('city') or '').strip(); state=str(normalized.get('state') or normalized.get('business_state') or '').strip()
+        if city or state: result['location']=', '.join(x for x in (city,state) if x)
     return result
 
 @app.route('/business-media/<path:filename>')
@@ -8747,10 +8761,12 @@ def business_builder(step):
         draft['enabled_modules']=(existing_business['enabled_modules'] if 'enabled_modules' in existing_business.keys() else '') or 'home,about,contact,booking'
         draft['section_order']=(existing_business['section_order'] if 'section_order' in existing_business.keys() else '') or ''
         _save_account_draft(u['id'],'hosted_business_builder',draft)
-    elif not draft:
+    elif not draft.get('_plan_prefill_checked'):
         plan_prefill=_plan_prefill_for_user(u['id'])
         if plan_prefill:
-            draft.update(plan_prefill); draft['_plan_prefill_available']='1'; _save_account_draft(u['id'],'hosted_business_builder',draft)
+            for key,value in plan_prefill.items():
+                if not str(draft.get(key,'') or '').strip(): draft[key]=value
+            draft['_plan_prefill_available']='1'; draft['_plan_prefill_checked']='1'; _save_account_draft(u['id'],'hosted_business_builder',draft)
     fields={1:['name','owner_title','category','location'],2:['description','story','tagline'],3:['offers'],4:['features','retreat_service_area','retreat_delivery_mode','retreat_travel_radius','retreat_price_range','retreat_group_size','retreat_availability','retreat_accessibility','retreat_booking_requirements'],6:['website','instagram','tiktok','youtube','facebook','booking_url','store_url','podcast_url','affiliate_links','contact_email','contact_phone']}
     if request.method=='POST':
         for k in fields.get(step,[]): draft[k]=request.form.get(k,'').strip()
