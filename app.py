@@ -5473,7 +5473,7 @@ def home():
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
-    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="{url_for('retreat_builder')}">Build My Retreat</a></article></div>'''
+    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="https://docs.google.com/forms/d/e/1FAIpQLSeVnIgf2nKh6vCqK9jtLg9AXff1A2CoSdhdvNP85oGO8d9PNQ/viewform?usp=header">Build My Retreat</a></article></div>'''
     return page('Home',content,'home')
 
 @app.route('/join', methods=['GET','POST'])
