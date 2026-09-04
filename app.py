@@ -1674,6 +1674,8 @@ def community_media_html(post):
     src = url_for('community_media', filename=name)
     if kind == 'video':
         return f'<video class="media" controls preload="metadata" style="width:100%;max-height:520px"><source src="{src}"></video>'
+    if 'source_gallery_media_id' in post.keys() and post['source_gallery_media_id']:
+        return f'<img src="{src}" alt="Public Journal photo" style="display:block;width:auto;max-width:100%;height:auto;max-height:none;object-fit:contain;margin:14px auto;border-radius:16px">'
     return f'<img class="media" src="{src}" alt="Community post media" style="width:100%;max-height:520px;object-fit:cover">'
 
 
@@ -1696,11 +1698,12 @@ def public_journal_cards(member_id, viewer_id=None):
     cards=[]
     for g in gifts:
         remove=(f'''<form method="post" action="{url_for('unshare_virtual_gift',gift_id=g['id'])}" style="display:inline"><button class="out danger" type="submit">Remove from Public Journal</button></form>''' if viewer_id==member_id else '')
+        private_entry=(f'''<a class="out" href="{url_for('message_member',recipient_id=member_id,origin='Public Gift',gift_id=g['id'])}">Send Private Entry</a>''' if viewer_id and viewer_id!=member_id else '')
         sender=(f'''<p class="muted">Gift from {html.escape(g['sender_name'])}</p>''' if ('public_show_sender' in g.keys() and g['public_show_sender']) else '')
         caption=html.escape(g['journal_caption'] or '').replace(chr(10),'<br>') if 'journal_caption' in g.keys() else ''
-        cards.append(f'''<article class="card"><span class="badge heart">GIFT SHARED BY THIS MEMBER</span><h3>{g['emoji']} {html.escape(g['label'])}</h3>{sender}<p>{caption}</p><p class="muted small">Shared {g['public_shared_at']}</p><div class="actions">{remove}</div></article>''')
+        cards.append(f'''<article class="card"><span class="badge heart">GIFT SHARED BY THIS MEMBER</span><h3>{g['emoji']} {html.escape(g['label'])}</h3>{sender}<p>{caption}</p><p class="muted small">Shared {g['public_shared_at']}</p><div class="actions">{private_entry}{remove}</div></article>''')
     for p in posts:
-        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>' if viewer_id else ''
+        message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Private Journal Entry</a>' if viewer_id and viewer_id!=p['user_id'] else ''
         if viewer_id == p['user_id']:
             controls=message+f'<a class="out" href="{url_for("community_post_edit",post_id=p["id"])}">Edit Post</a><form method="post" action="{url_for("community_post_delete",post_id=p["id"])}" style="display:inline"><button class="out danger" type="submit">Delete Post</button></form>'
         else:
@@ -6249,6 +6252,7 @@ def member_gallery(user_id):
                           JOIN users u ON u.id=g.sender_id
                           LEFT JOIN coordination_media sm ON sm.id=(SELECT MAX(cm.id) FROM coordination_media cm WHERE cm.user_id=g.sender_id AND cm.media_role='profile' AND cm.media_type='image')
                           WHERE g.recipient_id=? ORDER BY g.id DESC LIMIT 50''',(user_id,)).fetchall() if owner else []
+    sent_gifts=conn.execute('''SELECT g.*,t.label,t.emoji,u.name recipient_name FROM member_virtual_gifts g JOIN virtual_gift_types t ON t.id=g.gift_type_id JOIN users u ON u.id=g.recipient_id WHERE g.sender_id=? ORDER BY g.id DESC LIMIT 50''',(user_id,)).fetchall() if owner else []
     gift_types=conn.execute('SELECT * FROM virtual_gift_types WHERE active=1 ORDER BY sort_order,id').fetchall(); conn.close()
     edit_id=request.args.get('edit',type=int)
     cards=''.join(f'<div id="media-{m["id"]}">{_member_media_card(m,owner,edit_id==m["id"])}</div>' for m in media) or '<div class="empty"><h3>No gallery media yet</h3></div>'
@@ -6265,14 +6269,20 @@ def member_gallery(user_id):
             else:
                 share_action=f'''<a class="btn" href="{url_for('share_virtual_gift',gift_id=g['id'])}">Share to My Public Journal</a>'''
                 visibility='Private — only you can see this received gift'
-            received_cards.append(f'''<article class="card"><div class="post">{avatar}<div><h3>{g['emoji']} {html.escape(g['label'])}</h3><p class="muted">From {html.escape(g['sender_name'])}</p>{gift_message}<p class="muted small">{visibility}</p><div class="actions">{share_action}</div><form method="post" action="{url_for('thank_virtual_gift',gift_id=g['id'])}"><label><b>Send Thank You</b></label><textarea class="input" name="thank_you_message" maxlength="500" placeholder="Write your own thank-you message..." required>{html.escape(g['thank_you_message'] or '')}</textarea><button class="out" type="submit">Send Thank You</button></form></div></div></article>''')
+            if g['thank_you_message']:
+                thank_you=f'''<div class="fact"><small>THANK YOU SENT</small><p>{html.escape(g['thank_you_message']).replace(chr(10),'<br>')}</p><div class="actions"><a class="out" href="{url_for('edit_gift_thank_you',gift_id=g['id'])}">Edit</a><form method="post" action="{url_for('delete_gift_thank_you',gift_id=g['id'])}"><button class="out danger" type="submit">Delete</button></form></div></div>'''
+            else:
+                thank_you=f'''<form method="post" action="{url_for('thank_virtual_gift',gift_id=g['id'])}"><label><b>Send Thank You</b></label><textarea class="input" name="thank_you_message" maxlength="500" placeholder="Write your own thank-you message..." required></textarea><button class="out" type="submit">Send Thank You</button></form>'''
+            received_cards.append(f'''<article class="card"><div class="post">{avatar}<div><h3>{g['emoji']} {html.escape(g['label'])}</h3><p class="muted">From {html.escape(g['sender_name'])}</p>{gift_message}<p class="muted small">{visibility}</p><div class="actions">{share_action}</div>{thank_you}</div></div></article>''')
         received=''.join(received_cards) or '<div class="empty"><h3>No gifts received yet</h3></div>'
-        gift_area=f'<div class="topspace"><span class="badge">GIFTS RECEIVED</span><div class="grid">{received}</div></div>'
+        sent=''.join(f'''<article class="card"><h3>{g['emoji']} Gift Sent: {html.escape(g['label'])}</h3><p class="muted">Received by: {html.escape(g['recipient_name'])}</p>{(f'<div class="fact"><small>THANK YOU RECEIVED</small><p>{html.escape(g["thank_you_message"]).replace(chr(10),"<br>")}</p></div>' if g['thank_you_message'] else '<p class="muted small">No thank-you received yet.</p>')}</article>''' for g in sent_gifts) or '<div class="empty"><h3>No gifts sent yet</h3></div>'
+        gift_area=f'''<div id="my-gifts"><div class="topspace"><span class="badge">GIFTS RECEIVED</span></div><div class="grid">{received}</div><div class="topspace"><span class="badge">GIFTS SENT</span></div><div class="grid">{sent}</div></div>'''
     else:
         buttons=''.join(f'<button class="out" name="gift_code" value="{html.escape(t["code"],quote=True)}" type="submit">{t["emoji"]} {html.escape(t["label"])}</button>' for t in gift_types)
         gift_area=f'''<article class="card"><h2>Send a Gift</h2><form method="post" action="{url_for('send_virtual_gift',user_id=user_id)}"><label><b>Add a message with your gift</b> <span class="muted small">(optional)</span></label><textarea class="input" name="gift_message" maxlength="500" placeholder="Write a short personal message..."></textarea><div class="actions">{buttons}</div></form></article>'''
     script='''<style>.member-crop-preview,.touch-crop-stage{position:relative;overflow:hidden;border-radius:22px;background:#f6eef9;aspect-ratio:1/1}.member-crop-preview img,.touch-crop-stage img{width:100%;height:100%;object-fit:cover;touch-action:none}.touch-crop-stage{max-width:420px;margin:12px auto;border-radius:50%}</style><script>document.querySelectorAll('.touch-crop-form').forEach(function(f){const s=f.querySelector('.touch-crop-stage'),img=s.querySelector('img'),x=f.querySelector('[name=crop_x]'),y=f.querySelector('[name=crop_y]'),z=f.querySelector('[name=crop_zoom]');let down=false,lastX=0,lastY=0;function draw(){img.style.objectPosition=x.value+'% '+y.value+'%';img.style.transform='scale('+z.value+')'}s.addEventListener('pointerdown',e=>{down=true;lastX=e.clientX;lastY=e.clientY;s.setPointerCapture(e.pointerId)});s.addEventListener('pointermove',e=>{if(!down)return;x.value=Math.max(0,Math.min(100,+x.value-(e.clientX-lastX)/s.clientWidth*100));y.value=Math.max(0,Math.min(100,+y.value-(e.clientY-lastY)/s.clientHeight*100));lastX=e.clientX;lastY=e.clientY;draw()});s.addEventListener('pointerup',()=>down=false);z.addEventListener('input',draw);draw()})</script>'''
-    content=f'''<div class="hero"><span class="badge">PICTURE GALLERY</span><h1>{html.escape(member['name'])}</h1><p class="muted">{'Upload, crop, preview, replace or delete your profile media.' if owner else 'Photos, profile video and virtual gifts.'}</p></div>{manage}<div class="grid">{cards}</div>{gift_area}{script}'''
+    gifts_shortcut=(f'''<div class="actions"><a class="btn" href="#my-gifts">My Gifts</a></div>''' if owner else '')
+    content=f'''<div class="hero"><span class="badge">PICTURE GALLERY</span><h1>{html.escape(member['name'])}</h1><p class="muted">{'Upload, crop, preview, replace or delete your profile media.' if owner else 'Photos, profile video and virtual gifts.'}</p>{gifts_shortcut}</div>{manage}<div class="grid">{cards}</div>{gift_area}{script}'''
     return page('Picture Gallery',content,'profile')
 
 @app.route('/profile/media/<int:media_id>/crop',methods=['POST'])
@@ -6392,12 +6402,38 @@ def thank_virtual_gift(gift_id):
     gift=conn.execute('''SELECT g.*,t.label,t.emoji FROM member_virtual_gifts g JOIN virtual_gift_types t ON t.id=g.gift_type_id WHERE g.id=? AND g.recipient_id=?''',(gift_id,me['id'])).fetchone()
     if not gift: conn.close(); abort(404)
     if not message: conn.close(); flash('Write your thank-you message before sending.','info'); return redirect(url_for('member_gallery',user_id=me['id']))
+    if gift['thank_you_message']:
+        conn.close(); return redirect(url_for('edit_gift_thank_you',gift_id=gift_id))
     subject=f'''Thank You for the {gift['label']}'''
     cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,gift_id,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,NULL)''',(me['id'],gift['sender_id'],'Gift Thank You',subject,message,'Journal Entry',gift_id,now()))
     conn.execute('UPDATE member_virtual_gifts SET thank_you_message=? WHERE id=? AND recipient_id=?',(message,gift_id,me['id']))
     message_id=cur.lastrowid; conn.commit(); conn.close()
     notify(gift['sender_id'],'Gift Thank You',f'''{me['name']} sent you a thank-you for {gift['emoji']} {gift['label']}.''',url_for('inbox_read',message_id=message_id))
     flash('Your thank-you was sent privately to the gift sender.','success'); return redirect(url_for('member_gallery',user_id=me['id']))
+
+@app.route('/gifts/<int:gift_id>/thank/edit',methods=['GET','POST'])
+@login_required
+def edit_gift_thank_you(gift_id):
+    me=current_user(); conn=db(); gift=conn.execute('''SELECT g.*,t.label,t.emoji FROM member_virtual_gifts g JOIN virtual_gift_types t ON t.id=g.gift_type_id WHERE g.id=? AND g.recipient_id=?''',(gift_id,me['id'])).fetchone()
+    if not gift or not gift['thank_you_message']: conn.close(); abort(404)
+    if request.method=='POST':
+        message=request.form.get('thank_you_message','').strip()[:500]
+        if message:
+            conn.execute('UPDATE member_virtual_gifts SET thank_you_message=? WHERE id=? AND recipient_id=?',(message,gift_id,me['id']))
+            conn.execute("UPDATE messages SET body=? WHERE id=(SELECT id FROM messages WHERE gift_id=? AND sender_id=? AND origin='Gift Thank You' ORDER BY id DESC LIMIT 1)",(message,gift_id,me['id']))
+            conn.commit(); conn.close(); flash('Thank-you message updated.','success'); return redirect(url_for('member_gallery',user_id=me['id'])+'#my-gifts')
+        flash('The thank-you message cannot be blank. Use Delete if you want to remove it.','info')
+    conn.close()
+    return page('Edit Thank You',f'''<div class="hero"><span class="badge heart">GIFT THANK YOU</span><h1>Edit Thank You</h1><p class="muted">{gift['emoji']} {html.escape(gift['label'])}</p></div><form class="card" method="post"><textarea class="input" name="thank_you_message" maxlength="500" required>{html.escape(gift['thank_you_message'])}</textarea><div class="actions"><button class="btn" type="submit">Save Thank You</button><a class="out" href="{url_for('member_gallery',user_id=me['id'])}#my-gifts">Cancel</a></div></form>''','profile')
+
+@app.route('/gifts/<int:gift_id>/thank/delete',methods=['POST'])
+@login_required
+def delete_gift_thank_you(gift_id):
+    me=current_user(); conn=db(); gift=conn.execute('SELECT id FROM member_virtual_gifts WHERE id=? AND recipient_id=?',(gift_id,me['id'])).fetchone()
+    if not gift: conn.close(); abort(404)
+    conn.execute("DELETE FROM messages WHERE gift_id=? AND sender_id=? AND origin='Gift Thank You'",(gift_id,me['id']))
+    conn.execute("UPDATE member_virtual_gifts SET thank_you_message='' WHERE id=? AND recipient_id=?",(gift_id,me['id']))
+    conn.commit(); conn.close(); flash('Thank-you message deleted.','success'); return redirect(url_for('member_gallery',user_id=me['id'])+'#my-gifts')
 
 @app.route('/journal', methods=['GET','POST'])
 @login_required
@@ -6544,21 +6580,28 @@ def inbox_read(message_id):
 def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not r: abort(404)
-    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); subject=request.args.get('subject','')
-    post=None; category='Journal Entry'
+    origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); gift_id=request.args.get('gift_id',type=int); subject=request.args.get('subject','')
+    post=None; gift_context=None; category='Journal Entry'
     if post_id:
         conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
         if post:
             category=post['category']; subject=post['title']
+    if gift_id:
+        conn=db(); gift_context=conn.execute('''SELECT g.id,t.label,t.emoji FROM member_virtual_gifts g JOIN virtual_gift_types t ON t.id=g.gift_type_id WHERE g.id=? AND g.recipient_id=? AND g.public_shared_at IS NOT NULL''',(gift_id,recipient_id)).fetchone(); conn.close()
+        if not gift_context: abort(404)
+        subject=subject or f'''Public Gift — {gift_context['label']}'''
     show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
-        body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int)
+        body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int); gift_id=request.form.get('gift_id',type=int)
         category=post['category'] if post else ('Conscious Coordination' if origin=='Conscious Coordination' else 'Journal Entry')
         subject=request.form.get('subject','').strip()
         preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
         preferred_dates=f'{preferred_start} to {preferred_end}' if preferred_start and preferred_end else (preferred_start or preferred_end)
+        if gift_id:
+            conn=db(); valid_gift=conn.execute('SELECT id FROM member_virtual_gifts WHERE id=? AND recipient_id=? AND public_shared_at IS NOT NULL',(gift_id,recipient_id)).fetchone(); conn.close()
+            if not valid_gift: abort(404)
         if body and subject:
-            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
+            conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,gift_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,gift_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
             link=url_for('inbox_read',message_id=message_id)
             notify(recipient_id,'New Private Message',f'{u["name"]} sent you “{subject}”. Open your Journal Inbox to read it.',link)
             flash(f'Message sent privately to {r["name"]}\'s Journal Inbox.','success')
@@ -6567,8 +6610,8 @@ def message_member(recipient_id):
     schedule=''
     if show_schedule:
         schedule='''<div class="grid"><div><label><b>Choose Your Preferred Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>Choose Your Preferred End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option value="">Choose a season</option><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select>'''
-    locked_note=f'<p><b>Community post:</b> {post["title"]} • {post["category"]}</p>' if post else '<p class="muted">This private message will be filed automatically under <b>Journal Entry</b> in the recipient\'s Journal Inbox.</p>'
-    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Message</h1><p class="muted">This message will be delivered privately to {r['name']}'s Journal Inbox. They will receive a new-message alert.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{origin}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{subject or ''}" placeholder="Enter your message title" required>{locked_note}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Message</button></form>''','more')
+    locked_note=(f'<p><b>Public Journal post:</b> {html.escape(post["title"])} • {html.escape(post["category"])}</p>' if post else (f'''<p><b>Public gift:</b> {gift_context['emoji']} {html.escape(gift_context['label'])}</p>''' if gift_context else '<p class="muted">This private message will be filed automatically under <b>Journal Entry</b> in the recipient\'s Journal Inbox.</p>'))
+    return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Private Journal Entry</h1><p class="muted">This entry will be delivered privately to {html.escape(r['name'])}'s Journal Inbox. It will not appear as a public comment.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{html.escape(origin,quote=True)}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><input type="hidden" name="gift_id" value="{gift_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{html.escape(subject or '',quote=True)}" placeholder="Enter your message title" required>{locked_note}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Private Entry</button></form>''','more')
 
 @app.route('/notifications')
 @login_required
@@ -6742,7 +6785,7 @@ def connections():
         photo=(f'<img src="{url_for("community_media",filename=media["file_name"])}" style="width:92px;height:92px;object-fit:cover;border-radius:50%;{_crop_css(media["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if media else f'<div class="avatar" style="width:92px;height:92px">{initials(m["name"])}</div>')
         location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
         score_html=f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else ''
-        cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'MEMBER'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Conscious Coordination')}</p>{score_html}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">Private Journal Entry</a></div></div>{photo}</div></article>''')
+        cards.append(f'''<article class="card {'paid' if m['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'MEMBER'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Conscious Coordination')}</p>{score_html}<div class="actions"><a class="btn" href="{url_for('member_profile',user_id=m['user_id'])}">View Public Journal</a></div></div>{photo}</div></article>''')
     member_cards=''.join(cards) or '<div class="empty"><h3>No matching member profiles yet</h3><p class="muted">Compatible connections will appear as participating members match your selected intentions.</p></div>'
     filters='<a class="chip" href="'+url_for('connections')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
 
