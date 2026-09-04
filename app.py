@@ -855,6 +855,9 @@ def init_db():
         cols={r["name"] for r in conn.execute("PRAGMA table_info(coordination_media)").fetchall()}
         if column not in cols:
             conn.execute(ddl)
+    gift_cols={r["name"] for r in conn.execute("PRAGMA table_info(member_virtual_gifts)").fetchall()}
+    if "public_shared_at" not in gift_cols:
+        conn.execute("ALTER TABLE member_virtual_gifts ADD COLUMN public_shared_at TEXT")
     conn.execute("UPDATE journal_entries SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE community_posts SET category='Journal Entry' WHERE category='Saved Items'")
     conn.execute("UPDATE messages SET category='Journal Entry' WHERE category='Saved Items'")
@@ -1597,6 +1600,7 @@ BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 def page(title, content, active=''):
     user=current_user()
+    content='''<style>.topin{min-height:94px}.logo{width:72px!important;height:72px!important}@media(max-width:820px){.topin{min-height:78px}.logo{width:62px!important;height:62px!important}}</style>'''+content
     if user:
         content=content+_global_autosave_script()
     return render_template_string(BASE, title=title, content=content, active=active, user=user)
@@ -1667,10 +1671,21 @@ def journal_category_for_public(category):
 
 
 def public_journal_cards(member_id, viewer_id=None):
-    conn=db(); posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.user_id=? ORDER BY p.id DESC',(member_id,)).fetchall(); conn.close()
-    if not posts:
+    conn=db()
+    posts=conn.execute('SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id WHERE p.user_id=? ORDER BY p.id DESC',(member_id,)).fetchall()
+    gifts=conn.execute('''SELECT g.*,t.label,t.emoji,u.name sender_name
+                          FROM member_virtual_gifts g
+                          JOIN virtual_gift_types t ON t.id=g.gift_type_id
+                          JOIN users u ON u.id=g.sender_id
+                          WHERE g.recipient_id=? AND g.public_shared_at IS NOT NULL
+                          ORDER BY g.public_shared_at DESC,g.id DESC''',(member_id,)).fetchall()
+    conn.close()
+    if not posts and not gifts:
         return '<div class="empty"><h3>No Public Journal entries yet</h3></div>'
     cards=[]
+    for g in gifts:
+        remove=(f'''<form method="post" action="{url_for('unshare_virtual_gift',gift_id=g['id'])}" style="display:inline"><button class="out danger" type="submit">Remove from Public Journal</button></form>''' if viewer_id==member_id else '')
+        cards.append(f'''<article class="card"><span class="badge heart">GIFT SHARED BY THIS MEMBER</span><h3>{g['emoji']} {html.escape(g['label'])}</h3><p class="muted">Gift from {html.escape(g['sender_name'])}</p><p class="muted small">Shared {g['public_shared_at']}</p><div class="actions">{remove}</div></article>''')
     for p in posts:
         message=f'<a class="out" href="{url_for("message_member",recipient_id=p["user_id"],origin="Community",post_id=p["id"])}">Send Message</a>' if viewer_id else ''
         if viewer_id == p['user_id']:
@@ -5936,7 +5951,7 @@ def profile():
         except Exception: app.logger.exception('Could not sync profile city to My Journal')
     member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if (u['conscious_paid'] or u['is_admin']) else 'FREE MEMBER'
     business_profile_action=(f'''<a class="out small" style="margin-top:10px" href="{url_for('business_app',business_id=published_business['id'])}">View Business App</a>''' if published_business else f'''<a class="out small" style="margin-top:10px" href="{url_for('business_builder',step=1)}">Host Your Business App</a>''')
-    header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p></div><div style="text-align:center"><div class="portrait"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;object-fit:contain;border-radius:50%"></div><a class="out small" style="margin-top:10px" href="{url_for('member_gallery',user_id=u['id'])}">Picture Gallery</a>{business_profile_action}</div></div></article>'''
+    header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p></div><div style="text-align:center"><div class="portrait" style="width:150px;height:150px"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;object-fit:contain;border-radius:50%"></div><a class="out small" style="margin-top:10px" href="{url_for('member_gallery',user_id=u['id'])}">Picture Gallery</a>{business_profile_action}</div></div></article>'''
     shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     if not ready:
         content=header+shortcuts+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article>'''
@@ -6220,7 +6235,7 @@ def member_gallery(user_id):
     manage=''
     if owner:
         manage=f'''<div class="grid"><form class="card" method="post" enctype="multipart/form-data"><h3>Main Profile Photo</h3><input type="hidden" name="kind" value="profile"><input class="input" type="file" name="media" accept="image/jpeg,image/png,image/webp" required><button class="btn">Upload / Replace</button></form><form class="card" method="post" enctype="multipart/form-data"><h3>Picture Gallery</h3><p class="muted">Up to 10 photos.</p><input type="hidden" name="kind" value="gallery"><input class="input" type="file" name="media" accept="image/jpeg,image/png,image/webp" required><button class="btn">+ Add Photo</button></form><form class="card" method="post" enctype="multipart/form-data"><h3>Profile Video</h3><p class="muted">One video, maximum 15 seconds.</p><input type="hidden" name="kind" value="video"><input class="input" type="file" name="media" accept="video/mp4,video/quicktime,video/webm" required><button class="btn">Upload Video</button></form></div>'''
-        received=''.join(f'<article class="card"><h3>{g["emoji"]} {html.escape(g["label"])}</h3><p class="muted">From {html.escape(g["sender_name"])}</p></article>' for g in gifts) or '<div class="empty"><h3>No gifts received yet</h3></div>'
+        received=''.join(f'''<article class="card"><h3>{g["emoji"]} {html.escape(g["label"])}</h3><p class="muted">From {html.escape(g["sender_name"])}</p><p class="muted small">{'Visible on your Public Journal' if ('public_shared_at' in g.keys() and g['public_shared_at']) else 'Private — only you can see this received gift'}</p><div class="actions"><form method="post" action="{url_for('unshare_virtual_gift' if ('public_shared_at' in g.keys() and g['public_shared_at']) else 'share_virtual_gift',gift_id=g['id'])}"><button class="{'out danger' if ('public_shared_at' in g.keys() and g['public_shared_at']) else 'btn'}" type="submit">{'Remove from Public Journal' if ('public_shared_at' in g.keys() and g['public_shared_at']) else 'Share to My Public Journal'}</button></form></div></article>''' for g in gifts) or '<div class="empty"><h3>No gifts received yet</h3></div>'
         gift_area=f'<div class="topspace"><span class="badge">GIFTS RECEIVED</span><div class="grid">{received}</div></div>'
     else:
         buttons=''.join(f'<button class="out" name="gift_code" value="{html.escape(t["code"],quote=True)}" type="submit">{t["emoji"]} {html.escape(t["label"])}</button>' for t in gift_types)
@@ -6295,6 +6310,26 @@ def send_virtual_gift(user_id):
     conn.execute('INSERT INTO member_virtual_gifts(sender_id,recipient_id,gift_type_id,created_at) VALUES(?,?,?,?)',(me['id'],user_id,gift['id'],now())); conn.commit(); conn.close()
     notify(user_id,'You received a virtual gift',f'{me["name"]} sent you {gift["emoji"]} {gift["label"]}.',url_for('member_gallery',user_id=user_id))
     flash('Gift sent.','success'); return redirect(url_for('member_gallery',user_id=user_id))
+
+@app.route('/gifts/<int:gift_id>/share',methods=['POST'])
+@login_required
+def share_virtual_gift(gift_id):
+    me=current_user(); conn=db()
+    gift=conn.execute('SELECT id FROM member_virtual_gifts WHERE id=? AND recipient_id=?',(gift_id,me['id'])).fetchone()
+    if not gift: conn.close(); abort(404)
+    conn.execute('UPDATE member_virtual_gifts SET public_shared_at=? WHERE id=? AND recipient_id=?',(now(),gift_id,me['id']))
+    conn.commit(); conn.close(); flash('Gift shared to your Public Journal.','success')
+    return redirect(url_for('member_gallery',user_id=me['id']))
+
+@app.route('/gifts/<int:gift_id>/unshare',methods=['POST'])
+@login_required
+def unshare_virtual_gift(gift_id):
+    me=current_user(); conn=db()
+    gift=conn.execute('SELECT id FROM member_virtual_gifts WHERE id=? AND recipient_id=?',(gift_id,me['id'])).fetchone()
+    if not gift: conn.close(); abort(404)
+    conn.execute('UPDATE member_virtual_gifts SET public_shared_at=NULL WHERE id=? AND recipient_id=?',(gift_id,me['id']))
+    conn.commit(); conn.close(); flash('Gift removed from your Public Journal. The received gift remains saved privately.','success')
+    return redirect(request.referrer or url_for('member_gallery',user_id=me['id']))
 
 @app.route('/journal', methods=['GET','POST'])
 @login_required
@@ -6390,10 +6425,22 @@ def inbox():
     u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int)
     conn=db()
     unread=conn.execute('SELECT COUNT(*) n FROM messages WHERE recipient_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']
-    msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall(); conn.close()
+    msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall()
+    sender_ids=sorted({m['sender_id'] for m in msgs})
+    sender_photos={}
+    if sender_ids:
+        placeholders=','.join('?' for _ in sender_ids)
+        rows=conn.execute(f'''SELECT user_id,file_name,crop_data FROM coordination_media
+                              WHERE media_role='profile' AND media_type='image' AND user_id IN ({placeholders})
+                              ORDER BY id DESC''',sender_ids).fetchall()
+        for row in rows:
+            sender_photos.setdefault(row['user_id'],row)
+    conn.close()
     if category!='All' and category in JOURNAL_CATEGORIES: msgs=[m for m in msgs if m['category']==category]
     cards=[]
     for m in msgs:
+        photo=sender_photos.get(m['sender_id'])
+        sender_avatar=(f'''<img class="avatar" src="{url_for('community_media',filename=photo['file_name'])}" alt="{html.escape(m['sender_name'],quote=True)}" style="object-fit:cover;{_crop_css(photo['crop_data'])}">''' if photo else f'''<div class="avatar" aria-label="{html.escape(m['sender_name'],quote=True)}">{initials(m['sender_name'])}</div>''')
         reply=f'<a class="out" href="{url_for("message_member",recipient_id=m["sender_id"],origin="Reply",subject=m["subject"],post_id=m["source_post_id"] if m["source_post_id"] else None)}">Reply</a>' if m['recipient_id']==u['id'] else ''
         dates=f'<p><b>Preferred Dates:</b> {m["preferred_dates"]}</p>' if 'preferred_dates' in m.keys() and m['preferred_dates'] else ''
         season=f'<p><b>Season:</b> {m["season"]}</p>' if 'season' in m.keys() and m['season'] else ''
@@ -6401,7 +6448,7 @@ def inbox():
         unread_badge='<span class="badge gold">NEW</span>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         coordination_profile_action=f'<a class="out" href="{url_for("connection_profile",user_id=m["sender_id"])}">View Coordination Profile</a>' if m['category']=='Conscious Coordination' and m['sender_id']!=u['id'] else ''
-        cards.append(f'<article class="card"{anchor}{highlight}>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {m["sender_name"]} to {m["recipient_name"]} • {m["origin"]} • {m["created_at"]}</p>{dates}{season}<p>{m["body"]}</p><div class="actions">{open_action}{coordination_profile_action}{reply}</div></article>')
+        cards.append(f'''<article class="card"{anchor}{highlight}><div class="post">{sender_avatar}<div>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {html.escape(m["sender_name"])} to {html.escape(m["recipient_name"])} • {html.escape(m["origin"])} • {m["created_at"]}</p>{dates}{season}<p>{html.escape(m["body"]).replace(chr(10),'<br>')}</p><div class="actions">{open_action}{coordination_profile_action}{reply}</div></div></div></article>''')
     html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
