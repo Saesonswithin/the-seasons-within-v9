@@ -7023,23 +7023,29 @@ def _natal_positions_html(chart, owner_name='Member', profile=None):
         selected=[third_person(insights.get(key)) for key in insight_keys.get(name,()) if insights.get(key) and any(str(profile.get(field) or '').strip() for field in insight_sources.get(key,()))]
         if not selected: return 'This placement can be considered alongside the personal patterns this member chose to share, without treating either source as a diagnosis or proof of personality.'
         return ' Reflectively, this may be considered alongside the member’s self-reported profile: '+selected[0]
+    chart_aspects=[a for a in (chart.get('aspects') or []) if a.get('planet_a') and a.get('planet_b') and a.get('aspect')]
+    def aspect_label(aspect):
+        orb=aspect.get('orb'); orb_text=(f' — orb {degree_label(orb)}°' if orb not in (None,'') else '')
+        return f"{aspect.get('planet_a')} {aspect.get('aspect')} {aspect.get('planet_b')}{orb_text}"
     def placement_card(name,placement):
         title,meaning=planet_copy[name]; sign=str(placement.get('sign') or ''); degree_text=degree_label(placement.get('degree'))
         house=(chart.get('planet_houses') or {}).get(name); house_text=f' • House {html.escape(str(house))}' if house not in (None,'') else ''
         tone=SIGN_BEHAVIORAL_TONES.get(sign) or {}
         natal=(f"In this placement, {sign} may bring {tone.get('strength')} into this area of life." if tone.get('strength') else f'{sign} provides the natal lens for this area of life.')
         personal=personalized_text(name)
-        return f'''<article class="card"><h3>{html.escape(PLANET_GLYPHS.get(name,'↑' if name=='Rising' else ''))} {html.escape(name)} — {html.escape(title)}</h3><p><b>{html.escape(name)} in {html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}</b></p><p>{html.escape(meaning)}</p><p>{html.escape(natal+personal)}</p></article>'''
+        related=[a for a in chart_aspects if name in {a.get('planet_a'),a.get('planet_b')}]
+        related_html=''
+        if related:
+            readable=''.join(f'<li>{html.escape(aspect_label(a))}</li>' for a in related)
+            related_html=f'''<h4>Related Natal Aspects</h4><p class="muted small">These calculated relationships add context to this placement without determining or diagnosing the member.</p><ul>{readable}</ul>'''
+        glyph=PLANET_GLYPHS.get(name,'↑' if name=='Rising' else '')
+        placement_text=f'''{html.escape(name)} in {html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}'''
+        return f'''<details class="card" data-natal-placement="{html.escape(name,quote=True)}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><span><span style="display:block;font-size:1.08rem">{html.escape(glyph)} {html.escape(name)} — {html.escape(title)}</span><span class="muted small">{placement_text}</span></span><span class="muted small">Read interpretation ▾</span></summary><div class="topspace"><p><b>{placement_text}</b></p><p>{html.escape(meaning)}</p><p>{html.escape(natal+personal)}</p>{related_html}</div></details>'''
     rows=[placement_card(name,planets[name]) for name in NATAL_WHEEL_PLANETS if planets.get(name)]
     rising=chart.get('rising') or chart.get('ascendant') or {}
     if rising and rising.get('sign'): rows.append(placement_card('Rising',rising))
-    aspects=[]
-    for aspect in (chart.get('aspects') or [])[:12]:
-        first=aspect.get('planet_a') or ''; second=aspect.get('planet_b') or ''; kind=aspect.get('aspect') or ''
-        if first and second and kind:
-            orb=aspect.get('orb'); orb_text=(f' — orb {degree_label(orb)}°' if orb not in (None,'') else '')
-            aspects.append(f'<li>{html.escape(str(first))} {html.escape(str(kind))} {html.escape(str(second))}{html.escape(orb_text)}</li>')
-    breakdown=(f'''<details class="card"><summary style="cursor:pointer;font-weight:800">Existing Natal Information</summary><ul>{''.join(aspects)}</ul></details>''' if aspects else '')
+    aspects=[f'<li>{html.escape(aspect_label(aspect))}</li>' for aspect in chart_aspects]
+    breakdown=(f'''<details class="card" data-natal-breakdown><summary style="cursor:pointer;font-weight:800">▶ Natal Chart Breakdown</summary><div class="topspace"><ul>{''.join(aspects)}</ul></div></details>''' if aspects else '')
     return f'''<section class="topspace" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">PLANETARY POSITIONS</span><h2>Planetary Positions</h2><p class="muted">Natal placements are reflective and interpretive. Profile connections use only information this member provided and are not a clinical assessment or diagnosis.</p><div class="moregrid">{''.join(rows)}</div>{breakdown}</section>'''
 
 
@@ -7258,11 +7264,10 @@ def connection_profile(user_id):
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
-        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a>'''
+        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
         if bool(me['conscious_paid'] or me['is_admin']): top_actions+=f'''<a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
-        coordination_action=(f'''<a class="btn" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a>''' if bool(me['conscious_paid'] or me['is_admin']) else f'''<a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade to Full Conscious Coordination — $10.99/mo</a>''')
-        journal_actions=f'''{coordination_action}<a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member Public Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
+        journal_actions=''
     business_html=member_business_card(business) if business and cp.get('display_business_app') else ''
     title='My Conscious Coordination Profile' if is_self else f'{html.escape(user["name"])} — Conscious Coordination Profile'
     access_note=''
@@ -7274,8 +7279,9 @@ def connection_profile(user_id):
     wheel_note=('This is your permanent birth chart, calculated from your saved birth date, time, place, coordinates and historical timezone. It changes only when that source information changes.' if is_self else f'This chart and every placement below come from {html.escape(user["name"])}’s saved birth information. Your chart is not used on this page.')
     natal_grounding_html=_natal_grounding_html(user,chart) if is_self else ''
     planetary_profile_html=_planetary_coordination_cards(user) if is_self else ''
+    journal_actions_html=(f'''<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div>''' if journal_actions else '')
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
-    <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{wheel_note}</p>{wheel}{natal_positions_html}{natal_grounding_html}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
+    <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{wheel_note}</p>{wheel}{natal_positions_html}{natal_grounding_html}{journal_actions_html}</article>
     {planetary_profile_html}
     <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'These are this member’s individual profile indicators. Use View Our Conscious Coordination only when you intentionally want the separate two-person comparison. Private Journal content is never shown here.'}</p></article>
     {access_note}{business_html}'''
