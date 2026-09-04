@@ -5990,7 +5990,7 @@ def profile():
 
     # The seven reports now live on My Conscious Coordination Profile. Keep the
     # existing Journal shortcut exactly where members already expect it.
-    planetary_section=f'''<div class="actions topspace"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">Open My Full Conscious Coordination</a></div>'''
+    planetary_section=f'''<div class="actions topspace"><a class="btn" href="{url_for('connection_profile',user_id=u['id'])}">My Natal Chart</a></div>'''
 
     public_html=public_journal_cards(u['id'],u['id'])
     public_section=f'''<div class="topspace"><div><span class="badge">PUBLIC JOURNAL</span><h2>My Community Posts</h2><p class="muted">Only writing you intentionally published to Community appears here. Your private Journal and Journal Inbox remain private.</p></div></div>{public_html}'''
@@ -6161,7 +6161,7 @@ def member_profile(user_id):
     portrait=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(m["name"])}</div>')
     age_text=f' • Age {m["age"]}' if 'age' in m.keys() and m['age'] else ''
     business_profile_action=(f'''<a class="out" href="{url_for('business_app',business_id=business['id'])}">View Business App</a>''' if business else '')
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div></div>{portrait}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('compatibility',user_id=m['id'])}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div></div>{portrait}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
     return page(f'{m["name"]} — Public Journal',content,'profile')
 
 def _remove_member_media(conn, row):
@@ -6967,6 +6967,37 @@ def _two_natal_wheels_html(chart_a,chart_b,name_a='You',name_b='Member'):
     </div>'''
 
 
+def _natal_positions_html(chart, owner_name='Member'):
+    """Show the saved natal placements that belong to one chart owner."""
+    chart=chart or {}; planets=chart.get('planets') or {}
+    if not chart.get('ready') or not planets:
+        return '<div class="empty"><h3>Planetary positions unavailable</h3><p class="muted">Complete saved birth information is needed to calculate these natal placements.</p></div>'
+    def degree_label(value):
+        if value in (None,''): return ''
+        try: return f'{float(value):.2f}'.rstrip('0').rstrip('.')
+        except (TypeError,ValueError): return str(value)
+    houses=chart.get('planet_houses') or {}; rows=[]
+    for name in NATAL_WHEEL_PLANETS:
+        placement=planets.get(name) or {}
+        if not placement: continue
+        sign=str(placement.get('sign') or ''); degree=placement.get('degree')
+        degree_text=degree_label(degree)
+        house=houses.get(name); house_text=f' • House {html.escape(str(house))}' if house not in (None,'') else ''
+        rows.append(f'''<article class="card"><h3>{html.escape(PLANET_GLYPHS.get(name,''))} {html.escape(name)}</h3><p>{html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}</p></article>''')
+    rising=chart.get('rising') or chart.get('ascendant') or {}
+    if rising and rising.get('sign'):
+        degree=rising.get('degree'); degree_text=degree_label(degree)
+        rows.insert(2,f'''<article class="card"><h3>ASC Rising / Ascendant</h3><p>{html.escape(str(rising.get('sign') or ''))}{(' '+html.escape(degree_text)+'°') if degree_text else ''}</p></article>''')
+    aspects=[]
+    for aspect in (chart.get('aspects') or [])[:12]:
+        first=aspect.get('planet_a') or ''; second=aspect.get('planet_b') or ''; kind=aspect.get('aspect') or ''
+        if first and second and kind:
+            orb=aspect.get('orb'); orb_text=(f' — orb {degree_label(orb)}°' if orb not in (None,'') else '')
+            aspects.append(f'<li>{html.escape(str(first))} {html.escape(str(kind))} {html.escape(str(second))}{html.escape(orb_text)}</li>')
+    breakdown=(f'''<details class="card" open><summary style="cursor:pointer;font-weight:800">Natal Chart Breakdown</summary><ul>{''.join(aspects)}</ul></details>''' if aspects else '')
+    return f'''<section class="topspace" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">PLANETARY POSITIONS</span><h2>Planetary Positions</h2><div class="grid">{''.join(rows)}</div>{breakdown}</section>'''
+
+
 def _preferred_connection_type(profile):
     raw=' '.join(str((profile or {}).get(k,'') or '') for k in ('seeking','coordination_types')).lower()
     candidates=[]
@@ -7158,34 +7189,21 @@ def connection_profile(user_id):
     location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),(cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
     coordination_types=cp.get('coordination_types',''); about=cp.get('about_me') or user['about'] or ''
     photo=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(user["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(user["name"])}</div>')
+    # This route is the profile owner's individual chart. Pair calculations
+    # belong only to /compatibility/<user_id> and must never replace this data.
     chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
-    pair_data=None; pair_overall=None
-    if is_self:
-        wheel=_zodiac_wheel_html(chart,user['name'])
-    else:
-        viewer_chart=member_chart_data(me)
-        wheel=_two_natal_wheels_html(viewer_chart,chart,'You',user['name'])
-        pair_kind=_preferred_connection_type(dict(me_cp) if me_cp else {})
-        pair_data=basic_compatibility(me['id'],user_id,pair_kind)
-        if pair_data.get('ready') and pair_data.get('score') is not None:
-            pair_overall=pair_data['score']
+    wheel=_zodiac_wheel_html(chart,user['name'])
+    natal_positions_html=_natal_positions_html(chart,user['name'])
     can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
         if can_open_details and slug:
             return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Read interpretation</p></a>'''
         return f'''<article class="card">{inner}<p class="muted small">Upgrade to open this member’s full description.</p></article>'''
-    visible_metrics=scores['metrics'] if is_self else [(m.get('area'),m.get('score')) for m in (pair_data or {}).get('metrics',[]) if m.get('area') and m.get('score') is not None]
+    visible_metrics=scores['metrics']
     metric_cards=''.join(metric_card(label,score) for label,score in visible_metrics)
-    if is_self:
-        overall_value=scores['overall']
-        overall_title=f'Overall Coordination — {overall_value}%'
-    elif pair_overall is not None:
-        overall_value=pair_overall
-        overall_title=f'Overall Coordination Between You & {html.escape(user["name"])} — {overall_value}%'
-    else:
-        overall_value=None
-        overall_title=f'Overall Coordination Between You & {html.escape(user["name"])}'
+    overall_value=scores['overall']
+    overall_title=(f'Overall Coordination — {overall_value}%' if is_self else f'{html.escape(user["name"])}’s Individual Coordination — {overall_value}%')
     if overall_value is not None:
         overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Read interpretation ⌄</span></div><div class="meter"><i style="width:{overall_value}%"></i></div>'''
     else:
@@ -7195,7 +7213,7 @@ def connection_profile(user_id):
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
-        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Compatibility</a>'''
+        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a>'''
         if bool(me['conscious_paid'] or me['is_admin']): top_actions+=f'''<a class="out" href="{url_for('video',user_id=user_id)}">Private Video</a>'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
         coordination_action=(f'''<a class="btn" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a>''' if bool(me['conscious_paid'] or me['is_admin']) else f'''<a class="btn" href="{url_for('payment_info',product='conscious-coordination')}">Upgrade to Full Conscious Coordination — $10.99/mo</a>''')
@@ -7205,16 +7223,16 @@ def connection_profile(user_id):
     access_note=''
     if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
         access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span><p class="muted">You can see this member’s Conscious Coordination percentages. Upgrade to the $10.99/month membership to open the full descriptions for another member.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Upgrade</a></article>'''
-    profile_interpretation=_personal_profile_interpretation(user,cp_row,scores) if is_self else ''
+    profile_interpretation=_personal_profile_interpretation(user,cp_row,scores)
     profile_interpretation_html=(f'<div style="line-height:1.8;margin-top:20px">{html.escape(profile_interpretation).replace(chr(10),"<br>")}</div>' if profile_interpretation else '')
-    wheel_title=('My Natal Astrology Wheel' if is_self else 'Our Natal Astrology Wheels')
-    wheel_note=('This is your permanent birth chart, calculated from your saved birth date, time, place, coordinates and historical timezone. It changes only when that source information changes.' if is_self else 'These are two separate permanent natal charts. Neither person’s planets are moved or merged for compatibility.')
+    wheel_title=('My Natal Chart' if is_self else f'{html.escape(user["name"])}’s Natal Chart')
+    wheel_note=('This is your permanent birth chart, calculated from your saved birth date, time, place, coordinates and historical timezone. It changes only when that source information changes.' if is_self else f'This chart and every placement below come from {html.escape(user["name"])}’s saved birth information. Your chart is not used on this page.')
     natal_grounding_html=_natal_grounding_html(user,chart) if is_self else ''
     planetary_profile_html=_planetary_coordination_cards(user) if is_self else ''
     content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}<div class="actions">{top_actions}</div></div>{photo}</div></article>
-    <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{html.escape(wheel_note)}</p>{wheel}{natal_grounding_html}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
+    <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{wheel_note}</p>{wheel}{natal_positions_html}{natal_grounding_html}<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div></article>
     {planetary_profile_html}
-    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'Every percentage on this view belongs to the coordination between you and this member. It combines actual chart-to-chart relationships with the two permitted psychological/behavioral profiles. Private Journal content is never used in another member’s coordination.'}</p></article>
+    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'These are this member’s individual profile indicators. Use View Our Conscious Coordination only when you intentionally want the separate two-person comparison. Private Journal content is never shown here.'}</p></article>
     {access_note}{business_html}'''
     return page('Conscious Coordination Profile',content,'more')
 
