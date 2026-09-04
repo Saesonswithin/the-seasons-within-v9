@@ -6161,7 +6161,7 @@ def member_profile(user_id):
     portrait=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(m["name"])}</div>')
     age_text=f' • Age {m["age"]}' if 'age' in m.keys() and m['age'] else ''
     business_profile_action=(f'''<a class="out" href="{url_for('business_app',business_id=business['id'])}">View Business App</a>''' if business else '')
-    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">View Conscious Coordination Profile</a><a class="out" href="{url_for('compatibility',user_id=m['id'])}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div></div>{portrait}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
+    content=f'''<article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('compatibility',user_id=m['id'])}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div></div>{portrait}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
     return page(f'{m["name"]} — Public Journal',content,'profile')
 
 def _remove_member_media(conn, row):
@@ -6967,35 +6967,80 @@ def _two_natal_wheels_html(chart_a,chart_b,name_a='You',name_b='Member'):
     </div>'''
 
 
-def _natal_positions_html(chart, owner_name='Member'):
-    """Show the saved natal placements that belong to one chart owner."""
-    chart=chart or {}; planets=chart.get('planets') or {}
+def _natal_positions_html(chart, owner_name='Member', profile=None):
+    """Show one owner's natal placements with optional self-reported context."""
+    chart=chart or {}; planets=chart.get('planets') or {}; profile=dict(profile) if profile else {}
     if not chart.get('ready') or not planets:
         return '<div class="empty"><h3>Planetary positions unavailable</h3><p class="muted">Complete saved birth information is needed to calculate these natal placements.</p></div>'
     def degree_label(value):
         if value in (None,''): return ''
         try: return f'{float(value):.2f}'.rstrip('0').rstrip('.')
         except (TypeError,ValueError): return str(value)
-    houses=chart.get('planet_houses') or {}; rows=[]
-    for name in NATAL_WHEEL_PLANETS:
-        placement=planets.get(name) or {}
-        if not placement: continue
-        sign=str(placement.get('sign') or ''); degree=placement.get('degree')
-        degree_text=degree_label(degree)
-        house=houses.get(name); house_text=f' • House {html.escape(str(house))}' if house not in (None,'') else ''
-        rows.append(f'''<article class="card"><h3>{html.escape(PLANET_GLYPHS.get(name,''))} {html.escape(name)}</h3><p>{html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}</p></article>''')
+    planet_copy={
+        'Sun':('Self / Core Identity','Represents the member’s central sense of self, identity, vitality, purpose, and how they naturally express who they are.'),
+        'Moon':('Emotions / Inner Needs','Represents emotional responses, emotional needs, comfort, security, instinctive reactions, and what helps the member feel emotionally grounded.'),
+        'Mercury':('Communication / Thinking','Represents communication style, thought processes, learning, decision-making, and how the member processes and expresses information.'),
+        'Venus':('Love / Values / Connection','Represents affection, relationships, attraction, personal values, receiving and giving love, and what the member appreciates.'),
+        'Mars':('Action / Motivation / Drive','Represents motivation, initiative, assertiveness, boundaries, desire, conflict style, and how the member takes action.'),
+        'Jupiter':('Growth / Expansion','Represents growth, opportunity, beliefs, learning, optimism, meaning, and areas where the member may naturally seek expansion.'),
+        'Saturn':('Structure / Responsibility','Represents discipline, boundaries, responsibility, commitments, challenges, maturity, and areas requiring patience and development.'),
+        'Uranus':('Change / Individuality','Represents independence, innovation, originality, unexpected change, and where the member may resist conventional expectations.'),
+        'Neptune':('Imagination / Sensitivity','Represents imagination, intuition, ideals, compassion, sensitivity, dreams, and areas where clarity and boundaries may be important.'),
+        'Pluto':('Transformation / Depth','Represents transformation, psychological depth, power, regeneration, major internal change, and areas of profound personal development.'),
+        'Rising':('Outer Expression / Approach to Life','Represents how the member approaches new situations, their outward style, first impressions, and how they initially engage with the world.'),
+    }
+    profile_fields={
+        'Sun':('values_text','seeking','coordination_types','business_style'),
+        'Moon':('overwhelmed','regulate','other_emotions','retreat_style'),
+        'Mercury':('communication','conflict_style','repair'),
+        'Venus':('affection','values_text','trust','seeking'),
+        'Mars':('boundaries','conflict_style','overwhelmed','repair'),
+        'Jupiter':('lifestyle','seeking','business_style','values_text'),
+        'Saturn':('boundaries','trust','repair','business_style','retreat_style'),
+        'Uranus':('lifestyle','business_style','coordination_types'),
+        'Neptune':('regulate','other_emotions','affection','retreat_style'),
+        'Pluto':('trust','boundaries','conflict_style','repair'),
+        'Rising':('communication','lifestyle','coordination_types'),
+    }
+    insights=_behavioral_insights(profile) if profile else {}
+    insight_keys={
+        'Sun':('business',),'Moon':('practice','communication'),'Mercury':('communication','repair'),
+        'Venus':('connection','trust'),'Mars':('boundaries','repair'),'Jupiter':('business',),
+        'Saturn':('boundaries','trust','repair','business'),'Uranus':('business',),
+        'Neptune':('practice','connection'),'Pluto':('trust','boundaries','repair'),
+        'Rising':('communication','business'),
+    }
+    insight_sources={'communication':('communication','overwhelmed'),'repair':('repair',),'connection':('affection',),'trust':('trust',),'boundaries':('boundaries',),'business':('business_style',),'practice':('regulate',)}
+    def third_person(value):
+        value=str(value or '')
+        replacements=(('You tend ','They tend '),('You are ','They are '),('You appear ','They appear '),('You may ','They may '),('Your ','Their '))
+        for old,new in replacements:
+            if value.startswith(old): return new+value[len(old):]
+        return value
+    def personalized_text(name):
+        answered=any(str(profile.get(field) or '').strip() for field in profile_fields.get(name,()))
+        if not answered: return ''
+        selected=[third_person(insights.get(key)) for key in insight_keys.get(name,()) if insights.get(key) and any(str(profile.get(field) or '').strip() for field in insight_sources.get(key,()))]
+        if not selected: return 'This placement can be considered alongside the personal patterns this member chose to share, without treating either source as a diagnosis or proof of personality.'
+        return ' Reflectively, this may be considered alongside the member’s self-reported profile: '+selected[0]
+    def placement_card(name,placement):
+        title,meaning=planet_copy[name]; sign=str(placement.get('sign') or ''); degree_text=degree_label(placement.get('degree'))
+        house=(chart.get('planet_houses') or {}).get(name); house_text=f' • House {html.escape(str(house))}' if house not in (None,'') else ''
+        tone=SIGN_BEHAVIORAL_TONES.get(sign) or {}
+        natal=(f"In this placement, {sign} may bring {tone.get('strength')} into this area of life." if tone.get('strength') else f'{sign} provides the natal lens for this area of life.')
+        personal=personalized_text(name)
+        return f'''<article class="card"><h3>{html.escape(PLANET_GLYPHS.get(name,'↑' if name=='Rising' else ''))} {html.escape(name)} — {html.escape(title)}</h3><p><b>{html.escape(name)} in {html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}</b></p><p>{html.escape(meaning)}</p><p>{html.escape(natal+personal)}</p></article>'''
+    rows=[placement_card(name,planets[name]) for name in NATAL_WHEEL_PLANETS if planets.get(name)]
     rising=chart.get('rising') or chart.get('ascendant') or {}
-    if rising and rising.get('sign'):
-        degree=rising.get('degree'); degree_text=degree_label(degree)
-        rows.insert(2,f'''<article class="card"><h3>ASC Rising / Ascendant</h3><p>{html.escape(str(rising.get('sign') or ''))}{(' '+html.escape(degree_text)+'°') if degree_text else ''}</p></article>''')
+    if rising and rising.get('sign'): rows.append(placement_card('Rising',rising))
     aspects=[]
     for aspect in (chart.get('aspects') or [])[:12]:
         first=aspect.get('planet_a') or ''; second=aspect.get('planet_b') or ''; kind=aspect.get('aspect') or ''
         if first and second and kind:
             orb=aspect.get('orb'); orb_text=(f' — orb {degree_label(orb)}°' if orb not in (None,'') else '')
             aspects.append(f'<li>{html.escape(str(first))} {html.escape(str(kind))} {html.escape(str(second))}{html.escape(orb_text)}</li>')
-    breakdown=(f'''<details class="card" open><summary style="cursor:pointer;font-weight:800">Natal Chart Breakdown</summary><ul>{''.join(aspects)}</ul></details>''' if aspects else '')
-    return f'''<section class="topspace" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">PLANETARY POSITIONS</span><h2>Planetary Positions</h2><div class="grid">{''.join(rows)}</div>{breakdown}</section>'''
+    breakdown=(f'''<details class="card"><summary style="cursor:pointer;font-weight:800">Existing Natal Information</summary><ul>{''.join(aspects)}</ul></details>''' if aspects else '')
+    return f'''<section class="topspace" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">PLANETARY POSITIONS</span><h2>Planetary Positions</h2><p class="muted">Natal placements are reflective and interpretive. Profile connections use only information this member provided and are not a clinical assessment or diagnosis.</p><div class="moregrid">{''.join(rows)}</div>{breakdown}</section>'''
 
 
 def _preferred_connection_type(profile):
@@ -7193,7 +7238,7 @@ def connection_profile(user_id):
     # belong only to /compatibility/<user_id> and must never replace this data.
     chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
     wheel=_zodiac_wheel_html(chart,user['name'])
-    natal_positions_html=_natal_positions_html(chart,user['name'])
+    natal_positions_html=_natal_positions_html(chart,user['name'],cp_row)
     can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
