@@ -6984,9 +6984,99 @@ def _saved_current_season(user_id):
             except Exception: pass
 
 
-def _natal_positions_html(chart, owner_name='Member', profile=None, current_season='', self_view=False):
+NATAL_COORDINATION_INTERPRETATION_VERSION=1
+NATAL_COORDINATION_SECTION_KEYS=('core_pattern','how_it_operates','strength_when_integrated','possible_tension','conscious_coordination','reflection_question')
+
+def _natal_coordination_fallback(planet,placement,house,aspects):
+    """Chart-specific permanent natal fallback; no transits or questionnaire copy."""
+    sign=str((placement or {}).get('sign') or ''); tone=SIGN_BEHAVIORAL_TONES.get(sign) or {}
+    strength=tone.get('strength','a distinctive way of approaching this function')
+    watch=tone.get('watch','the familiar response can become automatic under pressure')
+    question=tone.get('question','What would help this function become more deliberate?')
+    house_focus={1:'personal initiative and the way life is approached',2:'values, resources, and what creates stability',3:'communication, learning, and everyday interpretation',4:'home, belonging, and emotional foundations',5:'creativity, visibility, and personal expression',6:'routines, responsibility, and practical wellbeing',7:'partnership, reciprocity, and direct relationship',8:'trust, shared responsibility, depth, and necessary change',9:'beliefs, learning, meaning, and wider perspective',10:'purpose, contribution, and public responsibility',11:'community, collaboration, and future direction',12:'rest, integration, privacy, and the inner life'}
+    function_focus={
+        'Sun':('identity and direction','turning self-understanding into choices that carry personal authorship','Notice which decision reflects what matters enough to receive your time, energy, and responsibility.'),
+        'Moon':('emotional rhythm and internal safety','letting feelings become clear enough to guide care without making every feeling an instruction','When emotion rises, identify the need first; decide what the situation means after the feeling becomes more specific.'),
+        'Mercury':('thinking, listening, and communication','organizing perception into language that leaves room for questions, correction, and real understanding','Before an important conversation, separate what you know, what you assume, and what you still need to ask.'),
+        'Venus':('values, affection, and reciprocity','recognizing what is meaningful while allowing giving and receiving to remain mutual','Notice whether connection is reciprocal rather than measuring closeness only by how much you are willing to give.'),
+        'Mars':('action, assertion, and boundaries','using motivation directly without requiring frustration to become the source of clarity','Express a limit while it is still a clear preference rather than waiting until it becomes accumulated frustration.'),
+        'Jupiter':('growth, belief, and possibility','expanding toward meaning while keeping opportunity connected to capacity and follow-through','Choose the possibility that remains meaningful after you account for time, resources, and what it will require to sustain.'),
+        'Saturn':('responsibility, limits, and endurance','making commitment specific enough to become sustainable rather than carrying pressure without definition','Make responsibility specific: decide what belongs to you before carrying what belongs to everyone else.'),
+        'Uranus':('individuality, change, and experimentation','allowing necessary change without making disruption the only proof of freedom','Test one new approach while keeping enough structure to learn from what actually changes.'),
+        'Neptune':('sensitivity, imagination, and intuition','making room for subtle information while maintaining enough clarity to distinguish intuition from uncertainty','Give an impression time to clarify, then pair it with one observable fact before treating it as direction.'),
+        'Pluto':('depth, power, and transformation','recognizing when intensity is revealing something important and when attachment is resisting necessary renewal','Name what you are protecting, what it costs to keep protecting it, and what could change if control were no longer the only source of safety.'),
+        'Rising':('outward approach and first response','coordinating the way situations are entered with the deeper pace and needs operating underneath','After the first response, pause long enough to ask whether your outward approach matches what you actually need from the situation.'),
+    }
+    focus,integrated,practice=function_focus.get(planet,('personal awareness','using this function with greater choice','Choose one grounded response that fits the facts in front of you.'))
+    try: house_number=int(float(house)) if house not in (None,'') else None
+    except (TypeError,ValueError): house_number=None
+    house_text=house_focus.get(house_number,'the life area where this function becomes concrete')
+    related=sorted({str(a.get('planet_b') if a.get('planet_a')==planet else a.get('planet_a')) for a in aspects})
+    supportive=sum(1 for a in aspects if a.get('aspect') in {'trine','sextile'})
+    friction=sum(1 for a in aspects if a.get('aspect') in {'square','opposition'})
+    amplified=sum(1 for a in aspects if a.get('aspect')=='conjunction')
+    relationship_text=(f" Its relationships with {', '.join(related)} make this function part of a wider internal conversation rather than an isolated trait." if related else '')
+    nuance=''
+    if amplified: nuance+=' Some linked functions may activate together, increasing both immediacy and the need to identify which one is leading.'
+    if friction: nuance+=' Contrasting needs can create productive friction; integration comes from giving both sides a valid role instead of forcing one to win.'
+    if supportive: nuance+=' Some responses may flow easily, although an available strength still becomes more useful when it is chosen deliberately.'
+    return {
+        'core_pattern':f"This {planet} function centers on {focus}. In this chart, it may develop through {strength}, especially in matters involving {house_text}.{relationship_text}",
+        'how_it_operates':f"It may work best when {integrated}. The pattern is less about performing a fixed trait and more about noticing how this function organizes real choices, relationships, limits, or responses.",
+        'strength_when_integrated':f"At its strongest, {strength} can become a usable capacity rather than only a familiar instinct.{nuance}",
+        'possible_tension':f"Under pressure, {watch}. This is not a flaw or prediction; it is a place where pacing and conscious choice may matter more.",
+        'conscious_coordination':practice+f' Pay particular attention when this choice affects {house_text}.',
+        'reflection_question':f'What becomes clearer about {focus} when I notice how {strength} influences {house_text}?',
+    }
+
+def _natal_coordination_interpretations(user,chart,profile):
+    """Generate and cache one structured permanent-natal interpretation packet."""
+    planets=(chart or {}).get('planets') or {}; rising=(chart or {}).get('rising') or (chart or {}).get('ascendant') or {}
+    names=[name for name in NATAL_WHEEL_PLANETS if planets.get(name)]
+    if rising.get('sign'): names.append('Rising')
+    if not names: return {}
+    houses=(chart or {}).get('planet_houses') or {}; all_aspects=(chart or {}).get('aspects') or []
+    profile_context=_profile_psychology_context(dict(profile) if profile else {})
+    evidence={}
+    for name in names:
+        placement=(rising if name=='Rising' else planets.get(name)) or {}
+        evidence[name]={
+            'planet':name,'sign':placement.get('sign'),'degree':placement.get('degree'),
+            'house':houses.get(name),
+            'aspects':[a for a in all_aspects if name in {a.get('planet_a'),a.get('planet_b')}],
+        }
+    fingerprint=hashlib.sha256(json.dumps({'version':NATAL_COORDINATION_INTERPRETATION_VERSION,'natal':evidence,'profile_context':profile_context},sort_keys=True,default=str).encode()).hexdigest()
+    period_key=f'natal:{fingerprint[:40]}|v{NATAL_COORDINATION_INTERPRETATION_VERSION}'
+    try:
+        conn=db(); row=conn.execute("SELECT written_report FROM coordination_reports WHERE user_id=? AND other_user_id=0 AND report_type='natal_planetary_coordination' AND period_key=?",(user['id'],period_key)).fetchone(); conn.close()
+        cached=_cc_parse_json_object(row['written_report']) if row and row['written_report'] else None
+        if cached and all(isinstance(cached.get(name),dict) and all(str(cached[name].get(k) or '').strip() for k in NATAL_COORDINATION_SECTION_KEYS) for name in names): return cached
+    except Exception:
+        pass
+    section_schema={'type':'object','additionalProperties':False,'properties':{k:{'type':'string'} for k in NATAL_COORDINATION_SECTION_KEYS},'required':list(NATAL_COORDINATION_SECTION_KEYS)}
+    schema={'type':'object','additionalProperties':False,'properties':{name:section_schema for name in names},'required':names}
+    prompt='''Create the permanent Planetary Conscious Coordination interpretation packet for one natal chart. Astrology is the evidence; Conscious Coordination is the interpretation. For every supplied planet, synthesize its exact sign, degree phase, house, aspects, aspect types and orbs into lived human experience without teaching astrology or listing the evidence. Keep the named planet's human function at the center. Explain how it operates, what helps conscious use, an integrated strength, and nuanced possible tension. A conjunction may amplify linked functions; a square may create developmental friction; a trine may offer ease that can be underused; an opposition may require balancing two valid needs. Never call an aspect good, bad, lucky, or doomed. Use reflective possibility language and psychologically intelligent, grounded writing. Do not diagnose or make fixed personality claims. Do not mention current transits, the Moon today, current activation, seasons, lunar cycles, Journal material, algorithms, questionnaires, profile answers, degrees, houses, aspects, or orbs in the prose. Psychological context is secondary and may only subtly refine wording; never quote, repeat, identify, or obviously paraphrase it. Avoid generic spiritual filler. Every planet must have a different center of gravity. Each field must be specific to this chart and written in complete prose. core_pattern and how_it_operates should each be substantial short paragraphs; strength_when_integrated and possible_tension should each be focused paragraphs; conscious_coordination must be one concrete practice derived from this configuration; reflection_question must be one specific thoughtful question. Return only the required JSON.\nEVIDENCE:\n'''+json.dumps({'natal':evidence,'secondary_private_context':profile_context,'privacy':'Never expose or identify the secondary context. No Journal or current-sky evidence is included.'},default=str)
+    generated=_openai_structured(prompt,'natal_planetary_coordination',schema)
+    banned=('this month','right now','during this lunar cycle','today’s moon',"today's moon",'new moon','current activation','present sky','questionnaire','self-reported profile')
+    valid=bool(generated)
+    if valid:
+        for name in names:
+            section=generated.get(name) if isinstance(generated.get(name),dict) else {}
+            combined=' '.join(str(section.get(k) or '') for k in NATAL_COORDINATION_SECTION_KEYS).lower()
+            if any(not str(section.get(k) or '').strip() for k in NATAL_COORDINATION_SECTION_KEYS) or any(term in combined for term in banned): valid=False; break
+    result=generated if valid else {name:_natal_coordination_fallback(name,(rising if name=='Rising' else planets.get(name)) or {},houses.get(name),evidence[name]['aspects']) for name in names}
+    try:
+        written=json.dumps(result,ensure_ascii=False,sort_keys=True); digest=hashlib.sha256(written.encode()).hexdigest(); conn=db()
+        conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,evidence_summary=excluded.evidence_summary,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',(user['id'],0,'natal_planetary_coordination',period_key,NATAL_COORDINATION_INTERPRETATION_VERSION,written,'','',json.dumps({'version':NATAL_COORDINATION_INTERPRETATION_VERSION,'planets':names,'ai_generated':bool(valid)},default=str),'permanent-natal-owner-profile-no-journal-no-transits',fingerprint,digest,now(),now()))
+        conn.commit(); conn.close()
+    except Exception:
+        app.logger.exception('Could not cache permanent natal Conscious Coordination interpretations')
+    return result
+
+
+def _natal_positions_html(chart, owner_name='Member', profile=None, interpretations=None, self_view=False):
     """Translate one owner's factual natal placements into Conscious Coordination."""
-    chart=chart or {}; planets=chart.get('planets') or {}; profile=dict(profile) if profile else {}
+    chart=chart or {}; planets=chart.get('planets') or {}; profile=dict(profile) if profile else {}; interpretations=interpretations or {}
     if not chart.get('ready') or not planets:
         return '<div class="empty"><h3>Planetary positions unavailable</h3><p class="muted">Complete saved birth information is needed to calculate these natal placements.</p></div>'
     def degree_label(value):
@@ -7006,92 +7096,36 @@ def _natal_positions_html(chart, owner_name='Member', profile=None, current_seas
         'Pluto':('Transformation & Depth Coordination','transformation, depth, personal power, release, regeneration, and recognizing patterns that no longer support the present season'),
         'Rising':('Outer Expression & Approach','first responses, outward expression, entering unfamiliar situations, and coordinating outward style with internal needs'),
     }
-    grounding_copy={
-        'Sun':('Name the choice that still feels true after outside reactions settle.','Choose one action that expresses your direction without requiring immediate approval.'),
-        'Moon':('Give the feeling enough time to become specific before making it responsible for a lasting decision.','Choose the form of rest or support that helps you return to yourself rather than avoid the situation.'),
-        'Mercury':('Separate what you observed from what you assumed before responding.','Organize the need, question, or decision into one clear sentence before an important conversation.'),
-        'Venus':('Notice whether care, attention, and responsibility are moving in both directions.','Name what meaningful connection looks like instead of expecting it to be inferred.'),
-        'Mars':('Write down the boundary or next action before communicating it.','Let urgency settle enough to choose a direct response that does not create unnecessary damage.'),
-        'Jupiter':('Test an opportunity against capacity, timing, cost, and follow-through.','Choose one possibility to develop instead of responding to every opening at once.'),
-        'Saturn':('Turn a large responsibility into the next repeatable step.','Use boundaries to make commitment sustainable rather than waiting until pressure becomes exhaustion.'),
-        'Uranus':('Make room for a new approach while keeping one stabilizing routine in place.','Ask whether independence is creating useful freedom or avoiding needed participation.'),
-        'Neptune':('Give intuition time to become clearer before treating it as a conclusion.','Use rest, quiet, or a grounding practice to separate sensitivity from overload.'),
-        'Pluto':('Notice where control is being used to avoid uncertainty or necessary release.','Choose one pattern to loosen instead of trying to transform everything at once.'),
-        'Rising':('Pause after the first response and check whether it matches the deeper need.','Let outward clarity and internal pacing work together when entering unfamiliar situations.'),
-    }
-    house_copy={1:'identity and personal approach',2:'values, resources, and stability',3:'communication and everyday learning',4:'home, roots, and emotional foundations',5:'creativity, joy, and self-expression',6:'routines, service, and practical wellbeing',7:'partnership and reciprocity',8:'trust, shared resources, and deep change',9:'beliefs, learning, and wider perspective',10:'purpose, responsibility, and public direction',11:'community, collaboration, and future aims',12:'rest, integration, and inner life'}
-    season_copy={'Spring':'During this Spring season of renewal, let this area support one beginning, experiment, or new way of responding.','Summer':'During this Summer season of expression, give this area one clear path into action, visibility, connection, or participation.','Autumn':'During this Autumn season of reflection, use this area to evaluate what has been learned, adjust what no longer fits, and release what is complete.','Winter':'During this Winter season of integration, slow this area down enough for restoration, boundaries, internal processing, and steadier understanding.'}
-    profile_fields={
-        'Sun':('values_text','seeking','coordination_types','business_style'),
-        'Moon':('overwhelmed','regulate','other_emotions','retreat_style'),
-        'Mercury':('communication','conflict_style','repair'),
-        'Venus':('affection','values_text','trust','seeking'),
-        'Mars':('boundaries','conflict_style','overwhelmed','repair'),
-        'Jupiter':('lifestyle','seeking','business_style','values_text'),
-        'Saturn':('boundaries','trust','repair','business_style','retreat_style'),
-        'Uranus':('lifestyle','business_style','coordination_types'),
-        'Neptune':('regulate','other_emotions','affection','retreat_style'),
-        'Pluto':('trust','boundaries','conflict_style','repair'),
-        'Rising':('communication','lifestyle','coordination_types'),
-    }
-    insights=_behavioral_insights(profile) if profile else {}
-    insight_keys={
-        'Sun':('business',),'Moon':('practice','communication'),'Mercury':('communication','repair'),
-        'Venus':('connection','trust'),'Mars':('boundaries','repair'),'Jupiter':('business',),
-        'Saturn':('boundaries','trust','repair','business'),'Uranus':('business',),
-        'Neptune':('practice','connection'),'Pluto':('trust','boundaries','repair'),
-        'Rising':('communication','business'),
-    }
-    insight_sources={'communication':('communication','overwhelmed'),'repair':('repair',),'connection':('affection',),'trust':('trust',),'boundaries':('boundaries',),'business':('business_style',),'practice':('regulate',)}
-    def voice_insight(value):
-        value=str(value or '')
-        if self_view: return value
-        replacements=(('You tend ','They tend '),('You are ','They are '),('You appear ','They appear '),('You may ','They may '),('Your ','Their '))
-        for old,new in replacements:
-            if value.startswith(old): return new+value[len(old):]
-        return value
-    def personalized_text(name):
-        answered=any(str(profile.get(field) or '').strip() for field in profile_fields.get(name,()))
-        if not answered: return ''
-        selected=[voice_insight(insights.get(key)) for key in insight_keys.get(name,()) if insights.get(key) and any(str(profile.get(field) or '').strip() for field in insight_sources.get(key,()))]
-        return (' '+selected[0]) if selected else ''
     chart_aspects=[a for a in (chart.get('aspects') or []) if a.get('planet_a') and a.get('planet_b') and a.get('aspect')]
     def aspect_label(aspect):
         orb=aspect.get('orb'); orb_text=(f' — orb {degree_label(orb)}°' if orb not in (None,'') else '')
         return f"{aspect.get('planet_a')} {aspect.get('aspect')} {aspect.get('planet_b')}{orb_text}"
     def placement_card(name,placement):
-        title,focus=planet_copy[name]; sign=str(placement.get('sign') or ''); degree_text=degree_label(placement.get('degree'))
+        title,_=planet_copy[name]; sign=str(placement.get('sign') or ''); degree_text=degree_label(placement.get('degree'))
         house=(chart.get('planet_houses') or {}).get(name); house_text=f' • House {html.escape(str(house))}' if house not in (None,'') else ''
-        tone=SIGN_BEHAVIORAL_TONES.get(sign) or {}
-        natal=(f"The {sign} pattern may bring {tone.get('strength')} into how this area is experienced." if tone.get('strength') else f'The {sign} placement offers a reflective lens for this area of life.')
-        house_context=''
-        try: house_number=int(house) if house not in (None,'') else None
-        except (TypeError,ValueError): house_number=None
-        if house_number in house_copy: house_context=f' Its house placement brings additional attention to {house_copy[house_number]}.'
-        personal=personalized_text(name)
         related=[a for a in chart_aspects if name in {a.get('planet_a'),a.get('planet_b')}]
-        aspect_context=''
-        if related:
-            supportive=sum(1 for a in related if a.get('aspect') in {'trine','sextile'}); tension=sum(1 for a in related if a.get('aspect') in {'square','opposition'}); joined=sum(1 for a in related if a.get('aspect')=='conjunction')
-            linked=sorted({str(a.get('planet_b') if a.get('planet_a')==name else a.get('planet_a')) for a in related})
-            aspect_context=f" Connections with {', '.join(linked)} suggest that this area does not operate alone."
-            if tension: aspect_context+=' Some of those relationships may create useful friction, making pacing, awareness, and deliberate choice especially important.'
-            if supportive: aspect_context+=' Supportive relationships may make certain strengths easier to access when they are used consciously.'
-            if joined: aspect_context+=' Closely joined functions may become active together and benefit from being coordinated as one conversation rather than separate impulses.'
+        section=interpretations.get(name) if isinstance(interpretations.get(name),dict) else _natal_coordination_fallback(name,placement,house,related)
         glyph=PLANET_GLYPHS.get(name,'↑' if name=='Rising' else '')
         placement_text=f'''{html.escape(name)} in {html.escape(sign)}{(' '+html.escape(degree_text)+'°') if degree_text else ''}{house_text}'''
-        season_text=season_copy.get(current_season,'')
-        guidance=list(grounding_copy[name]);
-        if season_text: guidance.append(season_text)
-        grounding=''.join(f'<li>{html.escape(item)}</li>' for item in guidance)
-        interpretation=f'''This area of Conscious Coordination includes {focus}. {natal}{house_context}{aspect_context}{personal} One way to work with this pattern is to notice when its natural strength is helping and when it is becoming automatic, then choose the response that fits the present situation rather than treating the placement as a fixed trait.'''
-        return f'''<details class="card" data-natal-placement="{html.escape(name,quote=True)}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><span><span style="display:block;font-size:1.08rem">{html.escape(glyph)} {html.escape(name)} — {html.escape(title)}</span><span class="muted small">{placement_text}</span></span><span class="muted small">Read interpretation ▾</span></summary><div class="topspace"><p><b>{placement_text}</b></p><p>{html.escape(interpretation)}</p><h4>Grounding This Coordination</h4><ul>{grounding}</ul></div></details>'''
+        paragraphs=''.join(f'<p>{html.escape(str(section.get(key) or ""))}</p>' for key in ('core_pattern','how_it_operates','strength_when_integrated','possible_tension') if str(section.get(key) or '').strip())
+        coordination=html.escape(str(section.get('conscious_coordination') or ''))
+        reflection=html.escape(str(section.get('reflection_question') or ''))
+        return f'''<details class="card" data-natal-placement="{html.escape(name,quote=True)}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><span><span style="display:block;font-size:1.08rem">{html.escape(glyph)} {html.escape(name)} — {html.escape(title)}</span><span class="muted small">{placement_text}</span></span><span class="muted small">Read interpretation ▾</span></summary><div class="planetary-interpretation"><p><b>{placement_text}</b></p>{paragraphs}<h4>Conscious Coordination</h4><p>{coordination}</p><h4>Reflection Question</h4><p>{reflection}</p></div></details>'''
     rows=[placement_card(name,planets[name]) for name in NATAL_WHEEL_PLANETS if planets.get(name)]
     rising=chart.get('rising') or chart.get('ascendant') or {}
     if rising and rising.get('sign'): rows.append(placement_card('Rising',rising))
     aspects=[f'<li>{html.escape(aspect_label(aspect))}</li>' for aspect in chart_aspects]
-    breakdown=(f'''<details class="card" data-natal-breakdown><summary style="cursor:pointer;font-weight:800">▶ Natal Chart Breakdown</summary><div class="topspace"><ul>{''.join(aspects)}</ul></div></details>''' if aspects else '')
-    return f'''<section class="topspace" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">THE SEASONS WITHIN</span><h2>Planetary Conscious Coordination</h2><p class="muted">The natal chart provides the structure. Each interpretation translates that structure into practical, reflective coordination with identity, emotions, communication, connection, action, growth, responsibility, change, sensitivity, transformation, and outward approach. These are non-clinical reflections, not diagnoses or fixed claims.</p><div class="moregrid">{''.join(rows)}</div>{breakdown}</section>'''
+    breakdown=(f'''<details class="card" data-natal-breakdown><summary style="cursor:pointer;font-weight:800">▶ Natal Chart Breakdown</summary><div class="planetary-interpretation"><ul>{''.join(aspects)}</ul></div></details>''' if aspects else '')
+    return f'''<style>
+    .planetary-conscious-coordination{{display:block;width:100%;min-width:0;margin:24px 0 10px}}
+    .planetary-conscious-coordination>h2{{margin-top:8px}}
+    .planetary-conscious-coordination>.moregrid{{width:100%;align-items:start}}
+    .planetary-conscious-coordination details[data-natal-placement][open]{{grid-column:1/-1}}
+    .planetary-conscious-coordination .planetary-interpretation{{display:block;width:100%;min-width:0;margin-top:18px;line-height:1.7;overflow-wrap:anywhere}}
+    .planetary-conscious-coordination .planetary-interpretation p,.planetary-conscious-coordination .planetary-interpretation h4,.planetary-conscious-coordination .planetary-interpretation ul{{display:block;width:100%;max-width:none;margin:12px 0}}
+    .planetary-conscious-coordination details[data-natal-breakdown]{{width:100%;margin-top:14px}}
+    @media(max-width:700px){{.planetary-conscious-coordination details[data-natal-placement][open]{{grid-column:1}}}}
+    </style><section class="planetary-conscious-coordination" data-chart-owner="{html.escape(str(owner_name),quote=True)}"><span class="badge heart">THE SEASONS WITHIN</span><h2>Planetary Conscious Coordination</h2><p class="muted">The natal chart provides the structure. Each interpretation translates that structure into practical, reflective coordination with identity, emotions, communication, connection, action, growth, responsibility, change, sensitivity, transformation, and outward approach. These are non-clinical reflections, not diagnoses or fixed claims.</p><div class="moregrid">{''.join(rows)}</div>{breakdown}</section>'''
 
 
 def _preferred_connection_type(profile):
@@ -7289,7 +7323,8 @@ def connection_profile(user_id):
     # belong only to /compatibility/<user_id> and must never replace this data.
     chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
     wheel=_zodiac_wheel_html(chart,user['name'])
-    natal_positions_html=_natal_positions_html(chart,user['name'],cp_row,_saved_current_season(user['id']),is_self)
+    natal_interpretations=_natal_coordination_interpretations(user,chart,cp_row)
+    natal_positions_html=_natal_positions_html(chart,user['name'],cp_row,natal_interpretations,is_self)
     can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
