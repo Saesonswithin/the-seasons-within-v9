@@ -291,6 +291,24 @@ def init_db():
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS conscious_community_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_user_id INTEGER NOT NULL,
+        receiver_user_id INTEGER NOT NULL,
+        note TEXT DEFAULT '', purposes TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'Pending',
+        created_at TEXT NOT NULL, responded_at TEXT,
+        FOREIGN KEY(sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(receiver_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS conscious_community_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        community_member_user_id INTEGER NOT NULL,
+        connection_purposes TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT NOT NULL,
+        UNIQUE(user_id,community_member_user_id),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(community_member_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS businesses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner_id INTEGER NOT NULL,
@@ -539,6 +557,7 @@ def init_db():
         ("businesses","cover_crop","ALTER TABLE businesses ADD COLUMN cover_crop TEXT DEFAULT '{}'"),
         ("businesses","enabled_modules","ALTER TABLE businesses ADD COLUMN enabled_modules TEXT DEFAULT 'home,about,contact,booking'"),
         ("businesses","section_order","ALTER TABLE businesses ADD COLUMN section_order TEXT DEFAULT 'home,about,services,classes,courses,events,videos,gallery,retreats,booking,contact,media_kit,affiliate'"),
+        ("businesses","home_feature_modules","ALTER TABLE businesses ADD COLUMN home_feature_modules TEXT DEFAULT ''"),
         ("businesses","booking_method","ALTER TABLE businesses ADD COLUMN booking_method TEXT DEFAULT 'seasons_calendar'"),
         ("businesses","booking_settings","ALTER TABLE businesses ADD COLUMN booking_settings TEXT DEFAULT '{}'"),
         ("business_media","sort_order","ALTER TABLE business_media ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"),
@@ -982,7 +1001,8 @@ def _ensure_runtime_compat_schema():
                 ('retreat_travel_radius',"TEXT DEFAULT ''"),('retreat_price_range',"TEXT DEFAULT ''"),
                 ('retreat_group_size',"TEXT DEFAULT ''"),('retreat_availability',"TEXT DEFAULT ''"),
                 ('retreat_accessibility',"TEXT DEFAULT ''"),('retreat_booking_requirements',"TEXT DEFAULT ''"),
-                ('logo_name',"TEXT DEFAULT ''"),('cover_name',"TEXT DEFAULT ''"),('cover_type',"TEXT DEFAULT ''")
+                ('logo_name',"TEXT DEFAULT ''"),('cover_name',"TEXT DEFAULT ''"),('cover_type',"TEXT DEFAULT ''"),
+                ('home_feature_modules',"TEXT DEFAULT ''")
             ],
             'journal_entries': [
                 ('category',"TEXT DEFAULT 'Private Journal Entries'"),('shared_copy','INTEGER NOT NULL DEFAULT 0'),
@@ -1041,6 +1061,21 @@ def _ensure_runtime_compat_schema():
                 file_data BLOB NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS conscious_community_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id INTEGER NOT NULL,
+                receiver_user_id INTEGER NOT NULL, note TEXT DEFAULT '', purposes TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'Pending', created_at TEXT NOT NULL, responded_at TEXT,
+                FOREIGN KEY(sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(receiver_user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS conscious_community_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+                community_member_user_id INTEGER NOT NULL, connection_purposes TEXT DEFAULT '',
+                note TEXT DEFAULT '', created_at TEXT NOT NULL,
+                UNIQUE(user_id,community_member_user_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(community_member_user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS hosted_app_content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, business_id INTEGER NOT NULL,
@@ -1618,7 +1653,7 @@ BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 </style><style>html,body{max-width:100%;overflow-x:hidden}img,video{max-width:100%;height:auto}.logo{width:49px;height:49px;padding:0;border-radius:50%;object-fit:contain;display:block;background:transparent}.page,.card,.hero,form{box-sizing:border-box;max-width:100%}.input,select,textarea,button{max-width:100%;box-sizing:border-box}.natal-grounding{display:block;width:100%;max-width:760px;margin:28px auto 0;min-width:0}.natal-grounding h2,.natal-grounding h3{display:block;margin:10px 0}.natal-grounding p{display:block;width:100%;max-width:none;margin:10px 0;line-height:1.7;overflow-wrap:anywhere}.natal-grounding .topspace{display:block;width:100%;margin:22px 0 0}.natal-grounding .topspace .badge{margin-bottom:4px}.moregrid>*{min-width:0}.moregrid summary{min-width:0;flex-wrap:wrap}.moregrid summary>span{min-width:0;overflow-wrap:anywhere}@media(max-width:700px){.grid,.two,.profilehero,.moregrid{grid-template-columns:1fr!important}.actions{display:flex;flex-wrap:wrap;gap:8px}.actions .btn,.actions .out{max-width:100%}.natal-grounding{margin-top:22px;padding:0;width:100%}.natal-grounding h2{font-size:25px}.natal-grounding h3{font-size:20px}.natal-grounding p{font-size:15px;line-height:1.65}.topspace{align-items:flex-start;flex-wrap:wrap}.moregrid details.card{width:100%;margin:8px 0}}</style></head><body>
 <header class="top"><div class="topin"><a class="brand" href="{{ url_for('home') }}"><img class="logo" src="{{ url_for('static',filename='seasons-within-logo.png') }}" alt="The Seasons Within logo"><div><strong>The Seasons Within</strong><small>Conscious Coordination</small></div></a><nav class="desktopnav"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}">Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}">Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}">My Journal</a><a class="{{'on' if active=='retreats'}}" href="{{url_for('retreats')}}">Retreats</a></nav><div class="acct">{% if user %}<a href="{{url_for('inbox')}}">Inbox</a><a href="{{url_for('notifications')}}">Notifications</a><span>{{user['name'].split()[0]}}</span><a href="{{url_for('logout')}}">Sign Out</a>{% else %}<a href="{{url_for('login')}}">Sign In</a><a href="{{url_for('join')}}">Join Free</a>{% endif %}</div></div></header>
 <main class="page">{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class="flash">{{msg}}</div>{% endfor %}{% endwith %}{{ content|safe }}</main>
-<nav class="bottom"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}"><b>⌂</b>Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}"><b>☼</b>Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}"><b>◉</b>Journal</a><a class="{{'on' if active=='business'}}" href="{{url_for('business_network')}}"><b>◇</b>Business</a><a class="{{'on' if active=='more'}}" href="{{url_for('more')}}"><b>•••</b>More</a></nav></body></html>'''
+<nav class="bottom"><a class="{{'on' if active=='home'}}" href="{{url_for('home')}}"><b>⌂</b>Home</a><a class="{{'on' if active=='community'}}" href="{{url_for('community')}}"><b>☼</b>Community</a><a class="{{'on' if active=='profile'}}" href="{{url_for('profile')}}"><b>◉</b>Journal</a><a class="{{'on' if active=='coordination'}}" href="{{url_for('connections')}}"><b>♡</b>Conscious Coordination</a><a class="{{'on' if active=='more'}}" href="{{url_for('more')}}"><b>•••</b>More</a></nav></body></html>'''
 
 
 def page(title, content, active=''):
@@ -5328,14 +5363,19 @@ def galaxy_eve_card():
     return f'''<article class="card paid appcard"><div class="media"><div style="text-align:center"><div class="avatar" style="width:90px;height:90px;margin:auto">GE</div><p><b>Galaxy Eve</b></p></div></div><div class="body"><span class="badge gold">★ Featured Hosted App</span><h2>Galaxy Eve</h2><p><b>Conscious Coordinator • Content Creator</b></p><p class="muted">Content • Collaborations • Creator Experiences</p><a class="btn" href="{url_for('galaxy_eve_app')}">Open App</a></div></article>'''
 
 
-def regular_business_cards(rows):
+def regular_business_cards(rows,home_swipe=False):
     if not rows:
         return '<div class="empty"><h3>Businesses will appear here as they join</h3></div>'
     cards=[]
     for b in rows:
         logo=business_media_src(b['logo_name']) if 'logo_name' in b.keys() and b['logo_name'] else ''
         media=f'<img src="{logo}" alt="{b["name"]} logo" style="width:100%;height:100%;object-fit:cover">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
-        cards.append(f'''<article class="card appcard"><div class="media">{media}</div><div class="body"><span class="badge">Hosted App</span><h2>{b['name']}</h2><p><b>{b['owner_title'] or b['category']}</b></p><p class="muted">{b['location']} • {b['tagline']}</p><a class="btn" href="{url_for('business_app',business_id=b['id'])}">Open App</a></div></article>''')
+        shortcuts=''
+        if home_swipe:
+            selected=[x for x in ((b['home_feature_modules'] if 'home_feature_modules' in b.keys() else '') or '').split(',') if x]
+            labels=dict(HOSTED_APP_MODULES)
+            shortcuts='<div class="chips">'+''.join(f'<a class="chip" href="{url_for("business_app",business_id=b["id"])}#{key}">{html.escape(labels.get(key,key.title()))}</a>' for key in selected if key in labels)+'</div>' if selected else ''
+        cards.append(f'''<article class="card appcard"><div class="media">{media}</div><div class="body"><span class="badge">Hosted App</span><h2>{html.escape(b['name'])}</h2><p><b>{html.escape(b['owner_title'] or b['category'])}</b></p><p class="muted">{html.escape(b['location'] or '')} • {html.escape(b['tagline'] or '')}</p>{shortcuts}<a class="btn" href="{url_for('business_app',business_id=b['id'])}">View Full App</a></div></article>''')
     return ''.join(cards)
 
 
@@ -5548,12 +5588,12 @@ def home():
     if q:
         needle=q.lower()
         businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
-    other=regular_business_cards(businesses)
+    other=regular_business_cards(businesses,home_swipe=True)
 
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
-    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="grid">{other}</div>
-    <div class="grid"><article class="card"><span class="badge">RETREATS</span><h2>Design Your Seasons Within Retreat</h2><a class="btn" href="https://docs.google.com/forms/d/e/1FAIpQLSeVnIgf2nKh6vCqK9jtLg9AXff1A2CoSdhdvNP85oGO8d9PNQ/viewform?usp=header">Build My Retreat</a></article></div>'''
+    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="home-business-swipe">{other}</div>
+    <style>.home-business-swipe{{display:flex;gap:15px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 18px;touch-action:pan-x pan-y}}.home-business-swipe .appcard{{flex:0 0 min(86vw,360px);scroll-snap-align:start;margin:0}}.home-business-swipe::-webkit-scrollbar{{height:8px}}.home-business-swipe::-webkit-scrollbar-thumb{{background:#d8c6e5;border-radius:999px}}</style>'''
     return page('Home',content,'home')
 
 @app.route('/join', methods=['GET','POST'])
@@ -5981,7 +6021,7 @@ def profile():
     member_badge='★ FULL MEMBER / CONSCIOUS COORDINATION' if (u['conscious_paid'] or u['is_admin']) else 'FREE MEMBER'
     business_profile_action=(f'''<a class="out small" style="margin-top:10px" href="{url_for('business_app',business_id=published_business['id'])}">View Business App</a>''' if published_business else f'''<a class="out small" style="margin-top:10px" href="{url_for('business_builder',step=1)}">Host Your Business App</a>''')
     header=f'''<article class="card"><div class="profilehero"><div><span class="badge">{member_badge}</span><h1>{html.escape(u['name'])}</h1><p class="muted">{html.escape(display_city or 'Add your city')} • {html.escape(u['headline'] or 'Add a headline')}</p><p>{html.escape(u['about'] or '')}</p></div><div style="text-align:center"><div class="portrait" style="width:150px;height:150px"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;object-fit:contain;border-radius:50%"></div><a class="out small" style="margin-top:10px" href="{url_for('member_gallery',user_id=u['id'])}">Picture Gallery</a>{business_profile_action}</div></div></article>'''
-    shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
+    shortcuts=f'''<div class="grid"><a class="moreitem" href="{url_for('journal')}">My Private Journal</a><a class="moreitem" href="{url_for('inbox')}">Journal Inbox</a><a class="moreitem" href="{url_for('conscious_community')}">My Conscious Community</a><a class="moreitem" href="{url_for('connections')}">♡ Conscious Coordination</a><a class="moreitem" href="{url_for('business_dashboard')}">My Business Dashboard</a></div>'''
     if not ready:
         content=header+shortcuts+f'''<article class="card"><span class="badge heart">JOIN THE COMMUNITY</span><h2>Complete Your Profile</h2><p class="muted">Your one member profile includes your birth information, connection preferences, communication, regulation, boundaries, values and wellness choices. Complete it to unlock Community and personalized Conscious Coordination.</p><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a></article>'''
         return page('My Journal',content,'profile')
@@ -6516,7 +6556,7 @@ def journal():
         visibility_options+='<option value="community">Share a Copy to Community</option>'
     else:
         visibility_note='<p class="muted small">Community sharing becomes available after your profile is complete.</p>'
-    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>My Private Journal</h1><p class="muted">One journal. Private by default.</p><div class="actions"><a class="btn" href="#new-entry">Private Journal Entry</a><a class="out" href="{url_for('astrology_reflections')}">Conscious Coordination Reflections</a><a class="out" href="{url_for('inbox')}">Journal Inbox</a></div></div>
+    content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>My Private Journal</h1><p class="muted">One journal. Private by default.</p><div class="actions"><a class="btn" href="#new-entry">Private Journal Entry</a><a class="out" href="{url_for('astrology_reflections')}">Conscious Coordination Reflections</a><a class="out" href="{url_for('conscious_community')}">My Conscious Community</a><a class="out" href="{url_for('inbox')}">Journal Inbox</a></div></div>
     <form class="card" id="new-entry" method="post"><h2>Journal Entry</h2><label><b>File this entry under</b></label><select class="input" name="category">{opts}</select>
     <input class="input" name="title" value="{html.escape(prefill_title,quote=True)}" placeholder="Entry title" required>{prompt_html}
     <textarea class="input" name="body" placeholder="Write your private journal entry..." required></textarea>
@@ -6564,6 +6604,7 @@ def inbox():
                          LEFT JOIN virtual_gift_types gt ON gt.id=vg.gift_type_id
                          WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall()
     sender_ids=sorted({m['sender_id'] for m in msgs})
+    community_requests=conn.execute('''SELECT r.*,s.name sender_name FROM conscious_community_requests r JOIN users s ON s.id=r.sender_user_id WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall()
     sender_photos={}
     if sender_ids:
         placeholders=','.join('?' for _ in sender_ids)
@@ -6590,7 +6631,8 @@ def inbox():
     cards_html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{status}{filters}{cards_html}''','more')
+    request_notice=(f'''<article class="card paid"><span class="badge heart">CONSCIOUS COMMUNITY REQUEST</span><h2>{len(community_requests)} Community Request{'s' if len(community_requests)!=1 else ''}</h2><p class="muted">Review the sender, note and requested purpose, then accept or decline.</p><a class="btn" href="{url_for('conscious_community')}">Review Community Requests</a></article>''' if community_requests else '')
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{request_notice}{status}{filters}{cards_html}''','more')
 
 @app.route('/inbox/read/<int:message_id>')
 @login_required
@@ -6755,6 +6797,79 @@ def _coordination_profile_facts_html(profile):
     facts=_visible_coordination_profile_facts(profile)
     return (f'''<div class="coordination-quick-facts">{''.join(f'<span class="chip"><span aria-hidden="true">{icon}</span> {html.escape(value)}</span>' for icon,value in facts)}</div>''' if facts else '')
 
+CONSCIOUS_COMMUNITY_PURPOSES=['Friendship','Business Partner','Collaboration','Content Creation','Retreat Hosting','Wellness Activities','Shared Projects','Networking','Like-Minded Community','Other']
+
+def _conscious_member_photo(user_id,name,large=False):
+    conn=db(); media=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(user_id,)).fetchone(); conn.close()
+    cls='discover-member-photo' if large else 'avatar'
+    size='' if large else 'width:76px;height:76px;'
+    if media: return f'<div class="{cls}" style="{size}"><img src="{url_for("community_media",filename=media["file_name"])}" style="width:100%;height:100%;object-fit:cover;{_crop_css(media["crop_data"])}" alt="{html.escape(name,quote=True)}"></div>'
+    return f'<div class="{cls} discover-member-photo-fallback" style="{size}" role="img" aria-label="{html.escape(name,quote=True)} profile photo fallback">{initials(name)}</div>'
+
+@app.route('/conscious-community')
+@login_required
+def conscious_community():
+    u=current_user(); conn=db()
+    members=conn.execute('''SELECT c.*,m.name,m.city,m.birth_region,cp.coordination_types
+                            FROM conscious_community_members c JOIN users m ON m.id=c.community_member_user_id
+                            LEFT JOIN connection_profiles cp ON cp.user_id=m.id
+                            WHERE c.user_id=? ORDER BY m.name''',(u['id'],)).fetchall()
+    requests=conn.execute('''SELECT r.*,s.name,s.city,s.birth_region FROM conscious_community_requests r
+                             JOIN users s ON s.id=r.sender_user_id
+                             WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall(); conn.close()
+    request_cards=[]
+    for r in requests:
+        request_cards.append(f'''<article class="card paid"><div class="post">{_conscious_member_photo(r['sender_user_id'],r['name'])}<div><span class="badge heart">CONSCIOUS COMMUNITY REQUEST</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['note'] or 'Would like to connect in Conscious Community.')}</p><p><b>Purpose:</b> {html.escape(r['purposes'] or 'Like-Minded Community')}</p><div class="actions"><form method="post" action="{url_for('conscious_community_respond',request_id=r['id'],decision='accept')}"><button class="btn">Accept</button></form><form method="post" action="{url_for('conscious_community_respond',request_id=r['id'],decision='decline')}"><button class="out">Decline</button></form><a class="out" href="{url_for('connection_profile',user_id=r['sender_user_id'])}">View Member Profile</a></div></div></div></article>''')
+    member_cards=[]
+    for m in members:
+        location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
+        member_cards.append(f'''<article class="card"><div class="post">{_conscious_member_photo(m['community_member_user_id'],m['name'])}<div><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)}</p><p><b>Community Connection:</b> {html.escape(m['connection_purposes'] or m['coordination_types'] or 'Conscious Community')}</p>{f'<p class="muted">{html.escape(m["note"])}</p>' if m['note'] else ''}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['community_member_user_id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['community_member_user_id'],origin='Conscious Community')}">Message</a><a class="out" href="{url_for('member_gallery',user_id=m['community_member_user_id'])}#send-gift">Send Gift</a><form method="post" action="{url_for('conscious_community_remove',user_id=m['community_member_user_id'])}"><button class="out danger">Remove from Community</button></form></div></div></div></article>''')
+    current=''.join(member_cards) or '<div class="empty"><h3>Your Conscious Community is waiting to grow.</h3><p class="muted">Choose members intentionally and send a request when a connection feels aligned.</p><a class="btn" href="'+url_for('connections')+'">Discover Like-Minded Members</a></div>'
+    pending=('<div class="topspace"><h2>Community Requests</h2></div>'+''.join(request_cards)) if request_cards else ''
+    return page('My Conscious Community',f'''<div class="hero"><span class="badge heart">MY CONSCIOUS COMMUNITY</span><h1>My Conscious Community</h1><p class="muted">Confirmed connections you intentionally choose for friendship, collaboration, wellness, Retreats and shared projects.</p></div><div class="topspace"><h2>My Community Members</h2></div>{current}{pending}<div class="topspace"><h2>Discover More Like-Minded Members</h2></div><article class="card"><p class="muted">Continue through the existing Discover Members swipe experience and request the connections you want to build.</p><a class="btn" href="{url_for('connections')}">Discover Members</a></article>''','coordination')
+
+@app.route('/conscious-community/request/<int:user_id>',methods=['GET','POST'])
+@login_required
+def conscious_community_request(user_id):
+    u=current_user()
+    if user_id==u['id']: abort(400)
+    conn=db(); other=conn.execute('SELECT id,name FROM users WHERE id=?',(user_id,)).fetchone()
+    connected=conn.execute('SELECT 1 FROM conscious_community_members WHERE user_id=? AND community_member_user_id=?',(u['id'],user_id)).fetchone()
+    pending=conn.execute("SELECT 1 FROM conscious_community_requests WHERE ((sender_user_id=? AND receiver_user_id=?) OR (sender_user_id=? AND receiver_user_id=?)) AND status='Pending'",(u['id'],user_id,user_id,u['id'])).fetchone()
+    if not other: conn.close(); abort(404)
+    if connected or pending:
+        conn.close(); flash('This community connection or request already exists.','info'); return redirect(url_for('connections'))
+    if request.method=='POST':
+        chosen=[x for x in request.form.getlist('purposes') if x in CONSCIOUS_COMMUNITY_PURPOSES]
+        custom=request.form.get('other_purpose','').strip()
+        purposes=[x for x in chosen if x!='Other']+([custom] if 'Other' in chosen and custom else [])
+        note=request.form.get('note','').strip()[:500]
+        cur=conn.execute('INSERT INTO conscious_community_requests(sender_user_id,receiver_user_id,note,purposes,status,created_at) VALUES(?,?,?,?,?,?)',(u['id'],user_id,note,', '.join(purposes) or 'Like-Minded Community','Pending',now()))
+        request_id=cur.lastrowid
+        conn.execute('INSERT INTO notifications(user_id,title,body,created_at,link) VALUES(?,?,?,?,?)',(user_id,'Conscious Community Request',f'{u["name"]} sent a request to connect in Conscious Community.',now(),url_for('conscious_community')+f'#request-{request_id}'))
+        conn.commit(); conn.close(); flash('Conscious Community request sent.','success'); return redirect(url_for('connections'))
+    conn.close(); choices=''.join(f'<label class="fact"><input type="checkbox" name="purposes" value="{x}"> {x}</label>' for x in CONSCIOUS_COMMUNITY_PURPOSES)
+    return page('Request Conscious Community Connection',f'''<div class="hero"><span class="badge heart">CONSCIOUS COMMUNITY REQUEST</span><h1>Request to Add {html.escape(other['name'])}</h1></div><form class="card" method="post"><label><b>Short note (optional)</b><textarea class="input" name="note" maxlength="500" placeholder="I enjoyed our conversation and think we may align well..."></textarea></label><h3>Why would you like this member in your Conscious Community?</h3><div class="checkboxes">{choices}</div><label><b>If Other, add a short purpose</b><input class="input" name="other_purpose" maxlength="120"></label><button class="btn">Send Community Request</button></form>''','coordination')
+
+@app.route('/conscious-community/request/<int:request_id>/<decision>',methods=['POST'])
+@login_required
+def conscious_community_respond(request_id,decision):
+    if decision not in {'accept','decline'}: abort(404)
+    u=current_user(); conn=db(); row=conn.execute("SELECT * FROM conscious_community_requests WHERE id=? AND receiver_user_id=? AND status='Pending'",(request_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    status='Accepted' if decision=='accept' else 'Declined'
+    conn.execute('UPDATE conscious_community_requests SET status=?,responded_at=? WHERE id=?',(status,now(),request_id))
+    if decision=='accept':
+        conn.execute('INSERT INTO conscious_community_members(user_id,community_member_user_id,connection_purposes,note,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING',(u['id'],row['sender_user_id'],row['purposes'],row['note'],now()))
+        conn.execute('INSERT INTO conscious_community_members(user_id,community_member_user_id,connection_purposes,note,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING',(row['sender_user_id'],u['id'],row['purposes'],row['note'],now()))
+    conn.execute('INSERT INTO notifications(user_id,title,body,created_at,link) VALUES(?,?,?,?,?)',(row['sender_user_id'],f'Conscious Community Request {status}',f'{u["name"]} {status.lower()} your Conscious Community request.',now(),url_for('conscious_community')))
+    conn.commit(); conn.close(); flash(f'Community request {status.lower()}.','success'); return redirect(url_for('conscious_community'))
+
+@app.route('/conscious-community/remove/<int:user_id>',methods=['POST'])
+@login_required
+def conscious_community_remove(user_id):
+    u=current_user(); conn=db(); conn.execute('DELETE FROM conscious_community_members WHERE (user_id=? AND community_member_user_id=?) OR (user_id=? AND community_member_user_id=?)',(u['id'],user_id,user_id,u['id'])); conn.commit(); conn.close(); flash('Community connection removed.','success'); return redirect(url_for('conscious_community'))
+
 @app.route('/conscious-coordination')
 @login_required
 
@@ -6832,12 +6947,16 @@ def connections():
     cards=[]
     for m in members:
         score=preview(m)
-        conn=db(); media=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(m['user_id'],)).fetchone(); conn.close()
+        conn=db(); media=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(m['user_id'],)).fetchone(); connected=conn.execute('SELECT 1 FROM conscious_community_members WHERE user_id=? AND community_member_user_id=?',(u['id'],m['user_id'])).fetchone(); pending=conn.execute("SELECT sender_user_id,receiver_user_id FROM conscious_community_requests WHERE ((sender_user_id=? AND receiver_user_id=?) OR (sender_user_id=? AND receiver_user_id=?)) AND status='Pending' ORDER BY id DESC LIMIT 1",(u['id'],m['user_id'],m['user_id'],u['id'])).fetchone(); conn.close()
         photo=(f'<div class="discover-member-photo"><img src="{url_for("community_media",filename=media["file_name"])}" style="{_crop_css(media["crop_data"])}" alt="{html.escape(m["name"],quote=True)}"></div>' if media else f'<div class="discover-member-photo discover-member-photo-fallback" role="img" aria-label="{html.escape(m["name"],quote=True)} profile photo fallback">{initials(m["name"])}</div>')
         location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
         score_html=f'<div class="fact"><small>Basic Compatibility Preview</small><b>{score}%</b></div>' if score is not None else ''
         facts_html=_coordination_profile_facts_html(m)
-        cards.append(f'''<article class="card discover-swipe-card {'paid' if m['conscious_paid'] else ''}" data-member-card><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'MEMBER'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Conscious Coordination')}</p>{photo}{score_html}{facts_html}<div class="actions"><form method="post" action="{url_for('coordination_like',user_id=m['user_id'])}" style="display:inline"><button class="out" type="submit">♡ Interested</button></form><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">💬 Message</a><a class="out" href="{url_for('member_gallery',user_id=m['user_id'])}#send-gift">🎁 Send Gift</a><a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">Conscious Coordination Profile</a></div></article>''')
+        if connected: community_action='<span class="out">✓ In My Conscious Community</span>'
+        elif pending and pending['sender_user_id']==u['id']: community_action='<span class="out">Request Sent</span>'
+        elif pending: community_action=f'<a class="out" href="{url_for("conscious_community")}">Community Request Received</a>'
+        else: community_action=f'<a class="out" href="{url_for("conscious_community_request",user_id=m["user_id"])}">Request to Add to Community</a>'
+        cards.append(f'''<article class="card discover-swipe-card {'paid' if m['conscious_paid'] else ''}" data-member-card><span class="badge {'gold' if m['conscious_paid'] else ''}">{'★ FULL MEMBER' if m['conscious_paid'] else 'MEMBER'}</span><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)} • {html.escape(m['coordination_types'] or 'Conscious Coordination')}</p>{photo}{score_html}{facts_html}<div class="actions"><form method="post" action="{url_for('coordination_like',user_id=m['user_id'])}" style="display:inline"><button class="out" type="submit">♡ Interested</button></form><a class="out" href="{url_for('message_member',recipient_id=m['user_id'],origin='Conscious Coordination')}">💬 Message</a><a class="out" href="{url_for('member_gallery',user_id=m['user_id'])}#send-gift">🎁 Send Gift</a>{community_action}<a class="btn" href="{url_for('connection_profile',user_id=m['user_id'])}">Conscious Coordination Profile</a></div></article>''')
     member_cards=''.join(cards) or '<div class="empty"><h3>No matching member profiles yet</h3><p class="muted">Compatible connections will appear as participating members match your selected intentions.</p><a class="out" href="'+url_for('connections')+'">Return to Discover Members</a></div>'
     filters='<a class="chip" href="'+url_for('connections')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
 
@@ -6857,12 +6976,13 @@ def connections():
             comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('journal',category='Conscious Coordination')}">My Coordination Journal</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
-    {host_form}
     <div class="topspace"><h2>Discover Members</h2><p class="muted small">Swipe horizontally to browse. Swiping browses only; use Interested when you want to express interest.</p></div><div class="chips">{filters}</div>
     <section class="discover-swipe" data-discover-swipe aria-label="Discover Members"><div class="discover-swipe-deck">{member_cards}</div>{f'<div class="discover-swipe-controls"><button class="out" type="button" data-swipe-prev aria-label="Previous member">Previous</button><span class="muted small" data-swipe-status aria-live="polite"></span><button class="out" type="button" data-swipe-next aria-label="Next member">Next</button></div>' if cards else ''}</section>
+    {host_form}
+    {''.join(feed_cards)}
     <style>.discover-swipe{{max-width:760px;margin:0 auto}}.discover-swipe-deck{{touch-action:pan-y}}.discover-swipe-card{{display:none;margin-top:18px}}.discover-swipe-card.is-active{{display:block}}.discover-member-photo{{width:100%;aspect-ratio:4/5;max-height:680px;margin:16px 0;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,#d4b9e7,#f0c2cb)}}.discover-member-photo img{{display:block;width:100%;height:100%;object-fit:cover}}.discover-member-photo-fallback{{display:grid;place-items:center;color:#fff;font-size:clamp(52px,14vw,96px);font-weight:900}}.discover-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}.coordination-quick-facts{{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}}.coordination-quick-facts .chip{{font-size:.86rem}}@media(max-width:640px){{.discover-member-photo{{width:100%;max-height:none;border-radius:16px}}.discover-swipe-card .actions{{gap:7px}}.discover-swipe-card .actions .btn,.discover-swipe-card .actions .out{{font-size:.82rem;padding:9px 11px}}}}</style>
     <script>(()=>{{const root=document.querySelector('[data-discover-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-member-card]')];if(!cards.length)return;let i=0,startX=0,startY=0,end=null;const deck=root.querySelector('.discover-swipe-deck'),status=root.querySelector('[data-swipe-status]');function show(next){{i=Math.max(0,Math.min(cards.length,next));cards.forEach((card,n)=>card.classList.toggle('is-active',n===i));if(i===cards.length){{if(!end){{end=document.createElement('div');end.className='empty';end.innerHTML='<h3>You’ve reached the end of members in this category.</h3><div class="actions"><button class="out" type="button" data-restart>Restart</button><a class="out" href="{url_for('connections')}">Change filter</a></div>';deck.appendChild(end);end.querySelector('[data-restart]').onclick=()=>show(0);}}end.hidden=false;}}else if(end)end.hidden=true;if(status)status.textContent=i<cards.length?`${{i+1}} of ${{cards.length}}`:'End of members';}}root.querySelector('[data-swipe-prev]').onclick=()=>show(Math.max(0,i-1));root.querySelector('[data-swipe-next]').onclick=()=>show(i+1);root.addEventListener('touchstart',e=>{{startX=e.changedTouches[0].clientX;startY=e.changedTouches[0].clientY}},{{passive:true}});root.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?i+1:Math.max(0,i-1))}},{{passive:true}});show(0);}})();</script>'''
-    return page('Conscious Coordination',content,'more')
+    return page('Conscious Coordination',content,'coordination')
 
 
 @app.route('/conscious-coordination/host-post', methods=['POST'])
@@ -9505,7 +9625,7 @@ def hosted_app_editor():
         if key in {'home','about','services','gallery','videos','booking','contact'} or key not in enabled: continue
         optional.append(f'<div class="app-editor-card"><div><h3>{label}</h3><p class="muted">Visible in your app</p></div><a class="out" href="{url_for("hosted_app_content_editor",kind=key)}">Edit</a></div>')
     card=lambda title,summary,section,visual='': f'''<div class="app-editor-card"><div><h2>{title}</h2><p class="muted">{summary}</p><div class="editor-thumbs">{visual}</div></div><a class="out" href="{url_for('hosted_app_edit_section',section=section)}">Edit</a></div>'''
-    body=f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">HOSTED BUSINESS APP OWNER</span><h1>Edit My Hosted App</h1><p class="muted">Create once. Edit directly forever.</p><div class="actions"><a class="btn" href="{url_for('hosted_app_preview')}">Preview My App</a>{f'<a class="out" href="{url_for("business_app",business_id=b["id"])}">View Published App</a>' if b['active'] else ''}</div></div>{card('Header & Branding','Current logo and cover','branding',logo+cover)}{card('About',(b['description'] or 'Add your business description')[:180],'about')}{card('Services',(b['offers'] or 'Add individual services, pricing and booking details')[:180],'services')}{card('Gallery',f'{len(galleries)} photos','gallery',thumbs)}{card('Videos',f'{len(videos)} of 3 videos','videos',video_thumbs)}{card('Booking',{'seasons_calendar':'The Seasons Within Calendar','external':'Existing booking link','none':'No booking'}.get(b['booking_method'] or 'seasons_calendar'),'booking')}{card('Contact','Email, phone, website and social links','contact')}{''.join(optional)}<a class="btn" href="{url_for('hosted_app_edit_section',section='sections')}">+ Add Section</a>'''
+    body=f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">HOSTED BUSINESS APP OWNER</span><h1>Edit My Hosted App</h1><p class="muted">Create once. Edit directly forever.</p><div class="actions"><a class="btn" href="{url_for('hosted_app_preview')}">Preview My App</a>{f'<a class="out" href="{url_for("business_app",business_id=b["id"])}">View Published App</a>' if b['active'] else ''}</div></div>{card('Header & Branding','Current logo and cover','branding',logo+cover)}{card('About',(b['description'] or 'Add your business description')[:180],'about')}{card('Services',(b['offers'] or 'Add individual services, pricing and booking details')[:180],'services')}{card('Gallery',f'{len(galleries)} photos','gallery',thumbs)}{card('Videos',f'{len(videos)} of 3 videos','videos',video_thumbs)}{card('Booking',{'seasons_calendar':'The Seasons Within Calendar','external':'Existing booking link','none':'No booking'}.get(b['booking_method'] or 'seasons_calendar'),'booking')}{card('Contact','Email, phone, website and social links','contact')}{card('Feature on Home Page','Choose which published sections appear as shortcuts on your Home Business App card','home_features')}{''.join(optional)}<a class="btn" href="{url_for('hosted_app_edit_section',section='sections')}">+ Add Section</a>'''
     return page('Edit My Hosted App',body,'business')
 
 @app.route('/business/app/preview')
@@ -9520,7 +9640,7 @@ def hosted_app_preview():
 def hosted_app_edit_section(section):
     u=current_user(); b,media,events=_owner_business_bundle(u['id'])
     if not b: return redirect(url_for('business_builder',step=1))
-    if section not in {'branding','about','services','gallery','videos','booking','contact','sections'}: abort(404)
+    if section not in {'branding','about','services','gallery','videos','booking','contact','sections','home_features'}: abort(404)
     if request.method=='POST':
         conn=db()
         if section=='about': conn.execute('UPDATE businesses SET description=?,story=?,tagline=?,updated_at=? WHERE id=?',(request.form.get('description','').strip(),request.form.get('story','').strip(),request.form.get('tagline','').strip(),now(),b['id']))
@@ -9535,6 +9655,10 @@ def hosted_app_edit_section(section):
         elif section=='sections':
             selected=[k for k,_ in HOSTED_APP_MODULES if request.form.get('module_'+k)]; selected=list(dict.fromkeys(['home','about','contact']+selected))
             conn.execute('UPDATE businesses SET enabled_modules=?,updated_at=? WHERE id=?',(','.join(selected),now(),b['id']))
+        elif section=='home_features':
+            enabled=set(_module_list(b)); allowed={'classes','services','media_kit','events','booking','contact','videos','courses','gallery','retreats','affiliate'}
+            selected=[k for k,_ in HOSTED_APP_MODULES if k in allowed and k in enabled and request.form.get('feature_'+k)]
+            conn.execute('UPDATE businesses SET home_feature_modules=?,updated_at=? WHERE id=?',(','.join(selected),now(),b['id']))
         conn.commit(); conn.close(); flash('Changes saved.','success'); return redirect(url_for('hosted_app_editor'))
     if section=='branding':
         logo=_touch_crop_form('logo','Business Logo / Profile Image',business_media_src(b['logo_name']) if b['logo_name'] else '')
@@ -9557,6 +9681,10 @@ def hosted_app_edit_section(section):
         except Exception: settings={}
         radio=lambda value,label: f'<label class="fact"><input type="radio" name="booking_method" value="{value}" {"checked" if (b["booking_method"] or "seasons_calendar")==value else ""}> {label}</label>'
         content=f'''<form class="card" method="post"><h2>Booking Method</h2>{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Booking')}<label>Existing Booking Link<input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label>Available days<input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Wednesday, Friday"></label><label>Available times<input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM–4:00 PM"></label><label>Appointment duration<input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label>Time between appointments<input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label>Blocked dates<input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}"></label><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form>'''
+    elif section=='home_features':
+        enabled=set(_module_list(b)); chosen=set(((b['home_feature_modules'] if 'home_feature_modules' in b.keys() else '') or '').split(',')); allowed={'classes','services','media_kit','events','booking','contact','videos','courses','gallery','retreats','affiliate'}
+        choices=''.join(f'<label class="fact"><input type="checkbox" name="feature_{k}" {"checked" if k in chosen else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k in allowed and k in enabled)
+        content=f'''<form class="card" method="post"><h2>Feature on Home Page</h2><p class="muted">Choose shortcuts for your Home page Business App card. Only sections already enabled in your published Hosted App are available.</p>{choices or '<p class="muted">Enable and publish Hosted App sections before choosing Home page shortcuts.</p>'}<button class="btn">Save Home Page Features</button></form>'''
     else:
         enabled=set(_module_list(b)); content='<form class="card" method="post"><h2>+ Add Section</h2>'+''.join(f'<label class="fact"><input type="checkbox" name="module_{k}" {"checked" if k in enabled else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k not in {'home','about','contact'})+'<button class="btn">Save Sections</button></form>'
     return page('Edit '+section.title(),f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">EDIT MY HOSTED APP</span><h1>{section.title()}</h1><a class="out" href="{url_for('hosted_app_editor')}">Back to Editor</a></div>{content}''','business')
