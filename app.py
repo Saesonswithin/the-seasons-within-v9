@@ -5363,7 +5363,22 @@ def galaxy_eve_card():
     return f'''<article class="card paid appcard"><div class="media"><div style="text-align:center"><div class="avatar" style="width:90px;height:90px;margin:auto">GE</div><p><b>Galaxy Eve</b></p></div></div><div class="body"><span class="badge gold">★ Featured Hosted App</span><h2>Galaxy Eve</h2><p><b>Conscious Coordinator • Content Creator</b></p><p class="muted">Content • Collaborations • Creator Experiences</p><a class="btn" href="{url_for('galaxy_eve_app')}">Open App</a></div></article>'''
 
 
-def regular_business_cards(rows,home_swipe=False):
+def _home_business_module_map(rows):
+    ids=[b['id'] for b in rows]
+    result={bid:set() for bid in ids}
+    if not ids: return result
+    marks=','.join('?' for _ in ids); conn=db()
+    media=conn.execute(f'SELECT business_id,media_kind FROM business_media WHERE business_id IN ({marks})',ids).fetchall()
+    content=conn.execute(f'SELECT business_id,content_type FROM hosted_app_content WHERE published=1 AND business_id IN ({marks})',ids).fetchall()
+    events=conn.execute(f"SELECT business_id,event_type FROM business_calendar WHERE booking_status<>'Cancelled' AND business_id IN ({marks})",ids).fetchall(); conn.close()
+    for row in media: result[row['business_id']].add('videos' if row['media_kind']=='video' else 'gallery' if row['media_kind']=='gallery' else '')
+    for row in content: result[row['business_id']].add(row['content_type'])
+    for row in events:
+        typ=(row['event_type'] or '').lower()
+        result[row['business_id']].add('classes' if typ in {'class','program'} else 'courses' if typ=='course' else 'retreats' if typ=='retreat' else 'booking' if typ in {'availability','appointment'} else 'events' if typ!='blocked / unavailable' else '')
+    return result
+
+def regular_business_cards(rows,home_swipe=False,module_map=None):
     if not rows:
         return '<div class="empty"><h3>Businesses will appear here as they join</h3></div>'
     cards=[]
@@ -5372,10 +5387,18 @@ def regular_business_cards(rows,home_swipe=False):
         media=f'<img src="{logo}" alt="{b["name"]} logo" style="width:100%;height:100%;object-fit:cover">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
         shortcuts=''
         if home_swipe:
-            selected=[x for x in ((b['home_feature_modules'] if 'home_feature_modules' in b.keys() else '') or '').split(',') if x]
+            populated=set((module_map or {}).get(b['id'],set()))
+            if b['name']: populated.add('home')
+            if b['description'] or b['story'] or b['tagline']: populated.add('about')
+            if b['offers']: populated.add('services')
+            if b['contact_email'] or b['contact_phone'] or b['website'] or b['instagram'] or b['tiktok'] or b['youtube'] or b['facebook']: populated.add('contact')
+            if b['affiliate_links']: populated.add('affiliate')
+            if b['booking_method']=='external' and b['booking_url']: populated.add('booking')
+            enabled=set(_module_list(b)); selected=[key for key,_ in HOSTED_APP_MODULES if key in enabled and key in populated]
             labels=dict(HOSTED_APP_MODULES)
             shortcuts='<div class="chips">'+''.join(f'<a class="chip" href="{url_for("business_app",business_id=b["id"])}#{key}">{html.escape(labels.get(key,key.title()))}</a>' for key in selected if key in labels)+'</div>' if selected else ''
-        cards.append(f'''<article class="card appcard"><div class="media">{media}</div><div class="body"><span class="badge">Hosted App</span><h2>{html.escape(b['name'])}</h2><p><b>{html.escape(b['owner_title'] or b['category'])}</b></p><p class="muted">{html.escape(b['location'] or '')} • {html.escape(b['tagline'] or '')}</p>{shortcuts}<a class="btn" href="{url_for('business_app',business_id=b['id'])}">View Full App</a></div></article>''')
+        description=(b['description'] or b['tagline'] or '')[:320]
+        cards.append(f'''<article class="card appcard{' home-business-card' if home_swipe else ''}" {'data-home-business-card' if home_swipe else ''}><div class="media">{media}</div><div class="body"><span class="badge">Hosted App</span><h2>{html.escape(b['name'])}</h2><p><b>{html.escape(b['owner_title'] or b['category'])}</b></p><p class="muted">{html.escape(b['location'] or '')}</p>{f'<p>{html.escape(description)}</p>' if description else ''}{shortcuts}<a class="btn" href="{url_for('business_app',business_id=b['id'])}">View Full App</a></div></article>''')
     return ''.join(cards)
 
 
@@ -5588,12 +5611,13 @@ def home():
     if q:
         needle=q.lower()
         businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
-    other=regular_business_cards(businesses,home_swipe=True)
+    other=regular_business_cards(businesses,home_swipe=True,module_map=_home_business_module_map(businesses))
 
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
-    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2></div></div><div class="home-business-swipe">{other}</div>
-    <style>.home-business-swipe{{display:flex;gap:15px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 18px;touch-action:pan-x pan-y}}.home-business-swipe .appcard{{flex:0 0 min(86vw,360px);scroll-snap-align:start;margin:0}}.home-business-swipe::-webkit-scrollbar{{height:8px}}.home-business-swipe::-webkit-scrollbar-thumb{{background:#d8c6e5;border-radius:999px}}</style>'''
+    <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2><p class="muted small">Swipe horizontally to browse. Tap a section or View Full App to open the selected business.</p></div></div><section class="home-business-swipe" data-home-business-swipe aria-label="Hosted Business Apps"><div class="home-business-swipe-deck">{other}</div>{f'<div class="home-business-swipe-controls"><button class="out" type="button" data-business-prev aria-label="Previous business">Previous</button><span class="muted small" data-business-status aria-live="polite"></span><button class="out" type="button" data-business-next aria-label="Next business">Next</button></div>' if businesses else ''}</section>
+    <style>.home-business-swipe{{max-width:760px;margin:0 auto}}.home-business-swipe-deck{{touch-action:pan-y}}.home-business-card{{display:none;margin:0}}.home-business-card.is-active{{display:block}}.home-business-card .chips{{margin:18px 0 12px;padding-top:14px;border-top:1px solid var(--line)}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}@media(max-width:640px){{.home-business-swipe{{width:100%}}.home-business-card{{width:100%;overflow:hidden}}}}</style>
+    <script>(()=>{{const root=document.querySelector('[data-home-business-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-home-business-card]')];if(!cards.length)return;let i=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-business-status]');function show(n){{i=(n+cards.length)%cards.length;cards.forEach((card,x)=>card.classList.toggle('is-active',x===i));if(status)status.textContent=`${{i+1}} of ${{cards.length}}`;}}root.querySelector('[data-business-prev]').onclick=()=>show(i-1);root.querySelector('[data-business-next]').onclick=()=>show(i+1);root.addEventListener('touchstart',e=>{{startX=e.changedTouches[0].clientX;startY=e.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?i+1:i-1)}},{{passive:true}});root.addEventListener('click',e=>{{if(moved){{e.preventDefault();e.stopPropagation();moved=false;}}}},true);show(0);}})();</script>'''
     return page('Home',content,'home')
 
 @app.route('/join', methods=['GET','POST'])
