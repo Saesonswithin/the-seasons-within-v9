@@ -540,6 +540,8 @@ def init_db():
         ("messages","season","ALTER TABLE messages ADD COLUMN season TEXT DEFAULT ''"),
         ("notifications","link","ALTER TABLE notifications ADD COLUMN link TEXT DEFAULT ''"),
         ("journal_entries","source_post_id","ALTER TABLE journal_entries ADD COLUMN source_post_id INTEGER"),
+        ("journal_entries","media_name","ALTER TABLE journal_entries ADD COLUMN media_name TEXT DEFAULT ''"),
+        ("journal_entries","media_type","ALTER TABLE journal_entries ADD COLUMN media_type TEXT DEFAULT ''"),
         ("businesses","retreat_participating","ALTER TABLE businesses ADD COLUMN retreat_participating INTEGER NOT NULL DEFAULT 0"),
         ("businesses","retreat_service_area","ALTER TABLE businesses ADD COLUMN retreat_service_area TEXT DEFAULT ''"),
         ("businesses","retreat_delivery_mode","ALTER TABLE businesses ADD COLUMN retreat_delivery_mode TEXT DEFAULT ''"),
@@ -565,6 +567,7 @@ def init_db():
         ("businesses","google_calendar_connected","ALTER TABLE businesses ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0"),
         ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
         ("messages","gift_id","ALTER TABLE messages ADD COLUMN gift_id INTEGER"),
+        ("messages","recipient_deleted","ALTER TABLE messages ADD COLUMN recipient_deleted INTEGER NOT NULL DEFAULT 0"),
         ("community_posts","source_gallery_media_id","ALTER TABLE community_posts ADD COLUMN source_gallery_media_id INTEGER"),
         ("community_posts","source_gift_id","ALTER TABLE community_posts ADD COLUMN source_gift_id INTEGER"),
         ("users","dob","ALTER TABLE users ADD COLUMN dob TEXT DEFAULT ''"),
@@ -3267,6 +3270,34 @@ def _personal_profile_interpretation(user,cp_row,scores):
     conn=db(); conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,evidence_summary=excluded.evidence_summary,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',(user['id'],0,'personal_profile_interpretation',period_key,1,text,'','',json.dumps({'overall':scores.get('overall'),'dimensions':snapshot.get('category_details',{})},default=str),'owner-profile-no-journal',fp,digest,now(),now())); conn.commit(); conn.close()
     return text
 
+def _other_member_profile_interpretation(viewer,user,cp_row,scores):
+    """Write to the viewer about this member using stable, shareable profile evidence only."""
+    snapshot=(scores or {}).get('snapshot') or {}
+    if not snapshot.get('ready'): return ''
+    evidence={
+        'viewed_member':{'name':user['name'],'profile':_profile_psychology_context(dict(cp_row) if cp_row else {})},
+        'existing_individual_coordination_percentage':scores.get('overall'),
+        'existing_dimensions':snapshot.get('category_details',{}),
+        'natal_support':{'planets':snapshot.get('chart',{}).get('planets',{}),'aspects':snapshot.get('chart',{}).get('aspects',[]),'rising':snapshot.get('chart',{}).get('rising')},
+        'privacy':'No private Journal, messages, reflection questions, grounding exercises, current Moon or transit evidence is permitted.'
+    }
+    fingerprint=hashlib.sha256(json.dumps(evidence,sort_keys=True,default=str).encode()).hexdigest()
+    period_key=f'other-member:{viewer["id"]}:{snapshot.get("fingerprint","")[:24]}|writing-v2'
+    conn=db(); row=conn.execute('SELECT written_report,context_fingerprint FROM coordination_reports WHERE user_id=? AND other_user_id=? AND report_type=? AND period_key=?',(viewer['id'],user['id'],'other_member_profile_interpretation',period_key)).fetchone(); conn.close()
+    if row and row['written_report'] and row['context_fingerprint']==fingerprint: return row['written_report']
+    prompt=f'''Write exactly two cohesive professional paragraphs to a reader who is viewing {user['name']}’s individual Conscious Coordination Profile. Describe how this member may communicate, process emotion, connect, use boundaries and coordinate. Use “{user['name']},” “this member,” and “they/their”; never address the viewed member as “you,” and never imply the reader owns the viewed member’s placements. End with practical, reciprocal guidance beginning “You may find it easier to coordinate with this member when...” Ground every statement in the supplied stable profile and natal evidence. Do not expose private self-grounding, private reflection questions, Journal material, questionnaire wording, technical astrology, diagnosis, certainty, or prediction. The existing percentage is fixed and must not be changed. Return only the two paragraphs.\nEVIDENCE:\n'''+json.dumps(evidence,default=str)
+    text=(_openai_text(prompt) or '').strip()
+    if text:
+        paragraphs=[p.strip() for p in re.split(r'\n\s*\n',text) if p.strip()]
+        text='\n\n'.join(paragraphs[:2])
+    if not text:
+        details=snapshot.get('category_details') or {}; ordered=sorted(details.items(),key=lambda item:item[1].get('coordination_score',0),reverse=True)
+        strength=ordered[0][0] if ordered else 'communication'; awareness=ordered[-1][0] if len(ordered)>1 else 'pacing and expectations'
+        text=(f'''{html.escape(user['name'])} may coordinate most comfortably when emotional processing, communication and expectations have enough room to become clear. Their strongest current individual area is {strength}, while {awareness} may require more conscious attention. These patterns are reflective rather than absolute, and may become more noticeable when they feel rushed, misunderstood or uncertain about what another person expects.\n\nYou may find it easier to coordinate with this member when important needs are communicated directly, response time is not automatically interpreted as distance, and follow-through is visible. Clear plans, respectful pacing and early boundaries can help both people understand where they stand without requiring either person to guess or carry all of the adjustment.''')
+    digest=hashlib.sha256(_normalize_report_text(text).encode()).hexdigest()
+    conn=db(); conn.execute('''INSERT INTO coordination_reports(user_id,other_user_id,report_type,period_key,report_version,written_report,spoken_script,audio_reference,evidence_summary,privacy_scope,context_fingerprint,normalized_text_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,other_user_id,report_type,period_key) DO UPDATE SET written_report=excluded.written_report,evidence_summary=excluded.evidence_summary,privacy_scope=excluded.privacy_scope,context_fingerprint=excluded.context_fingerprint,normalized_text_hash=excluded.normalized_text_hash,updated_at=excluded.updated_at''',(viewer['id'],user['id'],'other_member_profile_interpretation',period_key,1,text,'','',json.dumps({'overall':scores.get('overall'),'dimensions':snapshot.get('category_details',{})},default=str),'viewer-facing-member-profile-no-journal',fingerprint,digest,now(),now())); conn.commit(); conn.close()
+    return text
+
 
 def basic_compatibility(me_id,other_id,kind='general'):
     """Compatibility/coordination adapter backed by the v2 pair engine; private Journal content is excluded."""
@@ -5613,7 +5644,7 @@ def home():
         businesses=[b for b in businesses if needle in ' '.join(str(b[k] or '') for k in ('name','owner_title','category','location','tagline','offers')).lower()]
     other=regular_business_cards(businesses,home_swipe=True,module_map=_home_business_module_map(businesses))
 
-    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Businesses & Apps</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('join')}">Join Free</a></div></div>
+    content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Wellness Apps</a><a class="out" href="{url_for('join')}">Join Free</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a></div></div>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2><p class="muted small">Swipe horizontally to browse. Tap a section or View Full App to open the selected business.</p></div></div><section class="home-business-swipe" data-home-business-swipe aria-label="Hosted Business Apps"><div class="home-business-swipe-deck">{other}</div>{f'<div class="home-business-swipe-controls"><button class="out" type="button" data-business-prev aria-label="Previous business">Previous</button><span class="muted small" data-business-status aria-live="polite"></span><button class="out" type="button" data-business-next aria-label="Next business">Next</button></div>' if businesses else ''}</section>
     <style>.home-business-swipe{{max-width:760px;margin:0 auto}}.home-business-swipe-deck{{touch-action:pan-y}}.home-business-card{{display:none;margin:0}}.home-business-card.is-active{{display:block}}.home-business-card .chips{{margin:18px 0 12px;padding-top:14px;border-top:1px solid var(--line)}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}@media(max-width:640px){{.home-business-swipe{{width:100%}}.home-business-card{{width:100%;overflow:hidden}}}}</style>
@@ -5922,11 +5953,11 @@ def community():
     if not conscious_coordination_ready(u,cp):
         content=f'''<div class="hero"><span class="badge heart">JOIN THE COMMUNITY</span><h1>Join the Community</h1><p class="muted">Complete your one member profile to become part of The Seasons Within Community.</p><div class="actions"><a class="btn" href="{url_for('edit_profile')}">Complete My Profile</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('home')}">Back to Home</a></div></div><article class="card"><h2>Your Community Starts With Your Profile</h2><p class="muted">Love / Relationship • Friendship • Business / Collaboration • Retreat / Activity • Shared Wellness</p><p>You can still use your Business Dashboard, Hosted Business App, Business Plan, private Journal and Retreat tools before joining the member Community.</p></article>'''
         return page('Join the Community',content,'community')
-    community_switch=f'''<div class="actions"><a class="btn" href="{url_for('community')}">Community</a><a class="out" href="{url_for('business_network')}">Businesses</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div>'''
+    community_switch=f'''<div class="actions"><a class="btn" href="{url_for('community')}">Community</a><a class="out" href="{url_for('business_network')}">Businesses</a><a class="out" href="{url_for('retreats')}">Retreats</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div>'''
     if request.method=='POST':
         title=request.form.get('title','').strip() or 'Community Reflection'; category=journal_category_for_public(request.form.get('category','Reflection').strip()); body=request.form.get('body','').strip(); media_name,media_type=save_community_media(request.files.get('media'),u['id'])
         if body:
-            conn=db(); cur=conn.execute('INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,category,body,media_name,media_type,now())); post_id=cur.lastrowid; conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,source_post_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(u['id'],title,body,category,1,post_id,now(),now())); conn.commit(); conn.close(); flash('Posted to Community and saved in your private Journal.','success'); return redirect(url_for('community'))
+            conn=db(); conn.execute('INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,category,body,media_name,media_type,now())); conn.commit(); conn.close(); flash('Posted to Community.','success'); return redirect(url_for('community'))
     conn=db()
     galaxy_user=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
     galaxy_business=conn.execute("SELECT b.* FROM businesses b JOIN users owner ON owner.id=b.owner_id WHERE b.active=1 AND lower(owner.name)=lower('Galaxy Eve') ORDER BY b.id LIMIT 1").fetchone()
@@ -6439,8 +6470,7 @@ def share_gallery_photo(media_id):
     if request.method=='POST':
         caption=request.form.get('caption','').strip()[:2000]; title=request.form.get('title','').strip()[:160] or 'Photo from My Gallery'
         if caption:
-            created=now(); cur=conn.execute('''INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,source_gallery_media_id,created_at) VALUES(?,?,?,?,?,?,?,?)''',(me['id'],title,'Reflection',caption,photo['file_name'],'image',media_id,created)); post_id=cur.lastrowid
-            conn.execute('''INSERT INTO journal_entries(user_id,title,body,category,shared_copy,source_post_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)''',(me['id'],title,caption,'Reflection',1,post_id,created,created))
+            created=now(); conn.execute('''INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,source_gallery_media_id,created_at) VALUES(?,?,?,?,?,?,?,?)''',(me['id'],title,'Reflection',caption,photo['file_name'],'image',media_id,created))
             conn.commit(); conn.close(); flash('Photo shared to your Public Journal. The original remains in your Photo Gallery.','success'); return redirect(url_for('profile'))
         flash('Write something about the photo before sharing it.','info')
     conn.close(); src=url_for('community_media',filename=photo['file_name'])
@@ -6552,17 +6582,18 @@ def journal():
         category=request.form.get('category','Private Journal Entries')
         if category not in categories: category='Private Journal Entries'
         shared=community_ready and request.form.get('visibility')=='community'
-        if title and body:
-            conn=db(); post_id=None
+        media_name,media_type=save_community_media(request.files.get('media'),u['id'])
+        if title and (body or media_name):
+            conn=db()
             if shared:
-                cpst=conn.execute('INSERT INTO community_posts(user_id,title,category,body,created_at) VALUES(?,?,?,?,?)',
-                                  (u['id'],title,journal_category_for_public(category),body,now()))
-                post_id=cpst.lastrowid
-            conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,source_post_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
-                         (u['id'],title,body,category,1 if shared else 0,post_id,now(),now()))
+                conn.execute('INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (u['id'],title,journal_category_for_public(category),body,media_name,media_type,now()))
+            else:
+                conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,source_post_id,media_name,media_type,created_at,updated_at) VALUES(?,?,?,?,0,NULL,?,?,?,?)',
+                             (u['id'],title,body,category,media_name,media_type,now(),now()))
             conn.commit(); conn.close()
-            flash('Journal entry saved privately.'+(' A separate copy was shared to Community.' if shared else ''),'success')
-            return redirect(url_for('journal',category=category))
+            flash('Posted to Community.' if shared else 'Journal entry saved privately.','success')
+            return redirect(url_for('community') if shared else url_for('journal',category=category))
     conn=db()
     entries=conn.execute('SELECT * FROM journal_entries WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall()
     conn.close()
@@ -6574,9 +6605,17 @@ def journal():
         'Reflections' if c=='Reflection' else 'Retreats' if c=='Retreat' else c) for c in categories)
     cards=[]
     for e in entries:
-        cards.append('<article class="card"><span class="badge">{}</span><h3>{}</h3><p>{}</p><p class="muted small">PRIVATE{} - {}</p><div class="actions"><a class="out" href="{}">Edit</a><form method="post" action="{}" style="display:inline"><button class="out danger" type="submit">Delete</button></form></div></article>'.format(
+        media=''
+        if 'media_name' in e.keys() and e['media_name']:
+            src=url_for('community_media',filename=e['media_name'])
+            media=(f'<video controls playsinline style="width:100%;border-radius:16px" src="{src}"></video>' if e['media_type']=='video' else f'<img src="{src}" alt="{html.escape(e["title"],quote=True)}" style="width:100%;max-height:620px;object-fit:contain;border-radius:16px">')
+        elif e['source_post_id']:
+            conn=db(); linked=conn.execute('SELECT media_name,media_type FROM community_posts WHERE id=?',(e['source_post_id'],)).fetchone(); conn.close()
+            if linked and linked['media_name']:
+                src=url_for('community_media',filename=linked['media_name']); media=(f'<video controls playsinline style="width:100%;border-radius:16px" src="{src}"></video>' if linked['media_type']=='video' else f'<img src="{src}" alt="{html.escape(e["title"],quote=True)}" style="width:100%;max-height:620px;object-fit:contain;border-radius:16px">')
+        cards.append('<article class="card"><span class="badge">{}</span><h3>{}</h3>{}<p>{}</p><p class="muted small">PRIVATE - {}</p><div class="actions"><a class="out" href="{}">Edit</a><form method="post" action="{}" style="display:inline"><button class="out danger" type="submit">Delete</button></form></div></article>'.format(
             html.escape('Private Journal Entries' if e['category']=='Journal Entry' else e['category']).upper(),
-            html.escape(e['title']),html.escape(e['body']),' - Community copy shared' if e['shared_copy'] else '',
+            html.escape(e['title']),media,html.escape(e['body']),
             e['created_at'],url_for('journal_entry_edit',entry_id=e['id']),url_for('journal_entry_delete',entry_id=e['id'])))
     cards_html=''.join(cards) or '<div class="empty"><h3>No journal entries here yet</h3><p class="muted">Your private writing will stay organized here.</p></div>'
     prompt_html=f'<div class="fact"><small>Reflection prompt / context</small>{html.escape(prefill_prompt).replace(chr(10),"<br>")}</div>' if prefill_prompt else ''
@@ -6587,9 +6626,10 @@ def journal():
     else:
         visibility_note='<p class="muted small">Community sharing becomes available after your profile is complete.</p>'
     content=f'''<div class="hero"><span class="badge">MY JOURNAL</span><h1>My Private Journal</h1><p class="muted">One journal. Private by default.</p><div class="actions"><a class="btn" href="#new-entry">Private Journal Entry</a><a class="out" href="{url_for('astrology_reflections')}">Conscious Coordination Reflections</a><a class="out" href="{url_for('conscious_community')}">My Conscious Community</a><a class="out" href="{url_for('inbox')}">Journal Inbox</a></div></div>
-    <form class="card" id="new-entry" method="post"><h2>Journal Entry</h2><label><b>File this entry under</b></label><select class="input" name="category">{opts}</select>
+    <form class="card" id="new-entry" method="post" enctype="multipart/form-data"><h2>Journal Entry</h2><label><b>File this entry under</b></label><select class="input" name="category">{opts}</select>
     <input class="input" name="title" value="{html.escape(prefill_title,quote=True)}" placeholder="Entry title" required>{prompt_html}
     <textarea class="input" name="body" placeholder="Write your private journal entry..." required></textarea>
+    <label><b>Attach a Photo</b></label><input class="input" type="file" name="media" accept="image/*">
     <label><b>Visibility</b></label><select class="input" name="visibility">{visibility_options}</select>{visibility_note}<button class="btn">Save Entry</button></form>
     <article class="card"><h3>My Entries</h3><div class="chips">{filter_html}</div></article>{cards_html}'''
     return page('My Journal',content,'more')
@@ -6632,7 +6672,7 @@ def inbox():
                          JOIN users r ON r.id=m.recipient_id
                          LEFT JOIN member_virtual_gifts vg ON vg.id=m.gift_id
                          LEFT JOIN virtual_gift_types gt ON gt.id=vg.gift_type_id
-                         WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC''',(u['id'],u['id'])).fetchall()
+                         WHERE m.recipient_id=? AND COALESCE(m.recipient_deleted,0)=0 ORDER BY m.id DESC''',(u['id'],)).fetchall()
     sender_ids=sorted({m['sender_id'] for m in msgs})
     community_requests=conn.execute('''SELECT r.*,s.name sender_name FROM conscious_community_requests r JOIN users s ON s.id=r.sender_user_id WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall()
     sender_photos={}
@@ -6657,7 +6697,8 @@ def inbox():
         open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         coordination_profile_action=f'<a class="out" href="{url_for("connection_profile",user_id=m["sender_id"])}">View Coordination Profile</a>' if m['category']=='Conscious Coordination' and m['sender_id']!=u['id'] else ''
         gift_context=(f'''<p class="muted small"><b>About gift:</b> {m['gift_emoji']} {html.escape(m['gift_label'])}</p>''' if m['gift_label'] else '')
-        cards.append(f'''<article class="card"{anchor}{highlight}><div class="post">{sender_avatar}<div>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {html.escape(m["sender_name"])} to {html.escape(m["recipient_name"])} • {html.escape(m["origin"])} • {m["created_at"]}</p>{gift_context}{dates}{season}<p>{html.escape(m["body"]).replace(chr(10),'<br>')}</p><div class="actions">{open_action}{coordination_profile_action}{reply}</div></div></div></article>''')
+        delete=f'''<form method="post" action="{url_for('inbox_delete',message_id=m['id'])}" style="display:inline" onsubmit="return confirm('Remove this item from your inbox?')"><button class="out danger" type="submit">Delete</button></form>'''
+        cards.append(f'''<article class="card"{anchor}{highlight}><div class="post">{sender_avatar}<div>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {html.escape(m["sender_name"])} to {html.escape(m["recipient_name"])} • {html.escape(m["origin"])} • {m["created_at"]}</p>{gift_context}{dates}{season}<p>{html.escape(m["body"]).replace(chr(10),'<br>')}</p><div class="actions">{open_action}{coordination_profile_action}{reply}{delete}</div></div></div></article>''')
     cards_html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
@@ -6673,6 +6714,18 @@ def inbox_read(message_id):
         conn.execute('UPDATE messages SET read_at=? WHERE id=?',(now(),message_id)); conn.commit()
     conn.close()
     return redirect(url_for('inbox',category=m['category'],message_id=message_id)+f'#message-{message_id}')
+
+@app.route('/inbox/<int:message_id>/delete',methods=['POST'])
+@login_required
+def inbox_delete(message_id):
+    u=current_user(); conn=db()
+    # Inbox removal is recipient-scoped and never deletes another member's account
+    # or a public/community source record.
+    row=conn.execute('SELECT id FROM messages WHERE id=? AND recipient_id=?',(message_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    conn.execute('UPDATE messages SET recipient_deleted=1 WHERE id=? AND recipient_id=?',(message_id,u['id']))
+    conn.commit(); conn.close(); flash('Inbox item removed.','success')
+    return redirect(url_for('inbox'))
 
 @app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
@@ -7558,7 +7611,7 @@ def connection_profile(user_id):
     access_note=''
     if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
         access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span><p class="muted">You can see this member’s Conscious Coordination percentages. Upgrade to the $10.99/month membership to open the full descriptions for another member.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Upgrade</a></article>'''
-    profile_interpretation=_personal_profile_interpretation(user,cp_row,scores)
+    profile_interpretation=(_personal_profile_interpretation(user,cp_row,scores) if is_self else _other_member_profile_interpretation(me,user,cp_row,scores))
     profile_interpretation_html=(f'<div style="line-height:1.8;margin-top:20px">{html.escape(profile_interpretation).replace(chr(10),"<br>")}</div>' if profile_interpretation else '')
     wheel_title=('My Natal Chart' if is_self else f'{html.escape(user["name"])}’s Natal Chart')
     wheel_note=('This is your permanent birth chart, calculated from your saved birth date, time, place, coordinates and historical timezone. It changes only when that source information changes.' if is_self else f'This chart and every placement below come from {html.escape(user["name"])}’s saved birth information. Your chart is not used on this page.')
@@ -7623,12 +7676,82 @@ def coordination_like(user_id):
     return redirect(url_for('connection_profile',user_id=user_id))
 
 
+def _overall_pair_coordination_summary_html(viewer,other,viewer_cp,other_cp,pair_data,kind,chart_a,chart_b):
+    """Interpret an existing two-person snapshot without changing its calculations."""
+    domains=pair_data.get('domains') or {}
+    metrics=pair_data.get('metrics') or []
+    evidence={
+        'relationship_type':kind,
+        'existing_overall_coordination_percentage':pair_data.get('score'),
+        'existing_level':pair_data.get('level'),
+        'existing_pair_domains':domains,
+        'existing_pair_metrics':metrics,
+        'member_a':{'name':viewer['name'],'profile':dict(viewer_cp) if viewer_cp else {},'natal_chart':chart_a},
+        'member_b':{'name':other['name'],'profile':dict(other_cp) if other_cp else {},'natal_chart':chart_b},
+        'privacy':'Private Journal entries, messages, reflections, grounding exercises and Journal themes are excluded.'
+    }
+    fingerprint=hashlib.sha256(json.dumps(evidence,sort_keys=True,default=str).encode('utf-8')).hexdigest()
+    conn=db(); cached=conn.execute('SELECT payload FROM compatibility_reports WHERE viewer_id=? AND other_id=? AND report_type=? AND category=?',(viewer['id'],other['id'],kind,'overall-seasons-within')).fetchone(); conn.close()
+    try: cached_payload=json.loads(cached['payload']) if cached else {}
+    except Exception: cached_payload={}
+    sections=(cached_payload.get('sections') or {}) if cached_payload.get('report_version')==1 and cached_payload.get('evidence_fingerprint')==fingerprint else {}
+
+    required=('overall_summary','flows_naturally','awareness','communication','connection','action_boundaries','growth_direction','practical_coordination','planetary')
+    if not all(sections.get(key) for key in required):
+        schema={'type':'object','additionalProperties':False,'properties':{
+            'overall_summary':{'type':'string'},'flows_naturally':{'type':'string'},'awareness':{'type':'string'},
+            'communication':{'type':'string'},'connection':{'type':'string'},'action_boundaries':{'type':'string'},
+            'growth_direction':{'type':'string'},'practical_coordination':{'type':'string'},
+            'planetary':{'type':'object','additionalProperties':False,'properties':{p.lower():{'type':'string'} for p in PLANET_NAMES},'required':[p.lower() for p in PLANET_NAMES]}
+        },'required':list(required)}
+        focus={'love':'emotional intimacy, communication, affection, reciprocity, attraction, boundaries and commitment','friendship':'communication, trust, shared experiences, emotional support, boundaries and mutual growth','business':'communication, decision-making, leadership and work styles, responsibilities, conflict resolution, reliability, creativity and shared goals'}.get(kind,'communication, emotional rhythm, connection, boundaries, growth and responsibility')
+        prompt=f'''Write a reciprocal two-person Seasons Within interpretation titled Our Seasons Within — Overall Conscious Coordination. Use only the supplied evidence for {viewer['name']} and {other['name']}. The existing {pair_data.get('score')}% score is fixed evidence: explain it but never recalculate, replace, predict approval/success, or invent another percentage.
+
+Interpret the interaction between both people—not two separate personal readings. Translate Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, relevant natal contacts and reliable Rising evidence into ordinary relational language. Integrate the existing psychological comparison. For this {kind} view, emphasize {focus}. Every statement must be supported by the evidence; omit unsupported layers. Do not teach astrology, list degrees/aspect names, diagnose, predict, blame one person, or assign all adjustment to one person. Use reciprocal language such as between you, together, one of you/the other, and your coordination. Exclude all private Journal material.
+
+overall_summary must be two or three concise paragraphs. practical_coordination must give mutual, observable guidance. Each planetary value must explain how that function coordinates between these two people: Sun direction/identity, Moon emotional rhythm, Mercury communication, Venus connection/values, Mars action/boundaries, Jupiter growth, Saturn responsibility/stability. Return only the required JSON.
+EVIDENCE:
+'''+json.dumps(evidence,default=str)
+        sections=_openai_structured(prompt,'overall_pair_coordination',schema) or {}
+
+    if not all(sections.get(key) for key in required):
+        ordered=sorted(metrics,key=lambda item:item.get('score',0),reverse=True)
+        strongest=(ordered[0].get('area') if ordered else 'shared communication')
+        awareness=(ordered[-1].get('area') if len(ordered)>1 else 'pacing and expectations')
+        def domain_score(name): return int((domains.get(name) or {}).get('coordination_score',pair_data.get('score') or 0))
+        def quality(score):
+            return ('appears to offer a naturally supportive point of contact' if score>=75 else 'offers workable common ground when both people make their needs visible' if score>=60 else 'may require deliberate pacing, clearer expectations and reciprocal follow-through')
+        score=pair_data.get('score'); level=pair_data.get('level') or 'developing coordination'
+        sections={
+            'overall_summary':f'''This connection’s existing {score}% Overall Coordination result reflects {level.lower()}. The strongest measured area is {strongest}, while {awareness} is the area most likely to benefit from added awareness. The result does not mean both people operate in the same way; it indicates that their existing psychological and natal patterns provide meaningful points of connection alongside differences that need to be understood rather than guessed.\n\nBetween you, coordination may strengthen when each person makes timing, expectations and needs visible. One person’s request for clarity does not have to erase the other person’s need to process, and a need for space does not have to become silence. The most useful foundation is mutual: both people communicate what is happening, check assumptions and follow through on agreements that can be observed in real life.''',
+            'flows_naturally':f'''{strongest} is the clearest existing strength in this {kind} view. When both people use that strength intentionally, it can help good intentions become understandable actions and give the connection a steadier point of return.''',
+            'awareness':f'''{awareness} carries the lowest current coordination result and therefore deserves more conscious attention. This is not proof of incompatibility; it suggests that different pacing, expectations or ways of reading the same situation may need to be named before pressure builds.''',
+            'communication':f'''Mercury coordination is {domain_score('Mercury')}% and {quality(domain_score('Mercury'))}. Emotional meaning and logical meaning may not always arrive at the same speed, so both people can help by checking what was meant, allowing enough response time and confirming the next step rather than relying on inference.''',
+            'connection':f'''Venus coordination is {domain_score('Venus')}% and Lunar coordination is {domain_score('Moon')}%. Connection becomes more reciprocal when each person explains what care, appreciation and emotional availability look like to them, while also learning the forms of support the other person can genuinely recognize.''',
+            'action_boundaries':f'''Mars coordination is {domain_score('Mars')}% and Saturn coordination is {domain_score('Saturn')}%. Boundaries and conflict are more workable when both people state limits before frustration peaks, distinguish urgency from importance and pair accountability with a realistic opportunity to repair.''',
+            'growth_direction':f'''Sun coordination is {domain_score('Sun')}%, Jupiter coordination is {domain_score('Jupiter')}% and Saturn coordination is {domain_score('Saturn')}%. Shared growth is most sustainable when enthusiasm, direction and responsibility are discussed together—so one person is not carrying all of the momentum while the other carries all of the caution or structure.''',
+            'practical_coordination':'''Choose one mutual agreement that can be observed: how much processing time is reasonable, when to check back after tension, how to ask for clarification, or how responsibilities will be confirmed. Each person can name one need and one contribution, then revisit the agreement after a real interaction instead of expecting either person to adapt alone.''',
+            'planetary':{
+                'sun':f'''Direction and identity coordinate at {domain_score('Sun')}%. {quality(domain_score('Sun')).capitalize()}, especially when both people can hold an individual position while making room for a shared direction.''',
+                'moon':f'''Emotional coordination is {domain_score('Moon')}%. {quality(domain_score('Moon')).capitalize()}; each person benefits from naming whether they need reassurance, response time, space or direct conversation.''',
+                'mercury':f'''Communication coordination is {domain_score('Mercury')}%. {quality(domain_score('Mercury')).capitalize()}, particularly when both people verify meaning before reacting to an assumption.''',
+                'venus':f'''Connection and values coordinate at {domain_score('Venus')}%. {quality(domain_score('Venus')).capitalize()} when appreciation and reciprocity are expressed in forms both people can recognize.''',
+                'mars':f'''Action and boundaries coordinate at {domain_score('Mars')}%. {quality(domain_score('Mars')).capitalize()} when frustration is addressed early and neither person has to escalate to make a limit visible.''',
+                'jupiter':f'''Growth coordination is {domain_score('Jupiter')}%. {quality(domain_score('Jupiter')).capitalize()} when possibility is balanced with capacity, timing and shared priorities.''',
+                'saturn':f'''Responsibility and stability coordinate at {domain_score('Saturn')}%. {quality(domain_score('Saturn')).capitalize()} when expectations, commitments and follow-through are mutual and explicit.'''
+            }
+        }
+    conn=db(); conn.execute('''INSERT INTO compatibility_reports(viewer_id,other_id,report_type,category,payload,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(viewer_id,other_id,report_type,category) DO UPDATE SET payload=excluded.payload,created_at=excluded.created_at''',(viewer['id'],other['id'],kind,'overall-seasons-within',json.dumps({'sections':sections,'report_version':1,'evidence_fingerprint':fingerprint},default=str),now())); conn.commit(); conn.close()
+    def section(title,key): return f'''<div class="pair-summary-section"><h3>{title}</h3><div>{html.escape(str(sections.get(key,''))).replace(chr(10),'<br>')}</div></div>'''
+    planet_labels={'sun':'☉ Sun — Direction & Identity','moon':'☽ Moon — Emotional Coordination','mercury':'☿ Mercury — Communication','venus':'♀ Venus — Connection & Values','mars':'♂ Mars — Action & Boundaries','jupiter':'♃ Jupiter — Growth','saturn':'♄ Saturn — Responsibility & Stability'}
+    planetary=''.join(f'''<details class="card"><summary style="cursor:pointer;font-weight:800">{label}</summary><p class="topspace">{html.escape(str((sections.get('planetary') or {}).get(key,'')))}</p></details>''' for key,label in planet_labels.items())
+    return f'''<section class="card paid pair-summary"><span class="badge heart">OUR SEASONS WITHIN</span><h2>Overall Conscious Coordination</h2>{section('Overall Summary','overall_summary')}{section('What Flows Naturally','flows_naturally')}{section('Where Coordination May Require Awareness','awareness')}{section('Communication & Understanding','communication')}{section('Connection & Reciprocity','connection')}{section('Action, Boundaries & Conflict','action_boundaries')}{section('Growth & Direction','growth_direction')}{section('Conscious Coordination Between You','practical_coordination')}</section><div class="topspace"><span class="badge">PLANETARY COORDINATION</span><h2>How Your Planetary Functions Coordinate</h2></div><div class="moregrid">{planetary}</div><style>.pair-summary-section{{margin-top:22px}}.pair-summary-section h3{{margin-bottom:8px}}.pair-summary-section div{{line-height:1.75}}</style>'''
+
 @app.route('/compatibility/<int:user_id>')
 @login_required
-
 def compatibility(user_id):
     me=current_user()
-    conn=db(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); other=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
+    conn=db(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); other=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); other_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); conn.close()
     if not conscious_coordination_ready(me,me_cp):
         flash('Join the Community before opening member compatibility.','info')
         return redirect(url_for('connections'))
@@ -7653,11 +7776,13 @@ def compatibility(user_id):
     metrics=''.join(cards) or '<article class="card"><p class="muted">Complete more profile answers for additional compatibility percentages.</p></article>'
     tabs=''.join(f'<a class="chip" href="{url_for("compatibility",user_id=user_id,type=t)}">{label}</a>' for t,label in [('love','Love / Relationship'),('friendship','Friendship'),('business','Business')])
     overall=f"{data['score']}%" if data.get('score') is not None else 'Building'
-    wheels=_two_natal_wheels_html(member_chart_data(me),member_chart_data(other),'You',other['name'])
+    viewer_chart=member_chart_data(me); other_chart=member_chart_data(other)
+    wheels=_two_natal_wheels_html(viewer_chart,other_chart,'You',other['name'])
+    overall_summary=_overall_pair_coordination_summary_html(me,other,me_cp,other_cp,data,kind,viewer_chart,other_chart)
     paid_note=('<article class="card paid"><span class="badge gold">FULL PAID COMPATIBILITY</span><h2>Your full reports are open</h2><p class="muted">Open any category above for the written report built from both profiles and planetary coordination.</p></article>'
                if has_full_access(me) else '<article class="card locked"><h2>Full Written Compatibility</h2><p class="muted">Your percentages and Basic Compatibility Preview are free. Upgrade to open the complete written reports behind the scores.</p><a class="btn" href="'+url_for('payment_info',product='conscious-coordination')+'">Upgrade to View Full Compatibility</a></article>')
     return page('Conscious Coordination Report',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION COMPATIBILITY</span><h1>{html.escape(data['member'])} — {overall} Overall Coordination</h1><p class="muted">{html.escape(data['level'])}</p><div class="chips">{tabs}</div></div>
-    {wheels}<div class="actions" style="justify-content:center"><span class="badge">VIEW OUR CONSCIOUS COORDINATION — {html.escape(kind.upper())}</span></div>
+    {wheels}{overall_summary}<div class="actions" style="justify-content:center"><span class="badge">VIEW OUR CONSCIOUS COORDINATION — {html.escape(kind.upper())}</span></div>
     <div class="grid">{metrics}</div><div class="grid"><article class="card"><h3>One Strength</h3><p>{html.escape(data['strength'])}</p></article><article class="card"><h3>One Difference Worth Discussing</h3><p>{html.escape(data['difference'])}</p></article><article class="card"><h3>Conversation Starter</h3><p>{html.escape(data['conversation_starter'])}</p></article></div>
     <article class="card"><h2>Connection Ideas</h2><a class="out" href="{url_for('connection_ideas',user_id=user_id)}">Date • Friendship • Business • Retreat Ideas</a></article>{paid_note}
     <article class="card"><p class="muted small"><b>Psychology disclaimer:</b> Results are based on self-reported behavior. They are not a mental-health diagnosis or a prediction that a relationship will or will not succeed.</p></article>''','more')
@@ -7690,7 +7815,7 @@ def connection_ideas(user_id):
     <article class="card"><h3>Date Ideas</h3><p>Dining, nature, museums, wellness classes, local events and creator activities that fit your shared pace and interests.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p></article>
     <article class="card"><h3>Friendship Ideas</h3><p>Low-pressure activities with room for shared interests, social rhythm and communication style.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p></article>
     <article class="card"><h3>Business Collaboration Ideas</h3><p>Compare strengths, categories, working style and goals, then start with a small collaboration.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p></article>
-    <article class="card"><h3>Retreat Ideas</h3><p>Choose wellness interests, social energy, pace and personal-space expectations that work for both of you.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p><a class="out" href="{url_for('retreat_builder')}">Build Retreat</a></article>
+    <article class="card"><h3>Retreat Ideas</h3><p>Choose wellness interests, social energy, pace and personal-space expectations that work for both of you.</p><p class="muted"><b>Why this fits:</b> {html.escape(why)}.</p><a class="out" href="https://docs.google.com/forms/d/e/1FAIpQLSeVnIgf2nKh6vCqK9jtLg9AXff1A2CoSdhdvNP85oGO8d9PNQ/viewform?usp=header" target="_blank" rel="noopener">Build Retreat</a></article>
     </div>''','more')
 
 @app.route('/video/<int:user_id>')
@@ -8211,12 +8336,22 @@ CC_GENERIC_REPORT_PHRASES = (
     'you are entering a transformative time','focus on balance','the universe is telling you'
 )
 
-def _cc_planet_structured_text(pname,sections):
+def _cc_planet_structured_text(pname,sections,other_view=False):
+    other_headings={
+        'core_theme':'How This May Operate in This Member',
+        'psychological_interpretation':'How This May Show Up',
+        'emotional_interpretation':'What May Shape Their Response',
+        'current_coordination':'How to Connect With This Member',
+        'potential_tension':'Where Coordination May Need Awareness',
+        'supportive_response':'Ways to Consciously Coordinate',
+        'coordination_practice':'Practical Connection Guidance',
+        'journal_question':'Connection Consideration',
+    }
     parts=[]
     for key,heading in CC_PLANET_REPORT_HEADINGS.get(pname,[]):
         value=str((sections or {}).get(key,'') or '').strip()
         if value:
-            parts.append(f'{heading}\n\n{value}')
+            parts.append(f'{other_headings.get(key,heading) if other_view else heading}\n\n{value}')
     return '\n\n'.join(parts).strip()
 
 
@@ -8236,7 +8371,7 @@ def _cc_report_quality_ok(text, source_profile_text=''):
     return True
 
 
-def _cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms):
+def _cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms,other_view=False):
     journal_context=(data or {}).get('journal_history') or {}
     source_profile=' '.join(str(v or '') for v in ((data or {}).get('relevant_profile_only') or {}).values())
     schema='''Return ONLY valid JSON with these keys: core_theme, psychological_interpretation, emotional_interpretation, current_coordination, potential_tension, supportive_response, coordination_practice, journal_question, wellness_tags. wellness_tags must be a short JSON array of strings. Do not add markdown or commentary outside the JSON.'''
@@ -8248,7 +8383,7 @@ Compose this from the exact evidence packet. Do not reuse a sign template, anoth
         structured=_openai_structured(prompt,'planetary_coordination',CC_REPORT_JSON_SCHEMA) or _cc_parse_json_object(_openai_text(prompt))
         if not structured:
             continue
-        candidate=_cc_planet_structured_text(pname,structured)
+        candidate=_cc_planet_structured_text(pname,structured,other_view)
         low=candidate.lower()
         if not _cc_report_quality_ok(candidate,source_profile) or not any(term in low for term in required_terms):
             continue
@@ -8305,6 +8440,7 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
     profile=dict(cp) if cp else {}; wellness=_member_wellness_practices(profile); lens=PLANET_BEHAVIORAL_LENSES.get(pname,{})
     profile_slice=_planet_profile_slice(profile,pname)
     use_private=(viewer_id is None or int(viewer_id)==int(user_id))
+    other_view=not use_private
     journal_context=_cc_journal_evidence_packet(_all_journal_context(user_id)) if use_private else {
         'entry_count':0,'history_fingerprint':'private-not-shared','current_themes':[],'theme_strength':{},'theme_counts':{},
         'privacy':'Private Journal material is excluded from another member’s report.'}
@@ -8325,11 +8461,12 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
         'wellness_practices':wellness,
         'journal_history_fingerprint':journal_context.get('history_fingerprint',''),
         'privacy_scope':'owner-private' if use_private else 'member-shared-no-private-journal',
+        'writing_mode_version':2 if other_view else 1,
         'engine_version':REFLECTION_ENGINE_VERSION,
     }
     planet_context_fingerprint=hashlib.sha256(json.dumps(planet_fingerprint_packet,sort_keys=True,default=str).encode('utf-8')).hexdigest()
     scope_key='owner' if use_private else f'shared-{int(viewer_id or 0)}'
-    context_key=f'{pname}|cycle:{lunar_cycle.get("cycle_id","")}|scope:{scope_key}|v:{CC_ENGINE_VERSION}'
+    context_key=f'{pname}|cycle:{lunar_cycle.get("cycle_id","")}|scope:{scope_key}|writing:{2 if other_view else 1}|v:{CC_ENGINE_VERSION}'
     reflection_type='planet_'+pname.lower()
     conn=db(); row=conn.execute('SELECT payload FROM astrology_reflections WHERE user_id=? AND reflection_type=? AND period_key=?',(user_id,reflection_type,context_key)).fetchone(); conn.close()
     if row:
@@ -8358,7 +8495,10 @@ def _planet_reflection_payload(user_id,pname,viewer_id=None):
         'Jupiter':['Growth & Opportunity','Where More Could Become Too Much','A Grounded Expansion','A Question to Carry With You'],
         'Saturn':['Responsibility & Structure','What Needs Clearer Limits','What Is Sustainable','A Question to Carry With You'],
     }.get(pname,['Your Current Pattern','What Deserves Attention','What May Support You','A Question to Carry With You'])
+    perspective_instruction=(f'''OTHER-MEMBER WRITING MODE: Write to the viewer about {member['name']}. Use “{member['name']}”, “this member”, “they” and “their”; never imply that the viewer owns this placement. Do not use private grounding, private reflection questions, private Journal themes or self-directed “you/your” language about the chart. The current_coordination, supportive_response and coordination_practice fields must tell the viewer how they may connect with this member using the supplied evidence. The journal_question field must instead be a concise relational Connection Consideration.''' if other_view else '''SELF WRITING MODE: Preserve the established self-facing “you/your” voice, personal grounding, practices and reflection-question structure.''')
     instruction=f'''Write a Conscious Coordination interpretation for the member’s {display_name} placement.
+
+{perspective_instruction}
 
 THIS PLACEMENT IS:
 {display_name} in {placement.get('sign','')}
@@ -8393,8 +8533,15 @@ Use this planet’s own member-facing section structure rather than a shared gen
 
 The section names and content must make this planetary function feel meaningfully different from every other planetary report. Make it practical, psychologically thoughtful, non-diagnostic and non-deterministic. Do not recycle another planet/member/day/cycle report.'''
     required_terms={'Sun':['choice','direction','own'],'Moon':['emotion','regulat','safety'],'Mercury':['communicat','assum','interpret'],'Venus':['reciproc','affection','invest'],'Mars':['action','boundar','frustrat'],'Jupiter':['opportun','expand','risk'],'Saturn':['responsib','limit','disciplin']}.get(pname,[])
-    fallback_factory=lambda variant:_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant,planet_snapshot.get('coordination_score'),planet_snapshot.get('activation_score'))
-    text,structured_sections,_=_cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms)
+    def fallback_factory(variant):
+        base=_planet_fallback_guidance(pname,profile,wellness,sky,relevant_aspects,placement,journal_context,lunar_cycle,user_id,variant,planet_snapshot.get('coordination_score'),planet_snapshot.get('activation_score'))
+        if not other_view:
+            return base
+        # The generator is normally used above; this evidence-bound fallback keeps
+        # the public perspective correct even when the language service is offline.
+        cleaned=base.replace('Your ',f'{member["name"]}’s ').replace('your ','their ').replace('You may','This member may').replace('you may','they may').replace(' you ',' they ')
+        return f'''How This May Operate in This Member\n\n{cleaned}\n\nHow to Connect With This Member\n\nYou may find coordination easier when you allow this member’s {lens.get('question','behavioral rhythm').lower()} to become visible through direct questions, clear expectations and enough time for an honest response.\n\nConnection Consideration\n\nNotice what helps this connection stay reciprocal without assuming that a pause, boundary or different pace has only one possible meaning.'''
+    text,structured_sections,_=_cc_generate_planet_structured_report(user_id,pname,context_key,instruction,data,fallback_factory,required_terms,other_view)
 
     spoken_instruction=f'''Create ONLY the spoken listening script for this exact {display_name} Conscious Coordination report.
 Use the written report below as meaning to preserve, not wording to read verbatim.
@@ -8408,7 +8555,7 @@ WRITTEN REPORT FOR CONTEXT ONLY:
     conn=db(); existing_report=conn.execute('SELECT report_version,context_fingerprint FROM coordination_reports WHERE user_id=? AND other_user_id=? AND report_type=? AND period_key=?',(user_id,0,'planetary_'+pname.lower()+'_monthly',context_key)).fetchone(); conn.close()
     report_version=(int(existing_report['report_version'] or 1)+(1 if existing_report['context_fingerprint']!=planet_context_fingerprint else 0)) if existing_report else 1
     audio_key=hashlib.sha256((context_key+'|'+hashlib.sha256(text.encode()).hexdigest()).encode()).hexdigest()[:16]
-    payload={'ready':True,'engine_version':REFLECTION_ENGINE_VERSION,'planet':pname,'display_name':display_name,
+    payload={'ready':True,'engine_version':REFLECTION_ENGINE_VERSION,'planet':pname,'display_name':display_name,'member':{'id':user_id,'name':member['name']},
         'placement':placement,'coordination_score':planet_snapshot.get('coordination_score'),'activation_score':planet_snapshot.get('activation_score'),'lunar_cycle_id':lunar_cycle.get('cycle_id',''),'text':text,'spoken':spoken,'structured_sections':structured_sections,'period_key':context_key,
         'report_version':report_version,'audio_key':audio_key,'context_fingerprint':planet_context_fingerprint,'report_type':'planetary_'+pname.lower()+'_monthly','other_storage_id':0,'period_key':context_key,
         'privacy_scope':'owner-private' if use_private else 'member-shared-no-private-journal'}
@@ -8429,6 +8576,7 @@ WRITTEN REPORT FOR CONTEXT ONLY:
 @login_required
 def planet_interpretation(user_id,planet):
     me=current_user()
+    is_self=(user_id==me['id'])
     if user_id!=me['id'] and not bool(me['conscious_paid'] or me['is_admin']):
         flash('Upgrade to open another member’s deeper Conscious Coordination interpretation.','info')
         return redirect(url_for('payment_info',product='conscious-coordination'))
@@ -8446,10 +8594,15 @@ def planet_interpretation(user_id,planet):
         return page('Conscious Coordination',f'<article class="card"><h2>{html.escape(display_name)} Reflection</h2><p class="muted">{html.escape(message)}</p></article>','more'),503
     placement=payload.get('placement') or {}; heading=f'{display_name} — {placement.get("sign","")} {placement.get("degree","")}°'
     body_html=html.escape(payload.get('text','')).replace(chr(10),'<br>')
-    report=f'''<div class="topspace"><h3>{html.escape(heading)}</h3><div class="actions"><span class="badge">READ MY {html.escape(display_name.upper())} REFLECTION</span></div><div style="line-height:1.75;margin-top:12px">{body_html}</div></div>'''
+    member_name=((payload.get('member') or {}).get('name') or 'This member')
+    badge=(f'READ MY {display_name.upper()} REFLECTION' if is_self else f'UNDERSTANDING {member_name.upper()}’S {display_name.upper()} COORDINATION')
+    report=f'''<div class="topspace"><h3>{html.escape(heading)}</h3><div class="actions"><span class="badge">{html.escape(badge)}</span></div><div style="line-height:1.75;margin-top:12px">{body_html}</div></div>'''
     if request.args.get('inline')=='1':
         return report
-    return page('Conscious Coordination',f'''<div class="hero"><span class="badge">THE SEASONS WITHIN • CONSCIOUS COORDINATION</span><h1>{html.escape(heading)}</h1><p class="muted">A personal Conscious Coordination reflection for this specific planetary function.</p></div><article class="card">{report}</article><a class="out" href="{url_for('profile')}#planetary-coordination">Back to My Journal</a>''','more')
+    description=('A personal Conscious Coordination reflection for this specific planetary function.' if is_self else f'How {member_name} may experience and express this function, with practical ways to coordinate respectfully.')
+    back_url=(url_for('profile')+'#planetary-coordination' if is_self else url_for('member_planetary_coordination',user_id=user_id))
+    back_label=('Back to My Journal' if is_self else f'Back to {member_name}’s Planetary Profile')
+    return page('Conscious Coordination',f'''<div class="hero"><span class="badge">THE SEASONS WITHIN • CONSCIOUS COORDINATION</span><h1>{html.escape(heading)}</h1><p class="muted">{html.escape(description)}</p></div><article class="card">{report}</article><a class="out" href="{back_url}">← {html.escape(back_label)}</a>''','more')
 
 
 @app.route('/conscious-coordination/planet/<int:user_id>/<planet>/audio')
@@ -9707,7 +9860,7 @@ def hosted_app_edit_section(section):
             conn.execute('UPDATE businesses SET contact_email=?,contact_phone=?,website=?,instagram=?,tiktok=?,youtube=?,facebook=?,updated_at=? WHERE id=?',(*vals,now(),b['id']))
         elif section=='booking':
             method=request.form.get('booking_method','seasons_calendar'); method=method if method in {'seasons_calendar','external','none'} else 'seasons_calendar'
-            settings={k:request.form.get(k,'').strip() for k in ('available_days','available_times','duration','buffer','blocked_dates')}
+            settings={k:request.form.get(k,'').strip() for k in ('available_days','available_times','duration','buffer','blocked_dates','timezone')}
             conn.execute('UPDATE businesses SET booking_method=?,booking_url=?,booking_settings=?,updated_at=? WHERE id=?',(method,request.form.get('booking_url','').strip(),json.dumps(settings),now(),b['id']))
         elif section=='sections':
             selected=[k for k,_ in HOSTED_APP_MODULES if request.form.get('module_'+k)]; selected=list(dict.fromkeys(['home','about','contact']+selected))
@@ -9737,7 +9890,7 @@ def hosted_app_edit_section(section):
         try: settings=json.loads(b['booking_settings'] or '{}')
         except Exception: settings={}
         radio=lambda value,label: f'<label class="fact"><input type="radio" name="booking_method" value="{value}" {"checked" if (b["booking_method"] or "seasons_calendar")==value else ""}> {label}</label>'
-        content=f'''<form class="card" method="post"><h2>Booking Method</h2>{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Booking')}<label>Existing Booking Link<input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label>Available days<input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Wednesday, Friday"></label><label>Available times<input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM–4:00 PM"></label><label>Appointment duration<input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label>Time between appointments<input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label>Blocked dates<input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}"></label><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form>'''
+        content=f'''<form class="card" method="post"><h2>Booking Method</h2>{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Booking')}<label>Existing Booking Link<input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label>Available days<input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Wednesday, Friday"></label><label>Available times<input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM–4:00 PM"></label><label>Business time zone<input class="input" name="timezone" value="{html.escape(settings.get('timezone','America/Detroit'))}" placeholder="America/Detroit"></label><label>Appointment duration<input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label>Time between appointments<input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label>Blocked dates<input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}"></label><p class="muted small">Use Manage Calendar to add specific availability, classes, events, vacations, personal appointments and blocked periods. Private block notes are never shown to members.</p><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form>'''
     elif section=='home_features':
         enabled=set(_module_list(b)); chosen=set(((b['home_feature_modules'] if 'home_feature_modules' in b.keys() else '') or '').split(',')); allowed={'classes','services','media_kit','events','booking','contact','videos','courses','gallery','retreats','affiliate'}
         choices=''.join(f'<label class="fact"><input type="checkbox" name="feature_{k}" {"checked" if k in chosen else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k in allowed and k in enabled)
@@ -9920,6 +10073,12 @@ def business_book(business_id,calendar_id):
     u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE id=? AND active=1',(business_id,)).fetchone(); e=conn.execute("SELECT * FROM business_calendar WHERE id=? AND business_id=? AND booking_status='Open' AND event_type<>'Blocked / Unavailable'",(calendar_id,business_id)).fetchone()
     if not b or not e: conn.close(); abort(404)
     if request.method=='POST':
+        # Serialize the final availability/capacity check. The browser calendar
+        # is informative; this transaction is the authoritative booking gate.
+        if USING_POSTGRES:
+            conn.execute('SELECT id FROM business_calendar WHERE id=? FOR UPDATE',(calendar_id,))
+        else:
+            conn.execute('BEGIN IMMEDIATE')
         name=request.form.get('name','').strip() or u['name']; email=request.form.get('email','').strip() or u['email']; guests=request.form.get('guests','').strip() or '1'; notes=request.form.get('notes','').strip()
         current=conn.execute("SELECT * FROM business_calendar WHERE id=? AND booking_status='Open' AND event_type<>'Blocked / Unavailable'",(calendar_id,)).fetchone()
         if not current: conn.close(); flash('That time is no longer available.','error'); return redirect(url_for('business_app',business_id=business_id)+'#book')
@@ -9930,7 +10089,7 @@ def business_book(business_id,calendar_id):
         prior=conn.execute("SELECT guests FROM business_bookings WHERE calendar_id=? AND status IN ('Requested','Confirmed')",(calendar_id,)).fetchall()
         used=sum(int(x['guests'] or 1) if str(x['guests'] or '1').isdigit() else 1 for x in prior)
         if capacity and used+requested>capacity:
-            conn.close(); flash('That class/event does not have enough remaining capacity.','error'); return redirect(url_for('business_app',business_id=business_id)+'#book')
+            conn.rollback(); conn.close(); flash('That class/event does not have enough remaining capacity.','error'); return redirect(url_for('business_app',business_id=business_id)+'#book')
         conn.execute('''INSERT INTO business_bookings(business_id,calendar_id,booked_by_user_id,customer_name,customer_email,booking_type,title,event_date,start_time,end_time,guests,notes,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business_id,calendar_id,u['id'],name,email,e['event_type'],e['title'],e['event_date'],e['start_time'],e['end_time'],str(requested),notes,'Requested',now()))
         multi=e['event_type'] in ('Class','Program','Event') and capacity>1
         if multi:
@@ -11698,7 +11857,7 @@ def business_calendar_page():
     calendar_html=business_calendar_grid(events,b['id'],selected_date,month,True)
     shown=[e for e in events if not selected_date or e['event_date']==selected_date]
     cards=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{e['title']}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><p class="muted">{e['location']} • Capacity: {e['capacity'] or 'Not set'} • {e['booking_status']} • Source: {e['source'] or 'Owner'}</p><form method="post" action="{url_for('business_calendar_delete',event_id=e['id'])}" onsubmit="return confirm('Delete this calendar item?')"><button class="out danger">Delete</button></form></article>''' for e in shown) or '<div class="empty">No calendar items for this date yet.</div>'
-    booking_cards=''.join(f'''<article class="card"><span class="badge">{x['status']}</span><h3>{x['title']}</h3><p>{x['customer_name']} • {x['customer_email']}</p><p class="muted">{x['event_date']} • {x['start_time']}–{x['end_time']} • Guests: {x['guests'] or '—'}</p><p>{x['notes']}</p></article>''' for x in bookings) or '<div class="empty">Bookings and requests will appear here.</div>'
+    booking_cards=''.join(f'''<article class="card"><span class="badge">{x['status']}</span><h3>{x['title']}</h3><p>{x['customer_name']} • {x['customer_email']}</p><p class="muted">{x['event_date']} • {x['start_time']}–{x['end_time']} • Guests: {x['guests'] or '—'}</p><p>{x['notes']}</p><div class="actions">{''.join(f'<form method="post" action="{url_for("business_booking_action",booking_id=x["id"],action=a)}" style="display:inline"><button class="out" type="submit">{label}</button></form>' for a,label in ((('confirm','Confirm'),('decline','Decline'),('cancel','Cancel'),('complete','Mark Completed')) if x['status'] not in ('Cancelled','Declined','Completed') else ()))}</div></article>''' for x in bookings) or '<div class="empty">Bookings and requests will appear here.</div>'
     return page('Business Calendar',f'''<div class="hero"><span class="badge">BUSINESS CALENDAR</span><h1>{b['name']} Schedule</h1><p class="muted">One calendar controls classes, programs, appointments, events, Retreats, availability and personal blocked time so your schedule does not collide.</p><a class="out" href="{url_for('google_calendar_connect')}">Connect Google Calendar</a></div>{calendar_html}<form class="card" method="post"><h2>Add Class, Availability or Block Time</h2><label><b>Title</b></label><input class="input" name="title" placeholder="Yoga Class, Appointment Availability, Personal Appointment, Unavailable" required><label><b>Type</b></label><select class="input" name="event_type"><option>Class</option><option>Program</option><option>Appointment</option><option>Availability</option><option>Event</option><option>Retreat</option><option>Blocked / Unavailable</option><option>Other</option></select><div class="grid"><div><label><b>Date</b></label><input class="input" type="date" name="event_date" required></div><div><label><b>Start Time</b></label><input class="input" type="time" name="start_time" required></div><div><label><b>End Time</b></label><input class="input" type="time" name="end_time" required></div></div><label><b>Location / Online Link</b></label><input class="input" name="location"><label><b>Capacity</b></label><input class="input" type="number" min="1" name="capacity"><label><b>Booking Status</b></label><select class="input" name="booking_status"><option>Open</option><option>Private</option><option>Full</option><option>Cancelled</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><button class="btn">Add to Business Calendar</button></form><div id="calendar-day" class="topspace"><h2>{'Schedule for '+selected_date if selected_date else 'My Schedule'}</h2></div>{cards}<div class="topspace"><h2>Bookings / Requests</h2></div>{booking_cards}''','business')
 
 
@@ -11709,6 +11868,28 @@ def business_calendar_delete(event_id):
     if row:
         conn.execute('DELETE FROM business_calendar WHERE id=?',(event_id,)); conn.commit(); flash('Calendar item deleted.','success')
     conn.close(); return redirect(url_for('business_calendar_page'))
+
+@app.route('/business/calendar/booking/<int:booking_id>/<action>',methods=['POST'])
+@login_required
+def business_booking_action(booking_id,action):
+    status_map={'confirm':'Confirmed','decline':'Declined','cancel':'Cancelled','complete':'Completed'}
+    if action not in status_map: abort(404)
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT bb.*,bc.event_type,bc.capacity FROM business_bookings bb
+        JOIN businesses b ON b.id=bb.business_id LEFT JOIN business_calendar bc ON bc.id=bb.calendar_id
+        WHERE bb.id=? AND b.owner_id=?''',(booking_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    conn.execute('UPDATE business_bookings SET status=? WHERE id=?',(status_map[action],booking_id))
+    if row['calendar_id'] and action in {'decline','cancel'}:
+        active=conn.execute("SELECT guests FROM business_bookings WHERE calendar_id=? AND id<>? AND status IN ('Requested','Confirmed')",(row['calendar_id'],booking_id)).fetchall()
+        used=sum(int(x['guests'] or 1) if str(x['guests'] or '1').isdigit() else 1 for x in active)
+        try: capacity=int(row['capacity'] or 0)
+        except Exception: capacity=0
+        multi=row['event_type'] in ('Class','Program','Event') and capacity>1
+        new_status=('Full' if multi and used>=capacity else 'Open')
+        conn.execute('UPDATE business_calendar SET booking_status=?,updated_at=? WHERE id=?',(new_status,now(),row['calendar_id']))
+    conn.commit(); conn.close(); flash('Booking status updated.','success')
+    return redirect(url_for('business_calendar_page',date=row['event_date']))
 
 @app.route('/business/calendar/google')
 @login_required
