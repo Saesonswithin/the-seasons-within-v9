@@ -6004,7 +6004,7 @@ def community_post_delete(post_id):
     flash('Community post deleted. Your private Journal copy remains.','success')
     return redirect(url_for('community'))
 
-def _planetary_coordination_cards(user):
+def _planetary_coordination_cards(user, self_view=True):
     """Render the seven changing Journal reports without changing natal data."""
     chart=member_chart_data(user)
     monthly_snapshot=_personal_monthly_coordination_snapshot(user['id'])
@@ -6022,11 +6022,14 @@ def _planetary_coordination_cards(user):
             coord_score=month_item.get('coordination_score')
             score_note=(f' • {coord_score}% Coordination' if coord_score is not None else '')
             report_url=url_for('planet_interpretation',user_id=user['id'],planet=name.lower())
-            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(score_note)}</small></span><span class="muted small">Read reflection ⌄</span></summary><div class="actions topspace"><a class="btn" href="{html.escape(report_url,quote=True)}">Read My {html.escape(spoken_name)} Reflection</a></div></details>''')
+            reflection_label=(f'Read My {spoken_name} Reflection' if self_view else f'Read {user["name"]}’s {spoken_name} Reflection')
+            planet_cards.append(f'''<details class="card" id="planet-{name.lower()}"><summary style="cursor:pointer;font-weight:800;display:flex;justify-content:space-between;gap:12px"><span>{html.escape(glyph)} {html.escape(display_name)} — {html.escape(str(placement.get('sign','')))} {html.escape(str(placement.get('degree','')))}°<br><small class="muted">{html.escape(planet_domains.get(name,''))}{html.escape(score_note)}</small></span><span class="muted small">Read reflection ⌄</span></summary><div class="actions topspace"><a class="btn" href="{html.escape(report_url,quote=True)}">{html.escape(reflection_label)}</a></div></details>''')
     else:
         chart_reason=chart.get('reason') or 'The planetary calculation could not be completed.'
         planet_cards.append(f'''<article class="card"><p class="muted">{html.escape(chart_reason)}</p><a class="out" href="{url_for('edit_profile')}">Review My Birth Information</a></article>''')
-    return f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>Your Planetary Coordination</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate your permanent natal chart.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div>'''
+    owner_label=('Your Planetary Coordination' if self_view else f'{html.escape(user["name"])}’s Planetary Conscious Coordination')
+    permanence_note=('your permanent natal chart' if self_view else f'{html.escape(user["name"])}’s permanent natal chart')
+    return f'''<div class="topspace" id="planetary-coordination"><div><span class="badge heart">CONSCIOUS COORDINATION</span><h2>{owner_label}</h2><p class="muted">Each of the seven planetary functions has its own current Lunar-cycle Coordination percentage and individualized written Journal reflection. Activation remains internal. These changing reports do not move or recalculate {permanence_note}.</p></div></div><div class="moregrid">{''.join(planet_cards)}</div>'''
 
 
 @app.route('/profile')
@@ -7164,7 +7167,7 @@ def _zodiac_wheel_html(chart, member_name='Member'):
 
 def _two_natal_wheels_html(chart_a,chart_b,name_a='You',name_b='Member'):
     """Keep two members' permanent natal charts separate and side-by-side."""
-    return f'''<div class="grid" data-wheel-layout="side-by-side">
+    return f'''<style>.coordination-wheel-pair{{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}}.coordination-wheel-pair>.card{{min-width:0;margin:0}}.coordination-wheel-pair svg{{width:100%!important;height:auto!important}}@media(max-width:520px){{.coordination-wheel-pair{{gap:7px}}.coordination-wheel-pair>.card{{padding:9px}}.coordination-wheel-pair h3{{font-size:.92rem;overflow-wrap:anywhere}}.coordination-wheel-pair .badge{{font-size:.62rem;padding:5px 7px}}}}</style><div class="grid coordination-wheel-pair" data-wheel-layout="side-by-side">
       <article class="card"><span class="badge">YOUR WHEEL</span><h3>{html.escape(name_a)}</h3>{_zodiac_wheel_html(chart_a,name_a)}</article>
       <article class="card"><span class="badge heart">{html.escape(name_b.upper())}'S WHEEL</span><h3>{html.escape(name_b)}</h3>{_zodiac_wheel_html(chart_b,name_b)}</article>
     </div>'''
@@ -7563,12 +7566,38 @@ def connection_profile(user_id):
     planetary_profile_html=_planetary_coordination_cards(user) if is_self else ''
     quick_profile_html=_coordination_profile_facts_html(cp) if not is_self else ''
     journal_actions_html=(f'''<div class="actions" style="justify-content:center;margin-top:18px">{journal_actions}</div>''' if journal_actions else '')
-    content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">{'MY CONSCIOUS COORDINATION PROFILE' if is_self else 'CONSCIOUS COORDINATION PROFILE'}</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}{quick_profile_html}<div class="actions">{top_actions}</div></div>{photo}</div></article>
-    <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{wheel_note}</p>{wheel}{natal_positions_html}{natal_grounding_html}{journal_actions_html}</article>
-    {planetary_profile_html}
-    <article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'These are this member’s individual profile indicators. Use View Our Conscious Coordination only when you intentionally want the separate two-person comparison. Private Journal content is never shown here.'}</p></article>
-    {access_note}{business_html}'''
+    coordination_card=f'''<article class="card"><span class="badge">COORDINATION PROFILE</span>{overall_html}{profile_interpretation_html}<div class="grid">{metric_cards}</div><p class="muted small">{'Your Overall Conscious Coordination is a stable deterministic calculation from your psychological profile with natal supporting information. It changes when relevant profile or birth information changes—not with the Moon, transits or Journal activity.' if is_self else 'These are this member’s individual profile indicators. Use View Our Conscious Coordination only when you intentionally want the separate two-person comparison. Private Journal content is never shown here.'}</p></article>'''
+    if is_self:
+        content=f'''<article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">MY CONSCIOUS COORDINATION PROFILE</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}{quick_profile_html}<div class="actions">{top_actions}</div></div>{photo}</div></article>
+        <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2><p class="muted">{wheel_note}</p>{wheel}{natal_positions_html}{natal_grounding_html}{journal_actions_html}</article>
+        {planetary_profile_html}{coordination_card}{access_note}{business_html}'''
+    else:
+        planetary_url=url_for('member_planetary_coordination',user_id=user_id)
+        profile_visuals=f'''<div class="member-coordination-visuals"><div class="member-coordination-photo">{photo}<span class="muted small">Profile Photo</span></div><a class="member-coordination-wheel" href="{planetary_url}" aria-label="Open {html.escape(user['name'],quote=True)}’s Planetary Conscious Coordination">{wheel}<span class="muted small">Tap Natal Wheel for Planetary Conscious Coordination</span></a></div>'''
+        content=f'''<style>.member-coordination-visuals{{display:grid;grid-template-columns:minmax(0,132px) minmax(0,230px);align-items:center;justify-content:center;gap:14px;min-width:0}}.member-coordination-photo,.member-coordination-wheel{{min-width:0;text-align:center}}.member-coordination-photo>img,.member-coordination-photo>.portrait{{width:132px!important;height:132px!important}}.member-coordination-wheel{{display:block;color:inherit;text-decoration:none;border-radius:18px;padding:6px}}.member-coordination-wheel:focus-visible{{outline:3px solid var(--purple);outline-offset:3px}}.member-coordination-wheel svg{{width:100%!important;height:auto!important}}.member-coordination-visuals .small{{display:block;margin-top:5px}}@media(max-width:520px){{.member-coordination-visuals{{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;width:100%}}.member-coordination-photo>img,.member-coordination-photo>.portrait{{width:min(132px,100%)!important;height:auto!important;aspect-ratio:1}}.member-coordination-wheel{{padding:2px}}.member-coordination-visuals .small{{font-size:.68rem}}}}</style><article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">CONSCIOUS COORDINATION PROFILE</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}{quick_profile_html}<div class="actions">{top_actions}</div></div>{profile_visuals}</div></article>
+        {coordination_card}{access_note}{business_html}'''
     return page('Conscious Coordination Profile',content,'more')
+
+@app.route('/conscious-coordination/profile/<int:user_id>/planetary')
+@login_required
+def member_planetary_coordination(user_id):
+    me=current_user()
+    conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); cp_row=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(user_id,)).fetchone(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); conn.close()
+    if not user: abort(404)
+    if user_id!=me['id'] and not conscious_coordination_ready(me,me_cp):
+        flash('Complete your profile before entering member Conscious Coordination.','info'); return redirect(url_for('edit_profile'))
+    if not conscious_coordination_ready(user,cp_row):
+        if user_id==me['id']: return redirect(url_for('edit_profile'))
+        abort(404)
+    is_self=(user_id==me['id']); chart=member_chart_data(user)
+    interpretations=_natal_coordination_interpretations(user,chart,cp_row)
+    natal_positions=_natal_positions_html(chart,user['name'],cp_row,interpretations,is_self)
+    back_label=('Back to My Profile' if is_self else f'Back to {html.escape(user["name"])}’s Profile')
+    access_note=''
+    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
+        access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span><p class="muted">You can view this member’s factual natal foundation. Upgrade to open their full Planetary Conscious Coordination reflections.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Upgrade</a></article>'''
+    content=f'''<div class="hero"><div class="actions"><a class="out" href="{url_for('connection_profile',user_id=user_id)}">← {back_label}</a></div><span class="badge heart">SEASONS WITHIN</span><h1>{html.escape(user['name'])} — Planetary Conscious Coordination</h1><p class="muted">The existing permanent natal foundation and Planetary Conscious Coordination information for this member.</p></div>{_planetary_coordination_cards(user,self_view=is_self)}{access_note}<article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{html.escape(user['name'])}’s Natal Chart Breakdown</h2>{natal_positions}</article>'''
+    return page('Planetary Conscious Coordination',content,'more')
 
 @app.route('/conscious-coordination/profile/<int:user_id>/like', methods=['POST'])
 @login_required
