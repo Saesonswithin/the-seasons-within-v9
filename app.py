@@ -113,7 +113,7 @@ PG_ID_TABLES = {
     'users','journal_entries','community_posts','messages','notifications','businesses',
     'business_media','business_calendar','business_plans','retreats','business_bookings',
     'business_certifications','funding_searches','funding_opportunities','saved_funding_opportunities','business_proposals',
-    'coordination_media','coordination_likes','coordination_posts','affiliate_referrals',
+    'coordination_media','coordination_likes','coordination_posts','coordination_post_comments','member_experience_invitations','affiliate_referrals',
     'password_reset_tokens','email_verification_tokens','trusted_devices','security_events',
     'astrology_reflections','compatibility_reports','coordination_video_requests',
     'natal_charts','planet_positions','natal_aspects','lunar_cycles','member_lunar_cycles',
@@ -601,6 +601,44 @@ def init_db():
         media_type TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS coordination_post_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        parent_comment_id INTEGER,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(post_id) REFERENCES coordination_posts(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(parent_comment_id) REFERENCES coordination_post_comments(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS coordination_comment_votes (
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        vote INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(comment_id,user_id),
+        FOREIGN KEY(comment_id) REFERENCES coordination_post_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS member_experience_invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        activity TEXT NOT NULL,
+        proposed_date TEXT NOT NULL,
+        proposed_time TEXT NOT NULL,
+        experience_mode TEXT NOT NULL DEFAULT 'In Person',
+        virtual_link TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        business_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        created_at TEXT NOT NULL,
+        responded_at TEXT,
+        FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE SET NULL
     );
     ''')
     conn.executescript('''
@@ -6283,7 +6321,10 @@ def member_profile(user_id):
     m=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone(); conn.close()
     if not m: abort(404)
     if m['id']==u['id']: return redirect(url_for('profile'))
-    public_html=public_journal_cards(m['id'],u['id']); business_html=member_business_card(business) if business else ''
+    public_html=public_journal_cards(m['id'],u['id'])
+    business_html=''
+    if business:
+        business_html=f'''<div class="topspace"><span class="badge gold">HOSTED BUSINESS APP</span><h2>{html.escape(m['name'])}’s Business</h2><p class="muted small">Use the same public Hosted App navigation available from Home.</p></div>{regular_business_cards([business],home_swipe=True,module_map=_home_business_module_map([business]))}'''
     conn=db(); main_photo=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(m['id'],)).fetchone(); conn.close()
     portrait=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(m["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(m["name"])}</div>')
     journal_identity=f'''<div class="member-journal-identity">{portrait}<div class="portrait member-journal-logo journal-logo-frame"><img class="journal-logo-artwork" src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;border-radius:50%"></div></div>'''
@@ -6660,6 +6701,53 @@ def journal_entry_delete(entry_id):
             except Exception: pass
     conn.execute('DELETE FROM journal_entries WHERE id=? AND user_id=?',(entry_id,u['id'])); conn.commit(); conn.close(); flash('Journal entry deleted.','success'); return redirect(url_for('journal',section=e['category']))
 
+@app.route('/conscious-coordination/profile/<int:user_id>/experience-invitation',methods=['GET','POST'])
+@login_required
+def experience_invitation(user_id):
+    u=current_user()
+    if user_id==u['id']: abort(400)
+    conn=db(); recipient=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); businesses=conn.execute('SELECT id,name,category,location FROM businesses WHERE active=1 ORDER BY name').fetchall()
+    if not recipient: conn.close(); abort(404)
+    if request.method=='POST':
+        activity=request.form.get('activity','').strip(); proposed_date=request.form.get('proposed_date','').strip(); proposed_time=request.form.get('proposed_time','').strip(); mode=request.form.get('experience_mode','In Person'); note=request.form.get('note','').strip(); virtual_link=request.form.get('virtual_link','').strip(); business_id=request.form.get('business_id',type=int)
+        if mode not in {'In Person','Virtual / Zoom'}: mode='In Person'
+        if business_id and not conn.execute('SELECT id FROM businesses WHERE id=? AND active=1',(business_id,)).fetchone(): business_id=None
+        if activity and proposed_date and proposed_time:
+            duplicate=conn.execute("SELECT id FROM member_experience_invitations WHERE sender_id=? AND recipient_id=? AND proposed_date=? AND proposed_time=? AND status='Pending'",(u['id'],user_id,proposed_date,proposed_time)).fetchone()
+            if duplicate:
+                conn.close(); flash('That invitation is already waiting for a response.','info'); return redirect(url_for('inbox'))
+            cur=conn.execute('''INSERT INTO member_experience_invitations(sender_id,recipient_id,activity,proposed_date,proposed_time,experience_mode,virtual_link,note,business_id,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'Pending',?)''',(u['id'],user_id,activity,proposed_date,proposed_time,mode,virtual_link if mode=='Virtual / Zoom' else '',note,business_id,now()))
+            invite_id=cur.lastrowid; conn.commit(); conn.close(); notify(user_id,'Will You Go Out With Me?',f'{u["name"]} sent you a private experience invitation.',url_for('inbox')); flash('Your private invitation was sent to their Journal Inbox.','success'); return redirect(url_for('connection_profile',user_id=user_id))
+    conn.close()
+    business_options='<option value="">No business selected</option>'+''.join(f'<option value="{b["id"]}">{html.escape(b["name"])} — {html.escape(b["category"] or "Wellness")}</option>' for b in businesses)
+    return page('Will You Go Out With Me?',f'''<div class="hero"><span class="badge heart">PRIVATE EXPERIENCE INVITATION</span><h1>Will You Go Out With Me?</h1><p class="muted">Invite {html.escape(recipient['name'])} to a virtual or in-person wellness experience. This goes only to their Journal Inbox.</p></div><form class="card" method="post"><label><b>Activity or experience</b></label><input class="input" name="activity" placeholder="Yoga class, nature walk, meditation, creative experience..." required><div class="grid"><label><b>Proposed date</b><input class="input" type="date" name="proposed_date" required></label><label><b>Proposed time</b><input class="input" type="time" name="proposed_time" required></label></div><label><b>Format</b></label><select class="input" name="experience_mode"><option>In Person</option><option>Virtual / Zoom</option></select><label><b>Virtual / Zoom link, if already available</b></label><input class="input" type="url" name="virtual_link" placeholder="https://..."><label><b>Suggested Seasons Within wellness app</b></label><select class="input" name="business_id">{business_options}</select><label><b>Optional note</b></label><textarea class="input" name="note"></textarea><button class="btn">Send Invitation</button></form>''','coordination')
+
+@app.route('/experience-invitation/<int:invitation_id>/<decision>',methods=['POST'])
+@login_required
+def experience_invitation_respond(invitation_id,decision):
+    if decision not in {'yes','no'}: abort(400)
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM member_experience_invitations WHERE id=? AND recipient_id=? AND status=?',(invitation_id,u['id'],'Pending')).fetchone()
+    if not row: conn.close(); abort(404)
+    if decision=='yes':
+        conflict=conn.execute("""SELECT id FROM member_experience_invitations WHERE id<>? AND status='Accepted' AND proposed_date=? AND proposed_time=? AND (sender_id IN (?,?) OR recipient_id IN (?,?)) LIMIT 1""",(invitation_id,row['proposed_date'],row['proposed_time'],row['sender_id'],row['recipient_id'],row['sender_id'],row['recipient_id'])).fetchone()
+        if conflict:
+            conn.close(); flash('That time now conflicts with another accepted experience. Coordinate another time before accepting.','error'); return redirect(url_for('inbox'))
+    status='Accepted' if decision=='yes' else 'Declined'; conn.execute('UPDATE member_experience_invitations SET status=?,responded_at=? WHERE id=?',(status,now(),invitation_id)); conn.commit(); conn.close()
+    notify(row['sender_id'],f'Experience Invitation {status}',f'{u["name"]} responded {"YES" if decision=="yes" else "NO"} to your invitation.',url_for('inbox'))
+    flash('Invitation accepted. You can add the agreed date to your calendar.' if decision=='yes' else 'Invitation declined.','success'); return redirect(url_for('inbox'))
+
+@app.route('/experience-invitation/<int:invitation_id>/calendar.ics')
+@login_required
+def experience_invitation_calendar(invitation_id):
+    u=current_user(); conn=db(); row=conn.execute("SELECT * FROM member_experience_invitations WHERE id=? AND status='Accepted' AND (sender_id=? OR recipient_id=?)",(invitation_id,u['id'],u['id'])).fetchone(); conn.close()
+    if not row: abort(404)
+    try: start=datetime.fromisoformat(row['proposed_date']+'T'+row['proposed_time']); end=start+timedelta(hours=1)
+    except Exception: abort(400)
+    def stamp(value): return value.strftime('%Y%m%dT%H%M%S')
+    description=(row['experience_mode']+' '+(row['virtual_link'] or '')+' '+(row['note'] or '')).strip().replace('\\n',' ')
+    data=f'''BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//The Seasons Within//Experience Invitation//EN\r\nBEGIN:VEVENT\r\nUID:seasons-invitation-{invitation_id}@theseasonswithin\r\nDTSTART:{stamp(start)}\r\nDTEND:{stamp(end)}\r\nSUMMARY:{row['activity']}\r\nDESCRIPTION:{description}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'''
+    return send_file(io.BytesIO(data.encode('utf-8')),mimetype='text/calendar',as_attachment=True,download_name=f'seasons-within-invitation-{invitation_id}.ics')
+
 @app.route('/inbox')
 @login_required
 def inbox():
@@ -6675,6 +6763,9 @@ def inbox():
                          WHERE m.recipient_id=? AND COALESCE(m.recipient_deleted,0)=0 ORDER BY m.id DESC''',(u['id'],)).fetchall()
     sender_ids=sorted({m['sender_id'] for m in msgs})
     community_requests=conn.execute('''SELECT r.*,s.name sender_name FROM conscious_community_requests r JOIN users s ON s.id=r.sender_user_id WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall()
+    experience_invites=conn.execute('''SELECT i.*,s.name sender_name,b.name business_name FROM member_experience_invitations i
+        JOIN users s ON s.id=i.sender_id LEFT JOIN businesses b ON b.id=i.business_id
+        WHERE i.recipient_id=? ORDER BY i.id DESC''',(u['id'],)).fetchall()
     sender_photos={}
     if sender_ids:
         placeholders=','.join('?' for _ in sender_ids)
@@ -6703,7 +6794,21 @@ def inbox():
     filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
     request_notice=(f'''<article class="card paid"><span class="badge heart">CONSCIOUS COMMUNITY REQUEST</span><h2>{len(community_requests)} Community Request{'s' if len(community_requests)!=1 else ''}</h2><p class="muted">Review the sender, note and requested purpose, then accept or decline.</p><a class="btn" href="{url_for('conscious_community')}">Review Community Requests</a></article>''' if community_requests else '')
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Your private conversations are kept here.</p></div>{request_notice}{status}{filters}{cards_html}''','more')
+    invite_parts=[]
+    for x in experience_invites:
+        business_note=f'<p><b>Suggested Seasons Within business:</b> {html.escape(x["business_name"])}</p>' if x['business_name'] else ''
+        personal_note=f'<p>{html.escape(x["note"])}</p>' if x['note'] else ''
+        actions=''
+        if x['status']=='Pending':
+            yes=url_for('experience_invitation_respond',invitation_id=x['id'],decision='yes'); no=url_for('experience_invitation_respond',invitation_id=x['id'],decision='no')
+            actions=f'<div class="actions"><form method="post" action="{yes}"><button class="btn">YES</button></form><form method="post" action="{no}"><button class="out">NO</button></form></div>'
+        elif x['status']=='Accepted':
+            calendar_link=f'<a class="out" href="{url_for("experience_invitation_calendar",invitation_id=x["id"])}">Add to Calendar</a>'
+            virtual_link=f'<a class="out" href="{html.escape(x["virtual_link"],quote=True)}" target="_blank" rel="noopener">Open Virtual Meeting</a>' if x['virtual_link'] else ''
+            actions=f'<div class="actions">{calendar_link}{virtual_link}</div>'
+        invite_parts.append(f'''<article class="card paid"><span class="badge heart">WILL YOU GO OUT WITH ME?</span><h2>{html.escape(x['activity'])}</h2><p><b>From:</b> {html.escape(x['sender_name'])}</p><p><b>When:</b> {html.escape(x['proposed_date'])} at {html.escape(x['proposed_time'])}</p><p><b>Format:</b> {html.escape(x['experience_mode'])}</p>{business_note}{personal_note}<p><b>Status:</b> {html.escape(x['status'])}</p>{actions}</article>''')
+    invite_cards=''.join(invite_parts)
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{request_notice}{invite_cards}{status}{filters}{cards_html}''','more')
 
 @app.route('/inbox/read/<int:message_id>')
 @login_required
@@ -7044,7 +7149,7 @@ def connections():
     member_cards=''.join(cards) or '<div class="empty"><h3>No matching member profiles yet</h3><p class="muted">Compatible connections will appear as participating members match your selected intentions.</p><a class="out" href="'+url_for('connections')+'">Return to Discover Members</a></div>'
     filters='<a class="chip" href="'+url_for('connections')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
 
-    is_host=bool(u['is_admin'] or (u['name'] or '').strip().lower()=='galaxy eve')
+    is_host=bool((u['name'] or '').strip().lower()=='galaxy eve')
     host_form=''
     if is_host:
         host_form=f'''<form class="card paid" method="post" enctype="multipart/form-data" action="{url_for('coordination_post_create')}"><span class="badge gold">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>Post to Conscious Coordination</h2><input class="input" name="title" placeholder="Post title" required><textarea class="input" name="body" placeholder="News, prompt, experience, event or Retreat invitation..." required></textarea><label><b>Optional Link</b></label><input class="input" type="url" name="link_url" placeholder="https://..."><label><b>Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post as Conscious Coordinator</button></form>'''
@@ -7055,9 +7160,21 @@ def connections():
             src=url_for('community_media',filename=p['media_name'])
             media=f'<video controls playsinline style="width:100%;max-height:520px;border-radius:16px" src="{src}"></video>' if p['media_type']=='video' else f'<img src="{src}" style="width:100%;max-height:520px;object-fit:cover;border-radius:16px" alt="Conscious Coordination post media">'
         link=f'<p><a class="out" href="{html.escape(p["link_url"],quote=True)}" target="_blank" rel="noopener">Open Shared Link</a></p>' if p['link_url'] else ''
-        comment=''
-        if host:
-            comment=f'''<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><label><b>Respond privately to Galaxy Eve</b></label><textarea class="input" name="body" placeholder="Write your response. It goes only to Galaxy Eve's Journal Inbox." required></textarea><button class="out">Send Private Comment</button></form>'''
+        conn=db(); comments=conn.execute('''SELECT c.*,usr.name,
+            COALESCE(SUM(CASE WHEN v.vote=1 THEN 1 ELSE 0 END),0) likes,
+            COALESCE(SUM(CASE WHEN v.vote=-1 THEN 1 ELSE 0 END),0) dislikes
+            FROM coordination_post_comments c JOIN users usr ON usr.id=c.user_id
+            LEFT JOIN coordination_comment_votes v ON v.comment_id=c.id
+            WHERE c.post_id=? GROUP BY c.id,usr.name ORDER BY c.created_at,c.id''',(p['id'],)).fetchall(); conn.close()
+        children={}
+        for c in comments: children.setdefault(c['parent_comment_id'],[]).append(c)
+        def comment_card(c,depth=0):
+            replies=''.join(comment_card(x,depth+1) for x in children.get(c['id'],[])) if depth<3 else ''
+            vote_buttons=''.join(f'''<form method="post" action="{url_for('coordination_comment_vote',comment_id=c['id'],vote=v)}" style="display:inline"><button class="out" type="submit">{label} {count}</button></form>''' for v,label,count in ((1,'👍 Like',c['likes']),(-1,'👎 Dislike',c['dislikes'])))
+            reply=f'''<details><summary class="out">Reply</summary><form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><input type="hidden" name="parent_comment_id" value="{c['id']}"><textarea class="input" name="body" placeholder="Write a public reply..." required></textarea><button class="out">Post Reply</button></form></details>'''
+            return f'''<div class="fact" style="margin-left:{min(depth,2)*18}px"><b>{html.escape(c['name'])}</b><p>{html.escape(c['body']).replace(chr(10),'<br>')}</p><div class="actions">{vote_buttons}{reply}</div>{replies}</div>'''
+        discussion=''.join(comment_card(c) for c in children.get(None,[]))
+        comment=f'''<div class="topspace"><h3>Join the Conversation</h3>{discussion}<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><textarea class="input" name="body" placeholder="Write a public comment..." required></textarea><button class="out">Post Comment</button></form></div>'''
         feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('conscious_community')}">My Conscious Community</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     <div class="topspace"><h2>Discover Members</h2><p class="muted small">Swipe horizontally to browse. Swiping browses only; use Interested when you want to express interest.</p></div><div class="chips">{filters}</div>
@@ -7073,7 +7190,7 @@ def connections():
 @login_required
 def coordination_post_create():
     u=current_user()
-    if not (u['is_admin'] or (u['name'] or '').strip().lower()=='galaxy eve'):
+    if (u['name'] or '').strip().lower()!='galaxy eve':
         abort(403)
     title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); link_url=request.form.get('link_url','').strip()
     media_name,media_type=save_community_media(request.files.get('media'),u['id'])
@@ -7086,19 +7203,28 @@ def coordination_post_create():
 @app.route('/conscious-coordination/post/<int:post_id>/comment', methods=['POST'])
 @login_required
 def coordination_post_comment(post_id):
-    u=current_user(); body=request.form.get('body','').strip()
-    conn=db(); post=conn.execute('SELECT * FROM coordination_posts WHERE id=?',(post_id,)).fetchone(); host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-    if not post or not host:
-        conn.close(); flash('Galaxy Eve is not available to receive that response yet.','info'); return redirect(url_for('connections'))
+    u=current_user(); body=request.form.get('body','').strip(); parent_id=request.form.get('parent_comment_id',type=int)
+    conn=db(); post=conn.execute('SELECT * FROM coordination_posts WHERE id=?',(post_id,)).fetchone()
+    if not post:
+        conn.close(); abort(404)
+    if parent_id and not conn.execute('SELECT id FROM coordination_post_comments WHERE id=? AND post_id=?',(parent_id,post_id)).fetchone():
+        conn.close(); abort(400)
     if body:
-        subject=f'Conscious Coordination — {post["title"]}'
-        cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],host['id'],'Conscious Coordination',subject,body,'Conscious Coordination',None,'','',now()))
-        mid=cur.lastrowid; conn.commit(); conn.close()
-        notify(host['id'],'New Conscious Coordination Response',f'{u["name"]} responded privately to “{post["title"]}”.',url_for('inbox_read',message_id=mid))
-        flash("Your response was sent privately to Galaxy Eve's Journal Inbox.",'success')
+        conn.execute('INSERT INTO coordination_post_comments(post_id,user_id,parent_comment_id,body,created_at) VALUES(?,?,?,?,?)',(post_id,u['id'],parent_id,body,now()))
+        conn.commit(); conn.close(); flash('Your public reply was posted.' if parent_id else 'Your public comment was posted.','success')
     else:
         conn.close()
     return redirect(url_for('connections')+f'#coordination-post-{post_id}')
+
+@app.route('/conscious-coordination/comment/<int:comment_id>/vote/<int:vote>',methods=['POST'])
+@login_required
+def coordination_comment_vote(comment_id,vote):
+    if vote not in (-1,1): abort(400)
+    u=current_user(); conn=db(); row=conn.execute('SELECT post_id FROM coordination_post_comments WHERE id=?',(comment_id,)).fetchone()
+    if not row: conn.close(); abort(404)
+    conn.execute('''INSERT INTO coordination_comment_votes(comment_id,user_id,vote,created_at) VALUES(?,?,?,?)
+        ON CONFLICT(comment_id,user_id) DO UPDATE SET vote=excluded.vote,created_at=excluded.created_at''',(comment_id,u['id'],vote,now()))
+    conn.commit(); conn.close(); return redirect(url_for('connections')+f'#coordination-post-{row["post_id"]}')
 
 @app.route('/conscious-coordination/profile/edit', methods=['GET','POST'])
 @login_required
@@ -7603,7 +7729,7 @@ def connection_profile(user_id):
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
-        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
+        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a><a class="out" href="{url_for('experience_invitation',user_id=user_id)}">Will You Go Out With Me?</a>'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
         journal_actions=''
     business_html=member_business_card(business) if business and cp.get('display_business_app') else ''
