@@ -7059,6 +7059,13 @@ def conscious_community_respond(request_id,decision):
 def conscious_community_remove(user_id):
     u=current_user(); conn=db(); conn.execute('DELETE FROM conscious_community_members WHERE (user_id=? AND community_member_user_id=?) OR (user_id=? AND community_member_user_id=?)',(u['id'],user_id,user_id,u['id'])); conn.commit(); conn.close(); flash('Community connection removed.','success'); return redirect(url_for('conscious_community'))
 
+def _can_create_coordination_post(user):
+    if not user:
+        return False
+    return ((user['name'] or '').strip().lower()=='galaxy eve' or
+            (user['email'] or '').strip().lower()=='e.read81@gmail.com')
+
+
 @app.route('/conscious-coordination')
 @login_required
 
@@ -7149,10 +7156,11 @@ def connections():
     member_cards=''.join(cards) or '<div class="empty"><h3>No matching member profiles yet</h3><p class="muted">Compatible connections will appear as participating members match your selected intentions.</p><a class="out" href="'+url_for('connections')+'">Return to Discover Members</a></div>'
     filters='<a class="chip" href="'+url_for('connections')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("connections",type=x)}">{x}</a>' for x in sorted(own_types))
 
-    is_host=bool((u['name'] or '').strip().lower()=='galaxy eve')
+    is_host=_can_create_coordination_post(u)
     host_form=''
     if is_host:
-        host_form=f'''<form class="card paid" method="post" enctype="multipart/form-data" action="{url_for('coordination_post_create')}"><span class="badge gold">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>Post to Conscious Coordination</h2><input class="input" name="title" placeholder="Post title" required><textarea class="input" name="body" placeholder="News, prompt, experience, event or Retreat invitation..." required></textarea><label><b>Optional Link</b></label><input class="input" type="url" name="link_url" placeholder="https://..."><label><b>Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post as Conscious Coordinator</button></form>'''
+        poster_label='GALAXY EVE • CONSCIOUS COORDINATOR' if (u['name'] or '').strip().lower()=='galaxy eve' else 'THE SEASONS WITHIN • ADMIN'
+        host_form=f'''<form class="card paid" method="post" enctype="multipart/form-data" action="{url_for('coordination_post_create')}"><span class="badge gold">{poster_label}</span><h2>Post to Conscious Coordination</h2><input class="input" name="title" placeholder="Post title" required><textarea class="input" name="body" placeholder="News, prompt, experience, event or Retreat invitation..." required></textarea><label><b>Optional Link</b></label><input class="input" type="url" name="link_url" placeholder="https://..."><label><b>Photo or Video</b></label><input class="input" type="file" name="media" accept="image/*,video/*"><button class="btn">Post as Conscious Coordinator</button></form>'''
     feed_cards=[]
     for p in posts:
         media=''
@@ -7175,7 +7183,8 @@ def connections():
             return f'''<div class="fact" style="margin-left:{min(depth,2)*18}px"><b>{html.escape(c['name'])}</b><p>{html.escape(c['body']).replace(chr(10),'<br>')}</p><div class="actions">{vote_buttons}{reply}</div>{replies}</div>'''
         discussion=''.join(comment_card(c) for c in children.get(None,[]))
         comment=f'''<div class="topspace"><h3>Join the Conversation</h3>{discussion}<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><textarea class="input" name="body" placeholder="Write a public comment..." required></textarea><button class="out">Post Comment</button></form></div>'''
-        feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">GALAXY EVE • CONSCIOUS COORDINATOR</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
+        author_label='GALAXY EVE • CONSCIOUS COORDINATOR' if (p['author_name'] or '').strip().lower()=='galaxy eve' else 'THE SEASONS WITHIN • ADMIN'
+        feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">{author_label}</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
     content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('conscious_community')}">My Conscious Community</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     <div class="topspace"><h2>Discover Members</h2><p class="muted small">Swipe horizontally to browse. Swiping browses only; use Interested when you want to express interest.</p></div><div class="chips">{filters}</div>
     <section class="discover-swipe" data-discover-swipe aria-label="Discover Members"><div class="discover-swipe-deck">{member_cards}</div>{f'<div class="discover-swipe-controls"><button class="out" type="button" data-swipe-prev aria-label="Previous member">Previous</button><span class="muted small" data-swipe-status aria-live="polite"></span><button class="out" type="button" data-swipe-next aria-label="Next member">Next</button></div>' if cards else ''}</section>
@@ -7190,7 +7199,7 @@ def connections():
 @login_required
 def coordination_post_create():
     u=current_user()
-    if (u['name'] or '').strip().lower()!='galaxy eve':
+    if not _can_create_coordination_post(u):
         abort(403)
     title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); link_url=request.form.get('link_url','').strip()
     media_name,media_type=save_community_media(request.files.get('media'),u['id'])
@@ -9849,11 +9858,11 @@ def business_calendar_grid(events, business_id, selected_date='', month_value=''
         by_date.setdefault(e['event_date'],[]).append(e)
     prev_y,prev_m=_business_month_shift(year,month,-1); next_y,next_m=_business_month_shift(year,month,1)
     if owner:
-        prev_link=url_for('business_calendar_page',month=f'{prev_y:04d}-{prev_m:02d}')
-        next_link=url_for('business_calendar_page',month=f'{next_y:04d}-{next_m:02d}')
+        prev_link=url_for('business_calendar_page',month=f'{prev_y:04d}-{prev_m:02d}')+'#business-calendar'
+        next_link=url_for('business_calendar_page',month=f'{next_y:04d}-{next_m:02d}')+'#business-calendar'
     else:
-        prev_link=url_for('business_app',business_id=business_id,month=f'{prev_y:04d}-{prev_m:02d}')+'#book'
-        next_link=url_for('business_app',business_id=business_id,month=f'{next_y:04d}-{next_m:02d}')+'#book'
+        prev_link=url_for('business_app',business_id=business_id,month=f'{prev_y:04d}-{prev_m:02d}')+'#business-calendar'
+        next_link=url_for('business_app',business_id=business_id,month=f'{next_y:04d}-{next_m:02d}')+'#business-calendar'
     headers=''.join(f'<div class="calendar-label" style="font-weight:800;padding:8px">{d}</div>' for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])
     cells=[]
     for week in pycalendar.Calendar(firstweekday=6).monthdayscalendar(year,month):
@@ -9878,7 +9887,7 @@ def business_calendar_grid(events, business_id, selected_date='', month_value=''
             tag=f'<a href="{href}" style="display:block;color:inherit;height:100%">{inner}</a>' if href else inner
             cells.append(f'<div class="calendar-cell" style="{selected}">{tag}</div>')
     title=datetime(year,month,1).strftime('%B %Y')
-    return f'''<div class="card calendar-card"><div class="calendar-head"><a class="out" href="{prev_link}">‹ Previous</a><h2>{title}</h2><a class="out" href="{next_link}">Next ›</a></div><div class="calendar-grid">{headers}{''.join(cells)}</div><p class="muted small">Open dates can be selected. Busy/blocked time is shown so the same calendar can protect classes, appointments, events and Retreats from collisions.</p></div>'''
+    return f'''<div class="card calendar-card" id="business-calendar"><div class="calendar-head"><a class="out" href="{prev_link}">‹ Previous</a><h2>{title}</h2><a class="out" href="{next_link}">Next ›</a></div><div class="calendar-grid">{headers}{''.join(cells)}</div><p class="muted small">Open dates can be selected. Busy/blocked time is shown so the same calendar can protect classes, appointments, events and Retreats from collisions.</p></div>'''
 
 def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     draft=draft or {}
@@ -9969,6 +9978,15 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     elif booking_method!='none' and 'booking' in enabled:
         sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Booking</h2><p class="muted">Booking will display here when availability or a booking link is added.</p></article></section>'''
     if get('affiliate_links'): sections['affiliate']=f'''<section id="affiliate"><article class="card"><div class="splitlabel"><span class="badge">AFFILIATE LINKS</span>{edit(6)}</div><p>{html.escape(str(get('affiliate_links')))}</p></article></section>'''
+    # Every enabled module belongs on this app's dashboard immediately. Content
+    # remains stored independently, so disabling a module hides rather than deletes it.
+    module_labels=dict(HOSTED_APP_MODULES)
+    content_editors=set(_HOSTED_CONTENT_FIELDS)
+    for key in order:
+        if key not in enabled or key in sections or key not in module_labels:
+            continue
+        owner_action=(f'<a class="out" href="{url_for("hosted_app_content_editor",kind=key)}">Add Content</a>' if owner and key in content_editors else '')
+        sections[key]=f'''<section id="{key}"><article class="card"><div class="splitlabel"><span class="badge">{html.escape(module_labels[key].upper())}</span>{owner_action}</div><h2>{html.escape(module_labels[key])}</h2><p class="muted">This section is enabled. Published information will appear here.</p></article></section>'''
     visible=[key for key in order if key in sections and key in enabled]
     nav=''.join(f'<a class="chip" href="#{key}">{dict(HOSTED_APP_MODULES).get(key,key.title())}</a>' for key in visible)
     return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
