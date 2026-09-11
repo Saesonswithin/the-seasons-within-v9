@@ -5456,14 +5456,7 @@ def regular_business_cards(rows,home_swipe=False,module_map=None):
         media=f'<img src="{logo}" alt="{b["name"]} logo" style="width:100%;height:100%;object-fit:cover">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
         shortcuts=''
         if home_swipe:
-            populated=set((module_map or {}).get(b['id'],set()))
-            if b['name']: populated.add('home')
-            if b['description'] or b['story'] or b['tagline']: populated.add('about')
-            if b['offers']: populated.add('services')
-            if b['contact_email'] or b['contact_phone'] or b['website'] or b['instagram'] or b['tiktok'] or b['youtube'] or b['facebook']: populated.add('contact')
-            if b['affiliate_links']: populated.add('affiliate')
-            if b['booking_method']=='external' and b['booking_url']: populated.add('booking')
-            enabled=set(_module_list(b)); selected=[key for key,_ in HOSTED_APP_MODULES if key in enabled and key in populated]
+            enabled=set(_module_list(b)); selected=[key for key in _module_order(b) if key in enabled]
             labels=dict(HOSTED_APP_MODULES)
             shortcuts='<div class="chips">'+''.join(f'<a class="chip" href="{url_for("business_app",business_id=b["id"])}#{key}">{html.escape(labels.get(key,key.title()))}</a>' for key in selected if key in labels)+'</div>' if selected else ''
         description=(b['description'] or b['tagline'] or '')[:320]
