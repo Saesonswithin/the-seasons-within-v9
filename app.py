@@ -6733,8 +6733,9 @@ def experience_invitation_respond(invitation_id,decision):
         if conflict:
             conn.close(); flash('That time now conflicts with another accepted experience. Coordinate another time before accepting.','error'); return redirect(url_for('inbox'))
     status='Accepted' if decision=='yes' else 'Declined'; conn.execute('UPDATE member_experience_invitations SET status=?,responded_at=? WHERE id=?',(status,now(),invitation_id)); conn.commit(); conn.close()
-    notify(row['sender_id'],f'Experience Invitation {status}',f'{u["name"]} responded {"YES" if decision=="yes" else "NO"} to your invitation.',url_for('inbox'))
-    flash('Invitation accepted. You can add the agreed date to your calendar.' if decision=='yes' else 'Invitation declined.','success'); return redirect(url_for('inbox'))
+    destination=url_for('experience_invitation_plan',invitation_id=invitation_id) if decision=='yes' else url_for('inbox')
+    notify(row['sender_id'],f'Experience Invitation {status}',f'{u["name"]} responded {"YES" if decision=="yes" else "NO"} to your invitation.',destination)
+    flash('Invitation accepted. You can now plan your shared experience.' if decision=='yes' else 'Invitation declined.','success'); return redirect(destination)
 
 @app.route('/experience-invitation/<int:invitation_id>/calendar.ics')
 @login_required
@@ -6747,6 +6748,38 @@ def experience_invitation_calendar(invitation_id):
     description=(row['experience_mode']+' '+(row['virtual_link'] or '')+' '+(row['note'] or '')).strip().replace('\\n',' ')
     data=f'''BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//The Seasons Within//Experience Invitation//EN\r\nBEGIN:VEVENT\r\nUID:seasons-invitation-{invitation_id}@theseasonswithin\r\nDTSTART:{stamp(start)}\r\nDTEND:{stamp(end)}\r\nSUMMARY:{row['activity']}\r\nDESCRIPTION:{description}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'''
     return send_file(io.BytesIO(data.encode('utf-8')),mimetype='text/calendar',as_attachment=True,download_name=f'seasons-within-invitation-{invitation_id}.ics')
+
+@app.route('/experience-invitation/<int:invitation_id>/plan')
+@login_required
+def experience_invitation_plan(invitation_id):
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT i.*,s.name sender_name,r.name recipient_name,b.name business_name,b.category business_category,b.location business_location
+        FROM member_experience_invitations i JOIN users s ON s.id=i.sender_id JOIN users r ON r.id=i.recipient_id
+        LEFT JOIN businesses b ON b.id=i.business_id
+        WHERE i.id=? AND i.status='Accepted' AND (i.sender_id=? OR i.recipient_id=?)''',(invitation_id,u['id'],u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    words={x for x in re.findall(r'[a-z0-9]+',(row['activity'] or '').lower()) if len(x)>2}
+    businesses=conn.execute('SELECT id,name,category,location,description,offers,features FROM businesses WHERE active=1 ORDER BY updated_at DESC,id DESC LIMIT 60').fetchall(); conn.close()
+    ranked=[]
+    for b in businesses:
+        hay=' '.join(str(b[k] or '') for k in ('name','category','location','description','offers','features')).lower()
+        score=sum(1 for word in words if word in hay)
+        if score or b['id']==row['business_id']: ranked.append((score+(10 if b['id']==row['business_id'] else 0),b))
+    ranked.sort(key=lambda item:(-item[0],(item[1]['name'] or '').lower()))
+    suggestions=''.join(f'''<article class="card"><span class="badge">SEASONS WITHIN EXPERIENCE</span><h3>{html.escape(b['name'])}</h3><p class="muted">{html.escape(b['category'] or 'Wellness')} • {html.escape(b['location'] or 'Location available in app')}</p><a class="out" href="{url_for('business_app',business_id=b['id'])}">View Hosted Business App</a></article>''' for _,b in ranked[:4]) or '<div class="empty"><p class="muted">No published Seasons Within business currently matches this selected experience. Nothing has been invented.</p></div>'
+    pair=basic_compatibility(row['sender_id'],row['recipient_id'],'general')
+    if pair.get('ready'):
+        coordination=f'''<p>Based on your shared coordination, here are some experiences that may complement this connection.</p><p>Your current strongest coordination area is <b>{html.escape(str(pair.get('strength') or 'shared understanding'))}</b>. The area to approach with additional awareness is <b>{html.escape(str(pair.get('difference') or 'pacing and expectations'))}</b>. Keep the plan mutual: confirm the activity, timing, boundaries and preferred format together.</p>'''
+    else:
+        coordination='<p>Choose an experience, pace and setting that both members explicitly agree to. More profile information may support deeper Conscious Coordination suggestions later.</p>'
+    try:
+        start=datetime.fromisoformat(row['proposed_date']+'T'+row['proposed_time']); end=start+timedelta(hours=1)
+        google_dates=start.strftime('%Y%m%dT%H%M%S')+'/'+end.strftime('%Y%m%dT%H%M%S')
+    except Exception: google_dates=''
+    google_url='https://calendar.google.com/calendar/render?'+urllib.parse.urlencode({'action':'TEMPLATE','text':row['activity'],'dates':google_dates,'details':((row['experience_mode'] or '')+' '+(row['virtual_link'] or '')+' '+(row['note'] or '')).strip()}) if google_dates else ''
+    google=f'''<label class="fact"><input type="checkbox" data-google-calendar> Add to my Google Calendar</label><p data-google-calendar-link hidden><a class="out" href="{html.escape(google_url,quote=True)}" target="_blank" rel="noopener">Continue to Google Calendar</a></p><script>(()=>{{const box=document.querySelector('[data-google-calendar]'),link=document.querySelector('[data-google-calendar-link]');if(box&&link)box.addEventListener('change',()=>link.hidden=!box.checked);}})();</script>''' if google_url else '<p class="muted">Google Calendar can be used after a valid date and time are selected.</p>'
+    virtual=f'<p><a class="out" href="{html.escape(row["virtual_link"],quote=True)}" target="_blank" rel="noopener">Open Virtual / Zoom Meeting</a></p>' if row['virtual_link'] else ''
+    return page('Plan Our Experience',f'''<div class="hero"><span class="badge heart">PRIVATE TWO-PERSON PLANNING</span><h1>Plan Our Experience</h1><p class="muted">Private between {html.escape(row['sender_name'])} and {html.escape(row['recipient_name'])}. Nothing here is posted to the public wall.</p></div><article class="card"><h2>{html.escape(row['activity'])}</h2><p><b>Agreed date:</b> {html.escape(row['proposed_date'])} at {html.escape(row['proposed_time'])}</p><p><b>Format:</b> {html.escape(row['experience_mode'])}</p>{f'<p>{html.escape(row["note"])}</p>' if row['note'] else ''}{virtual}<div class="actions"><a class="btn" href="{url_for('experience_invitation_calendar',invitation_id=invitation_id)}">Add to The Seasons Within Calendar</a></div>{google}</article><article class="card"><span class="badge">CONSCIOUS COORDINATION BETWEEN YOU</span><h2>Ideas for Your Shared Experience</h2>{coordination}</article><div class="topspace"><h2>Suggested Experiences</h2><p class="muted">Only real published Hosted Business Apps matching the selected activity are shown.</p></div><div class="grid">{suggestions}</div>''','coordination')
 
 @app.route('/inbox')
 @login_required
@@ -6805,8 +6838,9 @@ def inbox():
         elif x['status']=='Accepted':
             calendar_link=f'<a class="out" href="{url_for("experience_invitation_calendar",invitation_id=x["id"])}">Add to Calendar</a>'
             virtual_link=f'<a class="out" href="{html.escape(x["virtual_link"],quote=True)}" target="_blank" rel="noopener">Open Virtual Meeting</a>' if x['virtual_link'] else ''
-            actions=f'<div class="actions">{calendar_link}{virtual_link}</div>'
-        invite_parts.append(f'''<article class="card paid"><span class="badge heart">WILL YOU GO OUT WITH ME?</span><h2>{html.escape(x['activity'])}</h2><p><b>From:</b> {html.escape(x['sender_name'])}</p><p><b>When:</b> {html.escape(x['proposed_date'])} at {html.escape(x['proposed_time'])}</p><p><b>Format:</b> {html.escape(x['experience_mode'])}</p>{business_note}{personal_note}<p><b>Status:</b> {html.escape(x['status'])}</p>{actions}</article>''')
+            plan_link=f'<a class="btn" href="{url_for("experience_invitation_plan",invitation_id=x["id"])}">Plan Our Experience</a>'
+            actions=f'<div class="actions">{plan_link}{calendar_link}{virtual_link}</div>'
+        invite_parts.append(f'''<article class="card paid"><span class="badge heart">WILL YOU GO OUT WITH ME?</span><h2>{html.escape(x['sender_name'])} would like to go out with you.</h2><p><b>Will you go out with me?</b></p><p><b>Experience:</b> {html.escape(x['activity'])}</p><p><b>When:</b> {html.escape(x['proposed_date'])} at {html.escape(x['proposed_time'])}</p><p><b>Format:</b> {html.escape(x['experience_mode'])}</p>{business_note}{personal_note}<p><b>Status:</b> {html.escape(x['status'])}</p>{actions}</article>''')
     invite_cards=''.join(invite_parts)
     return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{request_notice}{invite_cards}{status}{filters}{cards_html}''','more')
 
@@ -6868,7 +6902,7 @@ def message_member(recipient_id):
     if show_schedule:
         schedule='''<div class="grid"><div><label><b>Choose Your Preferred Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>Choose Your Preferred End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option value="">Choose a season</option><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select>'''
     locked_note=(f'<p><b>Public Journal post:</b> {html.escape(post["title"])} • {html.escape(post["category"])}</p>' if post else (f'''<p><b>Public gift:</b> {gift_context['emoji']} {html.escape(gift_context['label'])}</p>''' if gift_context else '<p class="muted">This private message will be filed automatically under <b>Journal Entry</b> in the recipient\'s Journal Inbox.</p>'))
-    private_actions=(f'''<article class="card"><h3>Additional Private Interactions</h3><div class="actions"><a class="out" href="{url_for('member_gallery',user_id=recipient_id)}#send-gift">🎁 Send Gift</a><a class="out" href="{url_for('video',user_id=recipient_id)}">🎥 Private Video</a></div></article>''' if origin=='Conscious Coordination' else '')
+    private_actions=(f'''<article class="card"><h3>Additional Private Interactions</h3><div class="actions"><a class="out" href="{url_for('member_gallery',user_id=recipient_id)}#send-gift">🎁 Send Gift</a><a class="out" href="{url_for('video',user_id=recipient_id)}">🎥 Private Video</a><a class="out" href="{url_for('experience_invitation',user_id=recipient_id)}">💜 Will You Go Out With Me?</a></div></article>''' if origin=='Conscious Coordination' else '')
     return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Private Journal Entry</h1><p class="muted">This entry will be delivered privately to {html.escape(r['name'])}'s Journal Inbox. It will not appear as a public comment.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{html.escape(origin,quote=True)}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><input type="hidden" name="gift_id" value="{gift_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{html.escape(subject or '',quote=True)}" placeholder="Enter your message title" required>{locked_note}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Private Entry</button></form>{private_actions}''','more')
 
 @app.route('/notifications')
