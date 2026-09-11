@@ -120,7 +120,7 @@ PG_ID_TABLES = {
     'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
     'report_embeddings','member_pair_coordination','member_pair_planetary_scores'
-    ,'financial_forecasts','financial_entries','financial_imports','financial_questions',
+    ,'financial_forecasts','financial_entries','financial_imports','financial_questions','corporate_record_documents',
     'financial_connections','business_protection_records','business_legal_checklist'
 }
 
@@ -673,6 +673,19 @@ def init_db():
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS corporate_record_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        business_id INTEGER,
+        document_name TEXT NOT NULL,
+        folder TEXT NOT NULL,
+        description TEXT DEFAULT '', keywords TEXT DEFAULT '', document_type TEXT DEFAULT '',
+        expiration_date TEXT DEFAULT '', file_name TEXT NOT NULL, original_name TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE SET NULL,
+        FOREIGN KEY(file_name) REFERENCES stored_files(file_name) ON DELETE RESTRICT
+    );
     CREATE TABLE IF NOT EXISTS email_verification_tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -1111,6 +1124,17 @@ def _ensure_runtime_compat_schema():
                 file_data BLOB NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS corporate_record_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, business_id INTEGER,
+                document_name TEXT NOT NULL, folder TEXT NOT NULL,
+                description TEXT DEFAULT '', keywords TEXT DEFAULT '', document_type TEXT DEFAULT '',
+                expiration_date TEXT DEFAULT '', file_name TEXT NOT NULL, original_name TEXT NOT NULL,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE SET NULL,
+                FOREIGN KEY(file_name) REFERENCES stored_files(file_name) ON DELETE RESTRICT
             )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS conscious_community_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id INTEGER NOT NULL,
@@ -11659,6 +11683,137 @@ def _save_credential_document(file_storage,user_id):
     _persist_uploaded_file(stored,user_id,getattr(file_storage,'mimetype','application/octet-stream'))
     return url_for('community_media',filename=stored)
 
+CORPORATE_RECORD_FOLDERS=(
+    ('formation','Formation Documents'),
+    ('tax','EIN & Tax Documents'),
+    ('governing','Bylaws / Operating Agreement'),
+    ('ownership','Ownership & Membership'),
+    ('meetings','Meetings, Minutes & Resolutions'),
+    ('licenses','Licenses & Registrations'),
+    ('contracts','Contracts & Agreements'),
+    ('insurance','Insurance'),
+    ('financial','Banking & Financial Records'),
+    ('compliance','Government & Compliance'),
+    ('funding','Grants, Loans & Funding'),
+    ('other','Other Business Records'),
+)
+CORPORATE_RECORD_FOLDER_MAP=dict(CORPORATE_RECORD_FOLDERS)
+CORPORATE_RECORD_EXTENSIONS={'.pdf','.doc','.docx','.xls','.xlsx','.csv','.txt','.jpg','.jpeg','.png','.webp'}
+
+def _corporate_record_business_id(conn,user_id):
+    row=conn.execute('SELECT id FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone()
+    return row['id'] if row else None
+
+def _add_corporate_record_reference(conn,user_id,file_name,original_name,document_name,folder='other',description='',expiration_date=''):
+    folder=folder if folder in CORPORATE_RECORD_FOLDER_MAP else 'other'
+    document_name=(document_name or Path(original_name).stem or 'Business Document').strip()[:240]
+    ext=Path(original_name).suffix.lower().lstrip('.')
+    conn.execute('''INSERT INTO corporate_record_documents
+        (user_id,business_id,document_name,folder,description,keywords,document_type,expiration_date,file_name,original_name,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (user_id,_corporate_record_business_id(conn,user_id),document_name,folder,description.strip()[:4000],'',ext,expiration_date[:10],file_name,secure_filename(original_name) or file_name,now(),now()))
+
+def _corporate_record_file_response(row,download=False):
+    conn=db(); stored=conn.execute('SELECT content_type,file_data FROM stored_files WHERE file_name=? AND user_id=?',(row['file_name'],row['user_id'])).fetchone(); conn.close()
+    if not stored: abort(404)
+    raw=stored['file_data']; raw=raw.tobytes() if isinstance(raw,memoryview) else bytes(raw)
+    return send_file(io.BytesIO(raw),mimetype=stored['content_type'] or 'application/octet-stream',download_name=row['original_name'],as_attachment=download)
+
+@app.route('/business-development/corporate-record-book')
+@login_required
+def corporate_record_book():
+    u=current_user(); query=request.args.get('q','').strip()[:200]; conn=db()
+    sql='SELECT * FROM corporate_record_documents WHERE user_id=?'; params=[u['id']]
+    if query:
+        needle=f'%{query.lower()}%'; folder_matches=[key for key,label in CORPORATE_RECORD_FOLDERS if query.lower() in key.lower() or query.lower() in label.lower()]
+        conditions='LOWER(document_name) LIKE ? OR LOWER(folder) LIKE ? OR LOWER(document_type) LIKE ? OR LOWER(keywords) LIKE ? OR LOWER(description) LIKE ? OR LOWER(original_name) LIKE ?'; params.extend([needle]*6)
+        if folder_matches:
+            conditions+=f' OR folder IN ({",".join("?" for _ in folder_matches)})'; params.extend(folder_matches)
+        sql+=f' AND ({conditions})'
+    sql+=' ORDER BY updated_at DESC,id DESC'; rows=conn.execute(sql,params).fetchall()
+    summary=conn.execute('SELECT COUNT(*) documents,MAX(updated_at) last_updated FROM corporate_record_documents WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
+    by_folder={key:[] for key,_ in CORPORATE_RECORD_FOLDERS}
+    for row in rows: by_folder.setdefault(row['folder'],[]).append(row)
+    def document_card(row):
+        expiry=f'<p><b>Expiration / Renewal:</b> {html.escape(row["expiration_date"])}</p>' if row['expiration_date'] else ''
+        return f'''<article class="card"><span class="badge">{html.escape(CORPORATE_RECORD_FOLDER_MAP.get(row['folder'],'Other Business Records'))}</span><h3>{html.escape(row['document_name'])}</h3><p class="muted small">Date Added: {html.escape(row['created_at'])} • Type: {html.escape((row['document_type'] or 'document').upper())}</p>{f'<p>{html.escape(row["description"])}</p>' if row['description'] else ''}{expiry}<div class="actions"><a class="out" target="_blank" rel="noopener" href="{url_for('corporate_record_open',document_id=row['id'])}">Open</a><a class="out" href="{url_for('corporate_record_download',document_id=row['id'])}">Download</a><a class="out" href="{url_for('corporate_record_edit',document_id=row['id'])}">Edit / Move</a><form method="post" action="{url_for('corporate_record_delete',document_id=row['id'])}" onsubmit="return confirm('Delete this document from your Corporate Record Book?')"><button class="out danger">Delete</button></form></div></article>'''
+    folders=[]
+    for index,(key,label) in enumerate(CORPORATE_RECORD_FOLDERS,1):
+        documents=''.join(document_card(row) for row in by_folder.get(key,[]))
+        empty=('<p class="muted small">No matching documents.</p>' if query else '<p class="muted small">No documents added yet.</p>')
+        folders.append(f'''<details class="card" {'open' if by_folder.get(key) else ''}><summary style="cursor:pointer"><b>📂 {index}. {html.escape(label)}</b> <span class="muted small">({len(by_folder.get(key,[]))})</span></summary><div class="grid">{documents or empty}</div></details>''')
+    last=summary['last_updated'] or 'No documents added yet'
+    return page('My Corporate Record Book',f'''<div class="hero"><span class="badge">📁 PRIVATE BUSINESS RECORDS</span><h1>My Corporate Record Book</h1><p class="muted">Keep your important business records organized in one secure, easy-to-access place.</p><div class="chips"><span class="chip">12 Sections</span><span class="chip">{summary['documents']} Documents</span><span class="chip">Last Updated: {html.escape(last)}</span></div><div class="actions"><a class="btn" href="{url_for('corporate_record_add')}">+ Add Document</a><a class="out" href="{url_for('business_plan')}">Back to Business Development</a></div></div><form class="card" method="get"><label><b>Search My Corporate Record Book</b></label><input class="input" name="q" value="{html.escape(query,quote=True)}" placeholder="Search documents, folders, types or keywords"><button class="btn">Search</button>{f'<a class="out" href="{url_for("corporate_record_book")}">Clear Search</a>' if query else ''}</form>{''.join(folders)}<article class="card"><p class="muted small">Your Corporate Record Book is an organizational tool designed to help you keep important business records together. It does not replace legal, tax, accounting, or professional advice. Requirements may vary depending on your business structure and jurisdiction.</p></article>''','business')
+
+@app.route('/business-development/corporate-record-book/add',methods=['GET','POST'])
+@login_required
+def corporate_record_add():
+    u=current_user()
+    if request.method=='POST':
+        upload=request.files.get('document'); original=secure_filename(upload.filename) if upload and upload.filename else ''; ext=Path(original).suffix.lower()
+        if not upload or not original or ext not in CORPORATE_RECORD_EXTENSIONS:
+            flash('Choose a supported business document.','error'); return redirect(url_for('corporate_record_add'))
+        data=upload.read(20*1024*1024+1)
+        if len(data)>20*1024*1024:
+            flash('Corporate Record Book documents must be 20 MB or smaller.','error'); return redirect(url_for('corporate_record_add'))
+        stored=f'corporate_{u["id"]}_{secrets.token_hex(12)}{ext}'; conn=db()
+        try:
+            conn.execute('INSERT INTO stored_files(file_name,user_id,content_type,file_data,created_at) VALUES(?,?,?,?,?)',(stored,u['id'],upload.mimetype or 'application/octet-stream',data,now()))
+            _add_corporate_record_reference(conn,u['id'],stored,original,request.form.get('document_name',''),request.form.get('folder','other'),request.form.get('description',''),request.form.get('expiration_date',''))
+            conn.commit()
+        except Exception:
+            conn.rollback(); conn.close(); raise
+        conn.close(); flash('Document saved to My Corporate Record Book.','success'); return redirect(url_for('corporate_record_book'))
+    options=''.join(f'<option value="{key}">{html.escape(label)}</option>' for key,label in CORPORATE_RECORD_FOLDERS)
+    return page('Add Corporate Record Document',f'''<div class="hero"><span class="badge">📁 CORPORATE RECORD BOOK</span><h1>+ Add Document</h1><p class="muted">Save this document privately to your organized business records.</p></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Document Name</b><input class="input" name="document_name" required></label><label><b>Choose Folder</b><select class="input" name="folder" required>{options}</select></label><label><b>Upload Document</b><input class="input" type="file" name="document" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp" required></label><label><b>Document Description (optional)</b><textarea class="input" name="description"></textarea></label><label><b>Expiration / Renewal Date (optional)</b><input class="input" type="date" name="expiration_date"></label><div class="actions"><button class="btn">Save to Corporate Record Book</button><a class="out" href="{url_for('corporate_record_book')}">Cancel</a></div></form>''','business')
+
+@app.route('/business-development/corporate-record-book/<int:document_id>/edit',methods=['GET','POST'])
+@login_required
+def corporate_record_edit(document_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM corporate_record_documents WHERE id=? AND user_id=?',(document_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    if request.method=='POST':
+        upload=request.files.get('replacement'); old_file=row['file_name']; new_file=old_file; new_original=row['original_name']
+        if upload and upload.filename:
+            new_original=secure_filename(upload.filename); ext=Path(new_original).suffix.lower()
+            if ext not in CORPORATE_RECORD_EXTENSIONS: conn.close(); flash('Choose a supported business document.','error'); return redirect(url_for('corporate_record_edit',document_id=document_id))
+            data=upload.read(20*1024*1024+1)
+            if len(data)>20*1024*1024: conn.close(); flash('Corporate Record Book documents must be 20 MB or smaller.','error'); return redirect(url_for('corporate_record_edit',document_id=document_id))
+            new_file=f'corporate_{u["id"]}_{secrets.token_hex(12)}{ext}'; conn.execute('INSERT INTO stored_files(file_name,user_id,content_type,file_data,created_at) VALUES(?,?,?,?,?)',(new_file,u['id'],upload.mimetype or 'application/octet-stream',data,now()))
+        folder=request.form.get('folder','other'); folder=folder if folder in CORPORATE_RECORD_FOLDER_MAP else 'other'
+        conn.execute('''UPDATE corporate_record_documents SET document_name=?,folder=?,description=?,keywords=?,document_type=?,expiration_date=?,file_name=?,original_name=?,updated_at=? WHERE id=? AND user_id=?''',(request.form.get('document_name','').strip()[:240] or row['document_name'],folder,request.form.get('description','').strip()[:4000],request.form.get('keywords','').strip()[:1000],Path(new_original).suffix.lower().lstrip('.'),request.form.get('expiration_date','')[:10],new_file,new_original,now(),document_id,u['id']))
+        if new_file!=old_file and old_file.startswith('corporate_'):
+            refs=conn.execute('SELECT COUNT(*) n FROM corporate_record_documents WHERE file_name=?',(old_file,)).fetchone()['n']
+            if not refs: conn.execute('DELETE FROM stored_files WHERE file_name=? AND user_id=?',(old_file,u['id']))
+        conn.commit(); conn.close(); flash('Corporate Record Book document updated.','success'); return redirect(url_for('corporate_record_book'))
+    options=''.join(f'<option value="{key}"{" selected" if row["folder"]==key else ""}>{html.escape(label)}</option>' for key,label in CORPORATE_RECORD_FOLDERS); conn.close()
+    return page('Edit Corporate Record Document',f'''<div class="hero"><span class="badge">PRIVATE BUSINESS RECORD</span><h1>Edit / Move Document</h1></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Document Name</b><input class="input" name="document_name" value="{html.escape(row['document_name'],quote=True)}" required></label><label><b>Folder</b><select class="input" name="folder">{options}</select></label><label><b>Description</b><textarea class="input" name="description">{html.escape(row['description'] or '')}</textarea></label><label><b>Search Keywords</b><input class="input" name="keywords" value="{html.escape(row['keywords'] or '',quote=True)}"></label><label><b>Expiration / Renewal Date</b><input class="input" type="date" name="expiration_date" value="{html.escape(row['expiration_date'] or '',quote=True)}"></label><label><b>Replace / Update Document</b><input class="input" type="file" name="replacement" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp"></label><div class="actions"><button class="btn">Save Changes</button><a class="out" href="{url_for('corporate_record_book')}">Cancel</a></div></form>''','business')
+
+@app.route('/business-development/corporate-record-book/<int:document_id>/open')
+@login_required
+def corporate_record_open(document_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM corporate_record_documents WHERE id=? AND user_id=?',(document_id,u['id'])).fetchone(); conn.close()
+    if not row: abort(404)
+    return _corporate_record_file_response(row,False)
+
+@app.route('/business-development/corporate-record-book/<int:document_id>/download')
+@login_required
+def corporate_record_download(document_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM corporate_record_documents WHERE id=? AND user_id=?',(document_id,u['id'])).fetchone(); conn.close()
+    if not row: abort(404)
+    return _corporate_record_file_response(row,True)
+
+@app.route('/business-development/corporate-record-book/<int:document_id>/delete',methods=['POST'])
+@login_required
+def corporate_record_delete(document_id):
+    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM corporate_record_documents WHERE id=? AND user_id=?',(document_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    conn.execute('DELETE FROM corporate_record_documents WHERE id=? AND user_id=?',(document_id,u['id']))
+    if row['file_name'].startswith('corporate_'):
+        refs=conn.execute('SELECT COUNT(*) n FROM corporate_record_documents WHERE file_name=?',(row['file_name'],)).fetchone()['n']
+        if not refs: conn.execute('DELETE FROM stored_files WHERE file_name=? AND user_id=?',(row['file_name'],u['id']))
+    conn.commit(); conn.close(); flash('Document deleted from My Corporate Record Book.','success'); return redirect(url_for('corporate_record_book'))
+
 @app.route('/business-development/certifications',methods=['GET','POST'])
 @login_required
 def business_certifications():
@@ -11679,9 +11834,14 @@ def business_certifications():
             name=request.form.get('name','').strip()
             if name:
                 document_url=request.form.get('document_url','').strip()
-                uploaded=_save_credential_document(request.files.get('document_file'),u['id'])
+                document_file=request.files.get('document_file'); original_document_name=secure_filename(document_file.filename) if document_file and document_file.filename else ''
+                uploaded=_save_credential_document(document_file,u['id'])
                 if uploaded: document_url=uploaded
                 conn.execute('''INSERT INTO business_certifications(user_id,name,issuing_body,status,issue_date,renewal_date,credential_number,state,credential_type,verification_url,continuing_education,renewal_frequency,renewal_fee,reminder_preference,reminder_enabled,document_url,notes,source_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(u['id'],name,request.form.get('issuing_body','').strip(),request.form.get('status','Considering'),request.form.get('issue_date',''),request.form.get('renewal_date',''),request.form.get('credential_number','').strip(),request.form.get('state','').strip(),request.form.get('credential_type','').strip(),request.form.get('verification_url','').strip(),request.form.get('continuing_education','').strip(),request.form.get('renewal_frequency','').strip(),request.form.get('renewal_fee','').strip(),request.form.get('reminder_preference','60 days'),1 if request.form.get('reminder_enabled') else 0,document_url,request.form.get('notes','').strip(),request.form.get('source_url','').strip(),now(),now())); conn.commit(); flash('Saved to Business Journal → Licenses & Certifications.','success')
+                if uploaded and request.form.get('save_to_record_book'):
+                    stored_name=uploaded.rsplit('/',1)[-1]
+                    _add_corporate_record_reference(conn,u['id'],stored_name,original_document_name or stored_name,name,request.form.get('record_book_folder','licenses'),request.form.get('notes',''),request.form.get('renewal_date',''))
+                    conn.commit(); flash('The same uploaded file was also organized in My Corporate Record Book.','success')
         conn.close(); return redirect(url_for('business_certifications'))
     rows=conn.execute('SELECT * FROM business_certifications WHERE user_id=? ORDER BY updated_at DESC',(u['id'],)).fetchall(); progress={r['requirement_key']:r for r in conn.execute('SELECT * FROM business_requirement_progress WHERE user_id=?',(u['id'],)).fetchall()}; conn.close()
     snapshot=' • '.join(html.escape(_clean_text(x)) for x in (facts['business_name'],facts['industry'],facts['stage'],facts['city'],facts['county'],facts['state']) if x) or 'Complete your Business Plan to improve this roadmap.'
@@ -11705,7 +11865,8 @@ def business_certifications():
     completed=sum(1 for r in progress.values() if r['status']=='Active'); steps=''.join(f'<li><b>Step {i}</b> — {html.escape(x["name"])} <small>({html.escape(progress[x["key"]]["status"] if x["key"] in progress else "Recommended")})</small></li>' for i,x in enumerate(roadmap[:6],1))
     cards=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['name'])}</h3><p>{html.escape(r['issuing_body'] or '')}</p><p><b>{html.escape(_renewal_label(r['renewal_date']))}</b></p><p>{html.escape(r['notes'] or '')}</p><div class="actions"><a class="out" href="{url_for('business_certification_edit',record_id=r['id'])}">View / Edit</a>{f'<a class="out" target="_blank" rel="noopener" href="{html.escape(r["source_url"],quote=True)}">Official Source</a>' if r['source_url'] else ''}<form method="post" action="{url_for('business_certification_delete',record_id=r['id'])}" onsubmit="return confirm('Delete this saved credential?')"><button class="out danger">Delete</button></form></div></article>''' for r in rows) or '<div class="empty">No manually recorded licenses or certifications yet.</div>'
     record_key=request.args.get('record_requirement',''); record_item=by_key.get(record_key,{})
-    form=f'''<details class="card" id="record-credential" {'open' if record_item else ''}><summary class="btn">+ Add a License or Certification</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="manual"><label><b>Name</b></label><input class="input" name="name" value="{html.escape(record_item.get('name',''),quote=True)}" required><label><b>Issuing body</b></label><input class="input" name="issuing_body" value="{html.escape(record_item.get('source',''),quote=True)}"><div class="grid"><label><b>Credential type</b><input class="input" name="credential_type"></label><label><b>State</b><input class="input" name="state" value="{html.escape(facts.get('state',''),quote=True)}"></label><label><b>Issue date</b><input class="input" type="date" name="issue_date"></label><label><b>Renewal date</b><input class="input" type="date" name="renewal_date"></label></div><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>Researching</option><option>Application Started</option><option>Application Submitted</option><option>Pending</option><option selected>Active</option><option>Renewal Due</option><option>Expired</option><option>Not Applicable</option></select><label><b>Credential / license number</b></label><input class="input" name="credential_number"><label><b>Verification URL</b></label><input class="input" type="url" name="verification_url"><label><b>Upload certificate or license</b></label><input class="input" type="file" name="document_file" accept="application/pdf,image/jpeg,image/png,image/webp"><label><b>Or permanent document URL</b></label><input class="input" type="url" name="document_url"><label><b>Continuing education required?</b></label><input class="input" name="continuing_education"><div class="grid"><label><b>Renewal frequency</b><input class="input" name="renewal_frequency"></label><label><b>Renewal fee</b><input class="input" name="renewal_fee"></label></div><label><input type="checkbox" name="reminder_enabled" checked> Renewal reminder</label><select class="input" name="reminder_preference"><option>90 days</option><option selected>60 days</option><option>30 days</option><option>7 days</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url" value="{html.escape(record_item.get('source_url',''),quote=True)}"><button class="btn">Save to Business Journal</button></form></details>'''
+    record_book_options=''.join(f'<option value="{key}"{" selected" if key=="licenses" else ""}>{html.escape(label)}</option>' for key,label in CORPORATE_RECORD_FOLDERS)
+    form=f'''<details class="card" id="record-credential" {'open' if record_item else ''}><summary class="btn">+ Add a License or Certification</summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="manual"><label><b>Name</b></label><input class="input" name="name" value="{html.escape(record_item.get('name',''),quote=True)}" required><label><b>Issuing body</b></label><input class="input" name="issuing_body" value="{html.escape(record_item.get('source',''),quote=True)}"><div class="grid"><label><b>Credential type</b><input class="input" name="credential_type"></label><label><b>State</b><input class="input" name="state" value="{html.escape(facts.get('state',''),quote=True)}"></label><label><b>Issue date</b><input class="input" type="date" name="issue_date"></label><label><b>Renewal date</b><input class="input" type="date" name="renewal_date"></label></div><label><b>Status</b></label><select class="input" name="status"><option>Considering</option><option>Researching</option><option>Application Started</option><option>Application Submitted</option><option>Pending</option><option selected>Active</option><option>Renewal Due</option><option>Expired</option><option>Not Applicable</option></select><label><b>Credential / license number</b></label><input class="input" name="credential_number"><label><b>Verification URL</b></label><input class="input" type="url" name="verification_url"><label><b>Upload certificate or license</b></label><input class="input" type="file" name="document_file" accept="application/pdf,image/jpeg,image/png,image/webp"><div class="fact"><label><input type="checkbox" name="save_to_record_book"> <b>I already have this — Add to My Corporate Record Book</b></label><label>Corporate Record Book folder<select class="input" name="record_book_folder">{record_book_options}</select></label></div><label><b>Or permanent document URL</b></label><input class="input" type="url" name="document_url"><label><b>Continuing education required?</b></label><input class="input" name="continuing_education"><div class="grid"><label><b>Renewal frequency</b><input class="input" name="renewal_frequency"></label><label><b>Renewal fee</b><input class="input" name="renewal_fee"></label></div><label><input type="checkbox" name="reminder_enabled" checked> Renewal reminder</label><select class="input" name="reminder_preference"><option>90 days</option><option selected>60 days</option><option>30 days</option><option>7 days</option></select><label><b>Notes</b></label><textarea class="input" name="notes"></textarea><label><b>Official source URL</b></label><input class="input" type="url" name="source_url" value="{html.escape(record_item.get('source_url',''),quote=True)}"><button class="btn">Save to Business Journal</button></form></details>'''
     ask='''<form class="card" method="post"><input type="hidden" name="action" value="ask"><h2>Ask About My Business Requirements</h2><textarea class="input" name="question" required placeholder="What licenses or certifications might I need?"></textarea><button class="btn">Ask About My Requirements</button></form>'''
     return page('Licenses & Certifications',f'''<div class="hero"><span class="badge">BUSINESS DEVELOPMENT</span><h1>Your Licensing & Certification Roadmap</h1><p>Based on your business plan, here are registrations, licenses, permits, certifications and professional credentials that may apply.</p><div class="actions"><a class="btn" href="{url_for('business_certifications')}">Check My Business Requirements</a><a class="out" href="{url_for('business_certifications',refresh=1)}">Refresh Requirements</a><a class="out" href="{url_for('business_plan')}#licenses">View in Business Journal</a></div></div><article class="card"><h2>Your Business Snapshot</h2><p>{snapshot}</p><p class="muted">Recommendations distinguish possible legal requirements from optional business-development programs. Confirm legal requirements with the linked issuing agency.</p></article>{sections}<article class="card"><h2>Your Next Steps</h2><p><b>{completed} of {len(roadmap)} roadmap items completed</b></p><ol>{steps}</ol></article><section><h2>My Licenses & Certifications</h2>{form}<div class="grid">{cards}</div></section>{ask}''','business')
 
@@ -12332,7 +12493,7 @@ def _business_journal_saved_records(user_id):
     tasks_html=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['requirement_name'])}</h3><p>{html.escape(r['jurisdiction'] or '')}</p><div class="actions"><a class="out" href="{url_for('business_certifications')}">View / Edit</a><form method="post" action="{url_for('business_requirement_delete',requirement_key=r['requirement_key'])}" onsubmit="return confirm('Remove this saved requirement from your Business Journal?')"><button class="out danger">Delete</button></form></div></article>''' for r in tasks) or '<div class="empty">No saved Business Development tasks.</div>'
     deadlines_html=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'] or 'Upcoming')}</span><h3>{html.escape(r['title'])}</h3><p>{html.escape(r['deadline_type'])} • {html.escape(r['due_date'] or 'Date not set')}</p><a class="out" href="{url_for('funding_calendar')}">View / Edit</a></article>''' for r in deadlines) or '<div class="empty">No saved funding deadlines.</div>'
     protection_html=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['title'])}</h3><p>{html.escape(r['provider_name'] or r['classification'] or '')}{(' • Renewal '+html.escape(r['renewal_date'])) if r['renewal_date'] else ''}</p><div class="actions"><a class="out" href="{url_for('business_protection_edit',record_id=r['id'])}">View / Edit</a><form method="post" action="{url_for('business_protection_delete',record_id=r['id'])}" onsubmit="return confirm('Delete this saved protection record?')"><button class="out danger">Delete</button></form></div></article>''' for r in protection); protection_html+=''.join(f'''<article class="card"><span class="badge">{html.escape(r['status'])}</span><h3>{html.escape(r['title'])}</h3><a class="out" href="{url_for('business_protection')}#legal-checklist">View / Edit Checklist</a></article>''' for r in legal_progress); protection_html=protection_html or '<div class="empty">No saved insurance or legal-protection records.</div>'
-    return f'''<div class="topspace"><h1>My Saved Business Journal</h1><p class="muted">Everything below is permanently saved under your member account. Use View / Edit or Delete to manage your records.</p></div><section id="notes"><h2>Business Notes & Records</h2><a class="moreitem" href="{url_for('journal',category='Business')}">Open Business Notes & Records</a></section><section id="licenses"><h2>Licenses & Certifications</h2><div class="grid">{credentials_html}</div></section><section id="grants"><h2>Saved Grants</h2><div class="grid">{opportunity_cards(grants)}</div></section><section id="loans"><h2>Loans & Financing</h2><div class="grid">{opportunity_cards(loans)}</div></section><section id="applications"><h2>Funding Applications</h2><div class="grid">{opportunity_cards(applications)}</div></section><section id="proposals"><h2>Proposals & Applications</h2><div class="grid">{proposals_html}</div></section><section id="deadlines"><h2>Funding Calendar / Deadlines</h2><div class="grid">{deadlines_html}</div></section><section id="financial"><h2>Financial Planning & Forecasting Records</h2><div class="grid">{financial_html}</div></section><section id="protection"><h2>Business Insurance & Legal Protection</h2><div class="grid">{protection_html}</div></section><section id="tasks"><h2>Other Business Records</h2><div class="grid">{tasks_html}</div></section>'''
+    return f'''<div class="topspace"><h1>My Saved Business Journal</h1><p class="muted">Everything below is permanently saved under your member account. Use View / Edit or Delete to manage your records.</p></div><section id="notes"><h2>Business Notes & Records</h2><a class="moreitem" href="{url_for('journal',category='Business')}">Open Business Notes & Records</a></section><section id="corporate-record-book"><h2>📁 Corporate Record Book</h2><a class="moreitem" href="{url_for('corporate_record_book')}">Open My Corporate Record Book</a></section><section id="licenses"><h2>Licenses & Certifications</h2><div class="grid">{credentials_html}</div></section><section id="grants"><h2>Saved Grants</h2><div class="grid">{opportunity_cards(grants)}</div></section><section id="loans"><h2>Loans & Financing</h2><div class="grid">{opportunity_cards(loans)}</div></section><section id="applications"><h2>Funding Applications</h2><div class="grid">{opportunity_cards(applications)}</div></section><section id="proposals"><h2>Proposals & Applications</h2><div class="grid">{proposals_html}</div></section><section id="deadlines"><h2>Funding Calendar / Deadlines</h2><div class="grid">{deadlines_html}</div></section><section id="financial"><h2>Financial Planning & Forecasting Records</h2><div class="grid">{financial_html}</div></section><section id="protection"><h2>Business Insurance & Legal Protection</h2><div class="grid">{protection_html}</div></section><section id="tasks"><h2>Other Business Records</h2><div class="grid">{tasks_html}</div></section>'''
 
 @app.route('/business-plan')
 @login_required
@@ -12343,7 +12504,7 @@ def business_plan():
     professional_url=url_for('business_journal_workspace') if professional_access else url_for('payment_info',product='business-development',next=url_for('business_plan'))
     professional_label='Business Development' if professional_access else 'Professional Business Development — Upgrade $10.99/mo'
     professional_note='Private records • certifications • funding • proposals' if professional_access else 'Unlock the advanced tools inside this existing workspace'
-    workspace_links=f'''<div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
+    workspace_links=f'''<div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{url_for('corporate_record_book')}">📁 My Corporate Record Book<br><small>Private business documents</small></a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
     if not row:
         content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Business Development Workspace</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a></div></div>{workspace_links}'''
     else:
