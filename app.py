@@ -9795,6 +9795,45 @@ def _business_month_shift(year, month, delta):
     total=year*12+(month-1)+delta
     return total//12, total%12+1
 
+def _booking_minutes(value, default):
+    match=re.search(r'(\d+)',str(value or ''))
+    return max(0,int(match.group(1))) if match else default
+
+def _booking_clock(value):
+    text=str(value or '').strip().upper().replace('.','')
+    for fmt in ('%I:%M %p','%I %p','%H:%M'):
+        try: return datetime.strptime(text,fmt).time()
+        except ValueError: pass
+    return None
+
+def _sync_weekly_booking_slots(conn,business,settings,days_ahead=90):
+    """Materialize owner rules into the same calendar used by public booking."""
+    business_id=business['id']; conn.execute("DELETE FROM business_calendar WHERE business_id=? AND source='Weekly Availability'",(business_id,))
+    day_names={x.strip().lower() for x in re.split(r'[,;/]+',settings.get('available_days','')) if x.strip()}
+    times=re.split(r'\s*(?:–|—|-)\s*',settings.get('available_times',''),maxsplit=1)
+    if len(times)!=2 or not day_names: return 0
+    start_clock,end_clock=_booking_clock(times[0]),_booking_clock(times[1])
+    if not start_clock or not end_clock: return 0
+    duration=max(5,_booking_minutes(settings.get('duration'),60)); buffer_minutes=_booking_minutes(settings.get('buffer'),0)
+    blocked={x.strip() for x in re.split(r'[,;]+',settings.get('blocked_dates','')) if re.fullmatch(r'\d{4}-\d{2}-\d{2}',x.strip())}
+    existing=conn.execute("SELECT event_date,start_time,end_time FROM business_calendar WHERE business_id=? AND booking_status<>'Cancelled'",(business_id,)).fetchall()
+    busy={}
+    for row in existing: busy.setdefault(row['event_date'],[]).append((row['start_time'],row['end_time']))
+    inserted=0; today=datetime.utcnow().date()
+    for offset in range(days_ahead+1):
+        day=today+timedelta(days=offset); ds=day.isoformat()
+        if day.strftime('%A').lower() not in day_names or ds in blocked: continue
+        cursor=datetime.combine(day,start_clock); end_day=datetime.combine(day,end_clock)
+        while cursor+timedelta(minutes=duration)<=end_day:
+            service_end=cursor+timedelta(minutes=duration); protected_end=service_end+timedelta(minutes=buffer_minutes)
+            start_text=cursor.strftime('%H:%M'); end_text=service_end.strftime('%H:%M')
+            collision=any(not (protected_end.strftime('%H:%M')<=a or start_text>=z) for a,z in busy.get(ds,[]))
+            if not collision:
+                conn.execute('''INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business_id,'Appointment','Appointment',ds,start_text,end_text,'','1','Open',f'{duration}-minute appointment; {buffer_minutes}-minute buffer; {settings.get("timezone") or "Business local time"}.','Weekly Availability',now(),now()))
+                busy.setdefault(ds,[]).append((start_text,protected_end.strftime('%H:%M'))); inserted+=1
+            cursor=service_end+timedelta(minutes=buffer_minutes)
+    return inserted
+
 def business_calendar_grid(events, business_id, selected_date='', month_value='', owner=False):
     today=datetime.utcnow().date()
     try:
@@ -9918,15 +9957,19 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     open_events=[e for e in events if e['booking_status']=='Open' and e['event_type']!='Blocked / Unavailable']
     booking_method=get('booking_method','seasons_calendar') or 'seasons_calendar'
     if business_id and booking_method=='seasons_calendar':
+        try: public_booking_settings=json.loads(get('booking_settings','{}') or '{}')
+        except Exception: public_booking_settings={}
+        timezone_label=public_booking_settings.get('timezone') or 'Business local time'
         month=request.args.get('month',''); selected=request.args.get('date',''); calendar_html=business_calendar_grid(events,business_id,selected,month,False)
-        slots=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{html.escape(e['title'])}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><a class="btn" href="{url_for('business_book',business_id=business_id,calendar_id=e['id'])}">Book / Request</a></article>''' for e in open_events[:8])
-        sections['booking']=f'''<section id="booking"><div class="splitlabel"><h2>Booking</h2>{edit(4)}</div>{calendar_html}{f'<div class="grid">{slots}</div>' if slots else ''}</section>'''
+        public_slots=([e for e in open_events if e['event_date']==selected] if selected else open_events[:8])
+        slots=''.join(f'''<article class="card"><span class="badge">{e['event_type']}</span><h3>{html.escape(e['title'])}</h3><p><b>{e['event_date']}</b> • {e['start_time']}–{e['end_time']}</p><a class="btn" href="{url_for('business_book',business_id=business_id,calendar_id=e['id'])}">Choose This Time</a></article>''' for e in public_slots)
+        sections['booking']=f'''<section id="booking"><div class="splitlabel"><h2>Book / Booking</h2>{edit(4)}</div><p class="muted small">Choose an available date and time. Times are shown in {html.escape(timezone_label)}.</p>{calendar_html}{f'<div class="grid">{slots}</div>' if slots else ''}</section>'''
     elif booking_method=='external' and get('booking_url'):
         sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Book with {name}</h2><a class="btn" href="{html.escape(str(get('booking_url')))}" target="_blank" rel="noopener">Open Booking Website</a></article></section>'''
     elif booking_method!='none' and 'booking' in enabled:
         sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Booking</h2><p class="muted">Booking will display here when availability or a booking link is added.</p></article></section>'''
     if get('affiliate_links'): sections['affiliate']=f'''<section id="affiliate"><article class="card"><div class="splitlabel"><span class="badge">AFFILIATE LINKS</span>{edit(6)}</div><p>{html.escape(str(get('affiliate_links')))}</p></article></section>'''
-    visible=[key for key in order if key in enabled and key in sections]
+    visible=[key for key in order if key in sections and (key in enabled or (key=='booking' and booking_method=='seasons_calendar'))]
     nav=''.join(f'<a class="chip" href="#{key}">{dict(HOSTED_APP_MODULES).get(key,key.title())}</a>' for key in visible)
     return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
 
@@ -9988,6 +10031,11 @@ def hosted_app_edit_section(section):
             method=request.form.get('booking_method','seasons_calendar'); method=method if method in {'seasons_calendar','external','none'} else 'seasons_calendar'
             settings={k:request.form.get(k,'').strip() for k in ('available_days','available_times','duration','buffer','blocked_dates','timezone')}
             conn.execute('UPDATE businesses SET booking_method=?,booking_url=?,booking_settings=?,updated_at=? WHERE id=?',(method,request.form.get('booking_url','').strip(),json.dumps(settings),now(),b['id']))
+            if method=='seasons_calendar':
+                generated=_sync_weekly_booking_slots(conn,b,settings)
+                flash(f'{generated} available appointment times were added to the live booking calendar.','success')
+            else:
+                conn.execute("DELETE FROM business_calendar WHERE business_id=? AND source='Weekly Availability'",(b['id'],))
         elif section=='sections':
             selected=[k for k,_ in HOSTED_APP_MODULES if request.form.get('module_'+k)]; selected=list(dict.fromkeys(['home','about','contact']+selected))
             conn.execute('UPDATE businesses SET enabled_modules=?,updated_at=? WHERE id=?',(','.join(selected),now(),b['id']))
@@ -10015,8 +10063,9 @@ def hosted_app_edit_section(section):
     elif section=='booking':
         try: settings=json.loads(b['booking_settings'] or '{}')
         except Exception: settings={}
-        radio=lambda value,label: f'<label class="fact"><input type="radio" name="booking_method" value="{value}" {"checked" if (b["booking_method"] or "seasons_calendar")==value else ""}> {label}</label>'
-        content=f'''<form class="card" method="post"><h2>Booking Method</h2>{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Booking')}<label>Existing Booking Link<input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label>Available days<input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Wednesday, Friday"></label><label>Available times<input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM–4:00 PM"></label><label>Business time zone<input class="input" name="timezone" value="{html.escape(settings.get('timezone','America/Detroit'))}" placeholder="America/Detroit"></label><label>Appointment duration<input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label>Time between appointments<input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label>Blocked dates<input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}"></label><p class="muted small">Use Manage Calendar to add specific availability, classes, events, vacations, personal appointments and blocked periods. Private block notes are never shown to members.</p><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form>'''
+        radio=lambda value,label: f'<label class="booking-method-choice"><input type="radio" name="booking_method" value="{value}" {"checked" if (b["booking_method"] or "seasons_calendar")==value else ""}><span>{label}</span></label>'
+        external_selected=(b['booking_method']=='external')
+        content=f'''<style>.booking-method-list{{display:grid;gap:10px;margin:14px 0}}.booking-method-choice{{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start;gap:10px;width:100%;padding:13px;border:1px solid var(--line);border-radius:14px;background:#fff;line-height:1.35}}.booking-method-choice input{{width:18px;height:18px;margin:1px 0 0}}.booking-method-choice span{{min-width:0;overflow-wrap:anywhere}}@media(max-width:520px){{.booking-method-choice{{padding:12px 10px}}}}</style><form class="card" method="post" data-booking-settings><h2>Booking Method</h2><div class="booking-method-list">{radio('seasons_calendar','Use The Seasons Within Calendar')}{radio('external','Use My Existing Booking Link')}{radio('none','No Online Booking')}</div><label data-external-booking {'style="display:none"' if not external_selected else ''}><b>Existing Booking Link</b><input class="input" name="booking_url" value="{html.escape(b['booking_url'] or '')}"></label><label><b>Available Days</b><input class="input" name="available_days" value="{html.escape(settings.get('available_days',''))}" placeholder="Monday, Tuesday"></label><label><b>Available Times</b><input class="input" name="available_times" value="{html.escape(settings.get('available_times',''))}" placeholder="9:00 AM – 5:00 PM"></label><label><b>Business Time Zone</b><input class="input" name="timezone" value="{html.escape(settings.get('timezone','America/Detroit'))}" placeholder="America/Detroit"></label><label><b>Appointment Duration</b><input class="input" name="duration" value="{html.escape(settings.get('duration',''))}" placeholder="60 minutes"></label><label><b>Time Between Appointments</b><input class="input" name="buffer" value="{html.escape(settings.get('buffer',''))}" placeholder="15 minutes"></label><label><b>Blocked Dates</b><input class="input" name="blocked_dates" value="{html.escape(settings.get('blocked_dates',''))}" placeholder="2026-09-12, 2026-09-20"></label><p class="muted small">Use Manage Calendar to add specific availability, classes, events, vacations, personal appointments and blocked periods. Private block notes are never shown to members.</p><div class="actions"><button class="btn">Save</button><a class="out" href="{url_for('business_calendar_page')}">Manage Calendar</a></div></form><script>(()=>{{const form=document.querySelector('[data-booking-settings]'),field=form&&form.querySelector('[data-external-booking]');if(!form||!field)return;function update(){{const chosen=form.querySelector('[name=booking_method]:checked');field.style.display=chosen&&chosen.value==='external'?'block':'none';}}form.addEventListener('change',e=>{{if(e.target.name==='booking_method')update();}});update();}})();</script>'''
     elif section=='home_features':
         enabled=set(_module_list(b)); chosen=set(((b['home_feature_modules'] if 'home_feature_modules' in b.keys() else '') or '').split(',')); allowed={'classes','services','media_kit','events','booking','contact','videos','courses','gallery','retreats','affiliate'}
         choices=''.join(f'<label class="fact"><input type="checkbox" name="feature_{k}" {"checked" if k in chosen else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k in allowed and k in enabled)
@@ -10063,10 +10112,11 @@ def hosted_app_content_editor(kind):
             start=time_parts[0] if time_parts and time_parts[0] else '09:00'; end=time_parts[1] if len(time_parts)>1 and time_parts[1] else start
             calendar_id=old_details.get('calendar_id')
             event_type={'classes':'Class','events':'Event','retreats':'Retreat'}[kind]
+            conn.execute("""DELETE FROM business_calendar WHERE business_id=? AND event_date=? AND source='Weekly Availability' AND NOT(end_time<=? OR start_time>=?)""",(b['id'],details['date'],start,end))
             if calendar_id:
                 conn.execute('UPDATE business_calendar SET title=?,event_type=?,event_date=?,start_time=?,end_time=?,location=?,capacity=?,notes=?,updated_at=? WHERE id=? AND business_id=?',(title,event_type,details['date'],start,end,details.get('location',''),details.get('capacity',''),description,now(),calendar_id,b['id']))
             else:
-                cur=conn.execute('INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(b['id'],title,event_type,details['date'],start,end,details.get('location',''),details.get('capacity',''),'Open',description,now(),now()))
+                cur=conn.execute('INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(b['id'],title,event_type,details['date'],start,end,details.get('location',''),details.get('capacity',''),'Open',description,'Hosted App Content',now(),now()))
                 calendar_id=cur.lastrowid
             details['calendar_id']=calendar_id
         image_name=item['image_name'] if item else ''
@@ -11973,9 +12023,11 @@ def business_calendar_page():
         title=request.form.get('title','').strip(); event_type=request.form.get('event_type','Other'); event_date=request.form.get('event_date',''); start_time=request.form.get('start_time',''); end_time=request.form.get('end_time',''); location=request.form.get('location','').strip(); capacity=request.form.get('capacity','').strip(); booking_status=request.form.get('booking_status','Open'); notes=request.form.get('notes','').strip()
         if event_type=='Blocked / Unavailable': booking_status='Private'
         if title and event_date and start_time and end_time:
-            overlap=conn.execute('''SELECT id,title FROM business_calendar WHERE business_id=? AND event_date=? AND booking_status<>'Cancelled' AND NOT(end_time<=? OR start_time>=?) LIMIT 1''',(b['id'],event_date,start_time,end_time)).fetchone()
-            if overlap: flash(f'That time overlaps with “{overlap["title"]}”. Choose another time.','error')
+            overlaps=conn.execute('''SELECT id,title,source FROM business_calendar WHERE business_id=? AND event_date=? AND booking_status<>'Cancelled' AND NOT(end_time<=? OR start_time>=?)''',(b['id'],event_date,start_time,end_time)).fetchall()
+            protected=[x for x in overlaps if x['source']!='Weekly Availability']
+            if protected: flash(f'That time overlaps with “{protected[0]["title"]}”. Choose another time.','error')
             else:
+                for slot in overlaps: conn.execute("DELETE FROM business_calendar WHERE id=? AND source='Weekly Availability'",(slot['id'],))
                 conn.execute('''INSERT INTO business_calendar(business_id,title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(b['id'],title,event_type,event_date,start_time,end_time,location,capacity,booking_status,notes,'Owner',now(),now())); conn.commit(); flash('Business calendar item saved.','success')
         else: flash('Title, date, start time and end time are required.','info')
     events=conn.execute('SELECT * FROM business_calendar WHERE business_id=? ORDER BY event_date,start_time',(b['id'],)).fetchall(); bookings=conn.execute('SELECT * FROM business_bookings WHERE business_id=? ORDER BY id DESC',(b['id'],)).fetchall(); conn.close()
