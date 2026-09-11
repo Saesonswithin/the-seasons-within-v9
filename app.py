@@ -9969,7 +9969,7 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     elif booking_method!='none' and 'booking' in enabled:
         sections['booking']=f'''<section id="booking"><article class="card"><div class="splitlabel"><span class="badge">BOOKING</span>{edit(4)}</div><h2>Booking</h2><p class="muted">Booking will display here when availability or a booking link is added.</p></article></section>'''
     if get('affiliate_links'): sections['affiliate']=f'''<section id="affiliate"><article class="card"><div class="splitlabel"><span class="badge">AFFILIATE LINKS</span>{edit(6)}</div><p>{html.escape(str(get('affiliate_links')))}</p></article></section>'''
-    visible=[key for key in order if key in sections and (key in enabled or (key=='booking' and booking_method=='seasons_calendar'))]
+    visible=[key for key in order if key in sections and key in enabled]
     nav=''.join(f'<a class="chip" href="#{key}">{dict(HOSTED_APP_MODULES).get(key,key.title())}</a>' for key in visible)
     return f'''<div class="chips">{nav}</div>{''.join(sections[key] for key in visible)}'''
 
@@ -10039,6 +10039,7 @@ def hosted_app_edit_section(section):
         elif section=='sections':
             selected=[k for k,_ in HOSTED_APP_MODULES if request.form.get('module_'+k)]; selected=list(dict.fromkeys(['home','about','contact']+selected))
             conn.execute('UPDATE businesses SET enabled_modules=?,updated_at=? WHERE id=?',(','.join(selected),now(),b['id']))
+            conn.commit(); conn.close(); flash('Sections saved.','success'); return redirect(url_for('hosted_app_edit_section',section='sections'))
         elif section=='home_features':
             enabled=set(_module_list(b)); allowed={'classes','services','media_kit','events','booking','contact','videos','courses','gallery','retreats','affiliate'}
             selected=[k for k,_ in HOSTED_APP_MODULES if k in allowed and k in enabled and request.form.get('feature_'+k)]
@@ -10071,7 +10072,9 @@ def hosted_app_edit_section(section):
         choices=''.join(f'<label class="fact"><input type="checkbox" name="feature_{k}" {"checked" if k in chosen else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k in allowed and k in enabled)
         content=f'''<form class="card" method="post"><h2>Feature on Home Page</h2><p class="muted">Choose shortcuts for your Home page Business App card. Only sections already enabled in your published Hosted App are available.</p>{choices or '<p class="muted">Enable and publish Hosted App sections before choosing Home page shortcuts.</p>'}<button class="btn">Save Home Page Features</button></form>'''
     else:
-        enabled=set(_module_list(b)); content='<form class="card" method="post"><h2>+ Add Section</h2>'+''.join(f'<label class="fact"><input type="checkbox" name="module_{k}" {"checked" if k in enabled else ""}> {label}</label>' for k,label in HOSTED_APP_MODULES if k not in {'home','about','contact'})+'<button class="btn">Save Sections</button></form>'
+        enabled=set(_module_list(b))
+        choices=''.join(f'<label class="hosted-section-choice"><input type="checkbox" name="module_{k}" {"checked" if k in enabled else ""}><span>{label}</span></label>' for k,label in HOSTED_APP_MODULES if k not in {'home','about','contact'})
+        content=f'''<style>.hosted-section-options{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 18px}}.hosted-section-choice{{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start;gap:10px;width:100%;min-width:0;padding:13px;border:1px solid var(--line);border-radius:14px;background:#fff;line-height:1.35}}.hosted-section-choice input{{width:18px;height:18px;margin:1px 0 0}}.hosted-section-choice span{{min-width:0;overflow-wrap:anywhere}}@media(max-width:520px){{.hosted-section-options{{grid-template-columns:1fr}}.hosted-section-choice{{padding:12px 10px}}}}</style><form class="card" method="post"><h2>+ Add Section</h2><div class="hosted-section-options">{choices}</div><button class="btn">Save Sections</button></form>'''
     return page('Edit '+section.title(),f'''{_HOSTED_EDITOR_STYLE}<div class="hero"><span class="badge">EDIT MY HOSTED APP</span><h1>{section.title()}</h1><a class="out" href="{url_for('hosted_app_editor')}">Back to Editor</a></div>{content}''','business')
 
 _HOSTED_CONTENT_FIELDS={
