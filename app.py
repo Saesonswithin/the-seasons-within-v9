@@ -168,6 +168,7 @@ class _PGCursor:
     def __init__(self,cursor,lastrowid=None):
         self._cursor=cursor
         self.lastrowid=lastrowid
+        self.rowcount=cursor.rowcount
     def fetchone(self):
         return self._cursor.fetchone()
     def fetchall(self):
