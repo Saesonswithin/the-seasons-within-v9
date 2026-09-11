@@ -120,7 +120,7 @@ PG_ID_TABLES = {
     'transit_snapshots','transit_aspects','psychological_dimensions','journal_theme_snapshots',
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
     'report_embeddings','member_pair_coordination','member_pair_planetary_scores'
-    ,'financial_forecasts','financial_entries','financial_imports','financial_questions','corporate_record_documents',
+    ,'financial_forecasts','financial_entries','financial_imports','financial_questions','corporate_record_documents','business_strategy_versions','business_launch_tasks',
     'financial_connections','business_protection_records','business_legal_checklist'
 }
 
@@ -397,6 +397,37 @@ def init_db():
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS business_strategy_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        strategy_type TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'Draft',
+        source_plan_id INTEGER,
+        parent_version_id INTEGER,
+        ai_prompt TEXT DEFAULT '',
+        ai_suggestion TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id,strategy_type,version),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(source_plan_id) REFERENCES business_plans(id) ON DELETE SET NULL,
+        FOREIGN KEY(parent_version_id) REFERENCES business_strategy_versions(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS business_launch_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        strategy_version_id INTEGER NOT NULL,
+        phase TEXT NOT NULL,
+        goal TEXT DEFAULT '', action_text TEXT NOT NULL,
+        priority TEXT DEFAULT 'Medium', status TEXT DEFAULT 'Not Started',
+        deadline TEXT DEFAULT '', notes TEXT DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(strategy_version_id) REFERENCES business_strategy_versions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS business_certifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -989,6 +1020,30 @@ def _ensure_runtime_compat_schema():
     # Best-effort repair for older persistent Render databases.
     conn=db()
     try:
+        try:
+            conn.execute('''CREATE TABLE IF NOT EXISTS business_strategy_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, strategy_type TEXT NOT NULL, version INTEGER NOT NULL,
+                title TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'Draft',
+                source_plan_id INTEGER, parent_version_id INTEGER, ai_prompt TEXT DEFAULT '', ai_suggestion TEXT DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(user_id,strategy_type,version),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(source_plan_id) REFERENCES business_plans(id) ON DELETE SET NULL,
+                FOREIGN KEY(parent_version_id) REFERENCES business_strategy_versions(id) ON DELETE SET NULL
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS business_launch_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL, strategy_version_id INTEGER NOT NULL, phase TEXT NOT NULL,
+                goal TEXT DEFAULT '', action_text TEXT NOT NULL, priority TEXT DEFAULT 'Medium',
+                status TEXT DEFAULT 'Not Started', deadline TEXT DEFAULT '', notes TEXT DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(strategy_version_id) REFERENCES business_strategy_versions(id) ON DELETE CASCADE
+            )''')
+        except Exception:
+            app.logger.exception('Could not create business strategy workspace tables')
+
         try:
             conn.execute('''CREATE TABLE IF NOT EXISTS connection_profiles (
                 user_id INTEGER PRIMARY KEY,
@@ -12504,7 +12559,7 @@ def business_plan():
     professional_url=url_for('business_journal_workspace') if professional_access else url_for('payment_info',product='business-development',next=url_for('business_plan'))
     professional_label='Business Development' if professional_access else 'Professional Business Development — Upgrade $10.99/mo'
     professional_note='Private records • certifications • funding • proposals' if professional_access else 'Unlock the advanced tools inside this existing workspace'
-    workspace_links=f'''<div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Plan Versions</a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy</a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan</a><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{url_for('corporate_record_book')}">📁 My Corporate Record Book<br><small>Private business documents</small></a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
+    workspace_links=f'''<div class="card"><h2>Business Plan Workspace</h2><p class="muted">Your plan, strategies and launch actions stay connected while each saved version remains under your control.</p><div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Business Plan<br><small>Create and maintain your foundation</small></a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy<br><small>Build and refine customer outreach</small></a><a class="moreitem" href="{url_for('growth_strategy')}">Growth Strategy<br><small>Develop goals, priorities and milestones</small></a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan<br><small>Turn strategy into editable actions</small></a></div></div><div class="grid"><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{url_for('corporate_record_book')}">📁 My Corporate Record Book<br><small>Private business documents</small></a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
     if not row:
         content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Business Development Workspace</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a></div></div>{workspace_links}'''
     else:
@@ -12525,21 +12580,139 @@ def plan_versions():
     version_cards=''.join(cards) or '<div class="empty">No saved Business Plan versions yet.</div>'
     return page('Plan Versions',f'''<div class="hero"><span class="badge">PLAN VERSIONS</span><h1>Business Plan Library</h1><p class="muted">Every generated plan is preserved. New versions never erase older plans.</p></div><div class="grid">{version_cards}</div>''','business')
 
-@app.route('/marketing')
-@login_required
-@business_development_required
-def marketing():
-    u=current_user(); conn=db(); row=conn.execute("SELECT marketing_text FROM business_plans WHERE user_id=? AND status='Generated' AND marketing_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close(); text=row['marketing_text'] if row else ''
-    body=plan_text_to_html(text) if text else '<div class="empty"><h3>No generated Marketing Strategy yet</h3><p class="muted">Generate a Business Plan first. The Marketing Strategy is created from the same member answers.</p></div>'
-    return page('Marketing Strategy',f'''<div class="hero"><span class="badge">BUSINESS PLAN WORKSPACE</span><h1>Marketing Strategy</h1></div>{body}''','business')
+STRATEGY_WORKSPACES={
+    'marketing':{'title':'Marketing Strategy','legacy':'marketing_text','purpose':'Build and refine how you will reach your customers.'},
+    'growth':{'title':'Growth Strategy','legacy':'','purpose':'Develop goals, priorities and milestones for sustainable growth.'},
+    'launch':{'title':'90-Day Launch Plan','legacy':'launch_text','purpose':'Turn your connected strategies into editable next steps.'}
+}
 
-@app.route('/launch-plan')
+def _strategy_context(user_id,conn):
+    plan=conn.execute("SELECT * FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(user_id,)).fetchone()
+    answers=_business_plan_answers(user_id)
+    latest={}
+    for kind in STRATEGY_WORKSPACES:
+        row=conn.execute('SELECT content FROM business_strategy_versions WHERE user_id=? AND strategy_type=? ORDER BY version DESC LIMIT 1',(user_id,kind)).fetchone()
+        latest[kind]=row['content'] if row else ''
+    return plan,answers,latest
+
+def _growth_seed(answers,marketing):
+    business=answers.get('business_name') or answers.get('name') or 'Your business'
+    customers=answers.get('target_customers') or answers.get('target_market') or 'the customers identified in your Business Plan'
+    goals=answers.get('growth_objectives') or answers.get('short_goals') or answers.get('business_goals') or 'measurable, sustainable growth'
+    return f'''# Growth Direction\n{business} will pursue {goals} by serving {customers} and testing growth decisions against the resources, positioning and revenue assumptions already recorded in the Business Plan.\n\n# Priorities\n1. Protect delivery quality and customer trust while demand grows.\n2. Measure which marketing activities produce qualified interest and repeat business.\n3. Add capacity, partnerships or offers only when the evidence supports the next step.\n\n# Milestones\nDefine a near-term customer milestone, a revenue or sustainability milestone, and an operating-capacity milestone. Review these alongside the current Marketing Strategy before expanding.\n\n# Connected Marketing Context\n{marketing[:2500] if marketing else 'Create or refine the Marketing Strategy, then return here to connect its strongest channels to growth milestones.'}'''
+
+def _ensure_strategy_version(user_id,kind,conn):
+    row=conn.execute('SELECT * FROM business_strategy_versions WHERE user_id=? AND strategy_type=? ORDER BY version DESC LIMIT 1',(user_id,kind)).fetchone()
+    if row: return row
+    plan,answers,latest=_strategy_context(user_id,conn)
+    legacy=(plan[STRATEGY_WORKSPACES[kind]['legacy']] if plan and STRATEGY_WORKSPACES[kind]['legacy'] else '') or ''
+    content=legacy if kind!='growth' else _growth_seed(answers,latest.get('marketing') or (plan['marketing_text'] if plan else ''))
+    cursor=conn.execute('''INSERT INTO business_strategy_versions(user_id,strategy_type,version,title,content,status,source_plan_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)''',(user_id,kind,1,f'{STRATEGY_WORKSPACES[kind]["title"]} — Version 1',content,'Draft',plan['id'] if plan else None,now(),now()))
+    strategy_id=cursor.lastrowid; conn.commit()
+    if kind=='launch': _seed_launch_tasks(user_id,strategy_id,conn)
+    return conn.execute('SELECT * FROM business_strategy_versions WHERE id=? AND user_id=?',(strategy_id,user_id)).fetchone()
+
+def _seed_launch_tasks(user_id,strategy_id,conn):
+    if conn.execute('SELECT id FROM business_launch_tasks WHERE strategy_version_id=? LIMIT 1',(strategy_id,)).fetchone(): return
+    seeds=[('Days 1–30','Foundation / Preparation','Confirm the offer, audience, resources and launch foundation.'),('Days 31–60','Launch / Visibility / Customer Development','Publish the launch activities and begin direct customer development.'),('Days 61–90','Growth / Optimization / Expansion','Review results, improve what works and choose the next growth step.')]
+    for order,(phase,goal,action) in enumerate(seeds,1):
+        conn.execute('''INSERT INTO business_launch_tasks(user_id,strategy_version_id,phase,goal,action_text,priority,status,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',(user_id,strategy_id,phase,goal,action,'Medium','Not Started',order,now(),now()))
+    conn.commit()
+
+def _strategy_ai_suggestion(user_id,kind,current,request_text,conn):
+    plan,answers,latest=_strategy_context(user_id,conn)
+    context={'business_plan_answers':answers,'business_plan':(plan['document_text'] if plan else '')[:9000],'marketing_strategy':latest.get('marketing','')[:5000],'growth_strategy':latest.get('growth','')[:5000],'launch_plan':latest.get('launch','')[:5000],'current_workspace':current[:8000]}
+    prompt=f'''You are a collaborative business-planning assistant. Create a practical suggestion for the member's {STRATEGY_WORKSPACES[kind]['title']}. Use only the connected saved business context below. The member requested: {request_text or 'Review this work and suggest a realistic improvement.'} Do not overwrite or claim to have changed their work. Clearly label what to add, revise, or consider. Keep the member in control; do not invent business facts. For a 90-day plan, organize recommendations under Days 1–30, Days 31–60, and Days 61–90. Return the suggestion only.\nCONTEXT:\n{json.dumps(context,default=str)}'''
+    suggestion=(_openai_text(prompt) or '').strip()
+    if suggestion: return suggestion
+    business=answers.get('business_name') or answers.get('name') or 'this business'
+    return f'''AI Suggestion\n\nFor {business}, review the current {STRATEGY_WORKSPACES[kind]['title'].lower()} against the target customer, available resources, budget and goals already saved in the Business Plan. Keep the strongest existing direction, add one measurable outcome and one near-term test, and identify what evidence will determine whether to continue, adjust or stop that approach.\n\nRequested focus: {request_text or 'Make the strategy more practical and measurable.'}\n\nThis suggestion has not changed your saved work. Edit it or use Apply Suggestion only if it supports your direction.'''
+
+def _strategy_workspace(kind):
+    u=current_user(); conn=db(); current=_ensure_strategy_version(u['id'],kind,conn)
+    requested_id=request.args.get('version',type=int)
+    if requested_id:
+        selected=conn.execute('SELECT * FROM business_strategy_versions WHERE id=? AND user_id=? AND strategy_type=?',(requested_id,u['id'],kind)).fetchone()
+        if selected: current=selected
+    if request.method=='POST':
+        action=request.form.get('action','save'); current=conn.execute('SELECT * FROM business_strategy_versions WHERE id=? AND user_id=? AND strategy_type=?',(request.form.get('version_id'),u['id'],kind)).fetchone()
+        if not current: conn.close(); abort(404)
+        content=request.form.get('content','')[:60000]; title=request.form.get('title','').strip()[:180] or current['title']; status=request.form.get('status','Draft'); status=status if status in {'Draft','Active','Complete'} else 'Draft'
+        if action=='save':
+            conn.execute('UPDATE business_strategy_versions SET title=?,content=?,status=?,updated_at=? WHERE id=? AND user_id=?',(title,content,status,now(),current['id'],u['id'])); conn.commit(); flash('Your strategy changes were saved.','success')
+        elif action=='ai':
+            ask=request.form.get('ai_request','').strip()[:2000]; suggestion=_strategy_ai_suggestion(u['id'],kind,content,ask,conn)
+            conn.execute('UPDATE business_strategy_versions SET title=?,content=?,status=?,ai_prompt=?,ai_suggestion=?,updated_at=? WHERE id=? AND user_id=?',(title,content,status,ask,suggestion,now(),current['id'],u['id'])); conn.commit(); flash('AI suggestion prepared. Your strategy was not overwritten.','success')
+        elif action=='apply':
+            suggestion=current['ai_suggestion'] or ''
+            if suggestion:
+                merged=(content.rstrip()+'\n\n'+suggestion).strip(); conn.execute('UPDATE business_strategy_versions SET content=?,updated_at=? WHERE id=? AND user_id=?',(merged,now(),current['id'],u['id'])); conn.commit(); flash('Suggestion added to your editable strategy. Review and save your wording.','success')
+        elif action in {'alternate','restore'}:
+            next_version=conn.execute('SELECT COALESCE(MAX(version),0)+1 v FROM business_strategy_versions WHERE user_id=? AND strategy_type=?',(u['id'],kind)).fetchone()['v']
+            alternate=(current['ai_suggestion'] if action=='alternate' and current['ai_suggestion'] else content)
+            cursor=conn.execute('''INSERT INTO business_strategy_versions(user_id,strategy_type,version,title,content,status,source_plan_id,parent_version_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',(u['id'],kind,next_version,f'{STRATEGY_WORKSPACES[kind]["title"]} — Version {next_version}',alternate,'Draft',current['source_plan_id'],current['id'],now(),now()))
+            new_id=cursor.lastrowid; conn.commit()
+            if kind=='launch':
+                tasks=conn.execute('SELECT * FROM business_launch_tasks WHERE strategy_version_id=? AND user_id=? ORDER BY sort_order,id',(current['id'],u['id'])).fetchall()
+                for task in tasks: conn.execute('''INSERT INTO business_launch_tasks(user_id,strategy_version_id,phase,goal,action_text,priority,status,deadline,notes,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(u['id'],new_id,task['phase'],task['goal'],task['action_text'],task['priority'],task['status'],task['deadline'],task['notes'],task['sort_order'],now(),now()))
+                conn.commit()
+            flash('A new version was created. The original remains unchanged.','success'); conn.close(); return redirect(url_for({'marketing':'marketing','growth':'growth_strategy','launch':'launch_plan'}[kind],version=new_id))
+        conn.close(); return redirect(url_for({'marketing':'marketing','growth':'growth_strategy','launch':'launch_plan'}[kind],version=current['id']))
+    versions=conn.execute('SELECT id,version,title,status,updated_at FROM business_strategy_versions WHERE user_id=? AND strategy_type=? ORDER BY version DESC',(u['id'],kind)).fetchall()
+    tasks=conn.execute('SELECT * FROM business_launch_tasks WHERE strategy_version_id=? AND user_id=? ORDER BY sort_order,id',(current['id'],u['id'])).fetchall() if kind=='launch' else []
+    versions_html=''.join(f'''<a class="moreitem" href="?version={v['id']}">Version {v['version']} • {html.escape(v['status'])}<br><small>{html.escape(v['title'])} • {v['updated_at']}</small></a>''' for v in versions)
+    suggestion=f'''<article class="card paid"><span class="badge gold">AI SUGGESTION</span><div style="white-space:pre-wrap">{html.escape(current['ai_suggestion'])}</div><form method="post"><input type="hidden" name="version_id" value="{current['id']}"><input type="hidden" name="content" value="{html.escape(current['content'],quote=True)}"><button class="btn" name="action" value="apply">Apply Suggestion to Editable Draft</button></form><p class="muted small">Nothing is applied until you choose. You can edit the result before saving.</p></article>''' if current['ai_suggestion'] else ''
+    tasks_html=_launch_tasks_html(current,tasks) if kind=='launch' else ''
+    info=STRATEGY_WORKSPACES[kind]; conn.close()
+    return page(info['title'],f'''<div class="hero"><span class="badge">CONNECTED BUSINESS PLAN WORKSPACE</span><h1>{info['title']}</h1><p class="muted">{info['purpose']} Saved Business Plan context is reused, while your edits always take priority.</p><a class="out" href="{url_for('business_plan')}">Back to Business Plan Workspace</a></div><form class="card" method="post"><input type="hidden" name="version_id" value="{current['id']}"><label><b>Version title</b></label><input class="input" name="title" value="{html.escape(current['title'],quote=True)}"><label><b>Your editable strategy</b></label><textarea class="input" name="content" style="min-height:420px">{html.escape(current['content'])}</textarea><label><b>Status</b></label><select class="input" name="status">{''.join(f'<option{(" selected" if x==current["status"] else "")}>{x}</option>' for x in ('Draft','Active','Complete'))}</select><div class="actions"><button class="btn" name="action" value="save">Save</button><button class="out" name="action" value="alternate">Create Alternate</button><button class="out" name="action" value="restore">Restore as New Version</button></div><hr><h3>✨ Work with AI</h3><p class="muted">Ask for another approach or help with a specific section. A suggestion is shown separately and never silently replaces your work.</p><textarea class="input" name="ai_request" placeholder="Make this more realistic for a small business, create a local approach, or improve one section..."></textarea><button class="out" name="action" value="ai">Prepare AI Suggestion</button></form>{suggestion}{tasks_html}<section class="topspace"><h2>Saved Versions</h2><div class="grid">{versions_html}</div></section>''','business')
+
+def _launch_tasks_html(strategy,tasks):
+    cards=[]
+    for t in tasks:
+        cards.append(f'''<form class="card" method="post" action="{url_for('launch_task_update',task_id=t['id'])}"><span class="badge">{html.escape(t['phase'])}</span><label><b>Goal</b></label><input class="input" name="goal" value="{html.escape(t['goal'],quote=True)}"><label><b>Action</b></label><textarea class="input" name="action_text" required>{html.escape(t['action_text'])}</textarea><div class="grid"><label><b>Deadline</b><input class="input" type="date" name="deadline" value="{html.escape(t['deadline'],quote=True)}"></label><label><b>Priority</b><select class="input" name="priority">{''.join(f'<option{(" selected" if x==t["priority"] else "")}>{x}</option>' for x in ('Low','Medium','High'))}</select></label><label><b>Status</b><select class="input" name="status">{''.join(f'<option{(" selected" if x==t["status"] else "")}>{x}</option>' for x in ('Not Started','In Progress','Complete'))}</select></label></div><label><b>Notes</b></label><textarea class="input" name="notes">{html.escape(t['notes'])}</textarea><div class="actions"><button class="out">Save Task</button><button class="out danger" formaction="{url_for('launch_task_delete',task_id=t['id'])}" onclick="return confirm('Delete this task?')">Delete</button></div></form>''')
+    return f'''<section class="topspace"><h2>90-Day Action Tasks</h2><p class="muted">Add, edit, prioritize and complete tasks without changing the written strategy above.</p>{''.join(cards)}<form class="card" method="post" action="{url_for('launch_task_add',strategy_id=strategy['id'])}"><h3>Add Task</h3><select class="input" name="phase"><option>Days 1–30</option><option>Days 31–60</option><option>Days 61–90</option></select><input class="input" name="goal" placeholder="Goal"><textarea class="input" name="action_text" placeholder="Action" required></textarea><button class="btn">Add Task</button></form></section>'''
+
+@app.route('/marketing',methods=['GET','POST'])
 @login_required
 @business_development_required
-def launch_plan():
-    u=current_user(); conn=db(); row=conn.execute("SELECT launch_text FROM business_plans WHERE user_id=? AND status='Generated' AND launch_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close(); text=row['launch_text'] if row else ''
-    body=plan_text_to_html(text) if text else '<div class="empty"><h3>No generated 90-Day Launch Plan yet</h3><p class="muted">Generate a Business Plan first. The launch plan will be created from the same business answers.</p></div>'
-    return page('90-Day Launch Plan',f'''<div class="hero"><span class="badge">BUSINESS PLAN WORKSPACE</span><h1>90-Day Launch Plan</h1></div>{body}''','business')
+def marketing(): return _strategy_workspace('marketing')
+
+@app.route('/growth-strategy',methods=['GET','POST'])
+@login_required
+@business_development_required
+def growth_strategy(): return _strategy_workspace('growth')
+
+@app.route('/launch-plan',methods=['GET','POST'])
+@login_required
+@business_development_required
+def launch_plan(): return _strategy_workspace('launch')
+
+@app.route('/launch-plan/<int:strategy_id>/tasks/add',methods=['POST'])
+@login_required
+@business_development_required
+def launch_task_add(strategy_id):
+    u=current_user(); conn=db(); strategy=conn.execute("SELECT id FROM business_strategy_versions WHERE id=? AND user_id=? AND strategy_type='launch'",(strategy_id,u['id'])).fetchone()
+    if not strategy: conn.close(); abort(404)
+    phase=request.form.get('phase','Days 1–30'); phase=phase if phase in {'Days 1–30','Days 31–60','Days 61–90'} else 'Days 1–30'; action=request.form.get('action_text','').strip()[:5000]
+    if action: conn.execute('''INSERT INTO business_launch_tasks(user_id,strategy_version_id,phase,goal,action_text,priority,status,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',(u['id'],strategy_id,phase,request.form.get('goal','').strip()[:500],action,'Medium','Not Started',99,now(),now())); conn.commit(); flash('Launch task added.','success')
+    conn.close(); return redirect(url_for('launch_plan',version=strategy_id))
+
+@app.route('/launch-plan/tasks/<int:task_id>',methods=['POST'])
+@login_required
+@business_development_required
+def launch_task_update(task_id):
+    u=current_user(); conn=db(); task=conn.execute('SELECT * FROM business_launch_tasks WHERE id=? AND user_id=?',(task_id,u['id'])).fetchone()
+    if not task: conn.close(); abort(404)
+    priority=request.form.get('priority','Medium'); priority=priority if priority in {'Low','Medium','High'} else 'Medium'; status=request.form.get('status','Not Started'); status=status if status in {'Not Started','In Progress','Complete'} else 'Not Started'
+    conn.execute('UPDATE business_launch_tasks SET goal=?,action_text=?,priority=?,status=?,deadline=?,notes=?,updated_at=? WHERE id=? AND user_id=?',(request.form.get('goal','').strip()[:500],request.form.get('action_text','').strip()[:5000],priority,status,request.form.get('deadline','')[:10],request.form.get('notes','').strip()[:5000],now(),task_id,u['id'])); conn.commit(); conn.close(); flash('Launch task saved.','success'); return redirect(url_for('launch_plan',version=task['strategy_version_id']))
+
+@app.route('/launch-plan/tasks/<int:task_id>/delete',methods=['POST'])
+@login_required
+@business_development_required
+def launch_task_delete(task_id):
+    u=current_user(); conn=db(); task=conn.execute('SELECT strategy_version_id FROM business_launch_tasks WHERE id=? AND user_id=?',(task_id,u['id'])).fetchone()
+    if not task: conn.close(); abort(404)
+    conn.execute('DELETE FROM business_launch_tasks WHERE id=? AND user_id=?',(task_id,u['id'])); conn.commit(); conn.close(); flash('Launch task deleted.','success'); return redirect(url_for('launch_plan',version=task['strategy_version_id']))
 
 # -----------------------------------------------------------------------------
 # Retreats
