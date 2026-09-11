@@ -7096,8 +7096,7 @@ def conscious_community_remove(user_id):
 def _can_create_coordination_post(user):
     if not user:
         return False
-    return ((user['name'] or '').strip().lower()=='galaxy eve' or
-            (user['email'] or '').strip().lower()=='e.read81@gmail.com')
+    return bool((user['name'] or '').strip().lower()=='galaxy eve' or user['is_admin'])
 
 
 @app.route('/conscious-coordination')
@@ -7218,7 +7217,8 @@ def connections():
         discussion=''.join(comment_card(c) for c in children.get(None,[]))
         comment=f'''<div class="topspace"><h3>Join the Conversation</h3>{discussion}<form method="post" action="{url_for('coordination_post_comment',post_id=p['id'])}"><textarea class="input" name="body" placeholder="Write a public comment..." required></textarea><button class="out">Post Comment</button></form></div>'''
         author_label='GALAXY EVE • CONSCIOUS COORDINATOR' if (p['author_name'] or '').strip().lower()=='galaxy eve' else 'THE SEASONS WITHIN • ADMIN'
-        feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">{author_label}</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{comment}</article>''')
+        management=(f'''<div class="actions"><a class="out" href="{url_for('coordination_post_edit',post_id=p['id'])}">Edit</a><form method="post" action="{url_for('coordination_post_delete',post_id=p['id'])}" onsubmit="return confirm('Delete this Conscious Coordination post?')"><button class="out danger" type="submit">Delete</button></form></div>''' if is_host else '')
+        feed_cards.append(f'''<article class="card" id="coordination-post-{p['id']}"><span class="badge heart">{author_label}</span><h2>{html.escape(p['title'])}</h2><p class="muted small">{p['created_at']}</p><p>{html.escape(p['body']).replace(chr(10),'<br>')}</p>{media}{link}{management}{comment}</article>''')
     content=f'''<div class="hero"><span class="badge heart">♡ CONSCIOUS COORDINATION</span><h1>Conscious Coordination</h1><div class="actions"><a class="btn" href="{url_for('birth_chart',user_id=u['id'])}">♡ My Seasons Within</a><a class="out" href="{url_for('conscious_community')}">My Conscious Community</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a></div></div>
     <div class="topspace"><h2>Discover Members</h2><p class="muted small">Swipe horizontally to browse. Swiping browses only; use Interested when you want to express interest.</p></div><div class="chips">{filters}</div>
     <section class="discover-swipe" data-discover-swipe aria-label="Discover Members"><div class="discover-swipe-deck">{member_cards}</div>{f'<div class="discover-swipe-controls"><button class="out" type="button" data-swipe-prev aria-label="Previous member">Previous</button><span class="muted small" data-swipe-status aria-live="polite"></span><button class="out" type="button" data-swipe-next aria-label="Next member">Next</button></div>' if cards else ''}</section>
@@ -7241,6 +7241,45 @@ def coordination_post_create():
         conn=db(); conn.execute('INSERT INTO coordination_posts(author_id,title,body,link_url,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,body,link_url,media_name,media_type,now())); conn.commit(); conn.close()
         flash('Conscious Coordination post published.','success')
     return redirect(url_for('connections'))
+
+
+@app.route('/conscious-coordination/post/<int:post_id>/edit',methods=['GET','POST'])
+@login_required
+def coordination_post_edit(post_id):
+    u=current_user()
+    if not _can_create_coordination_post(u): abort(403)
+    conn=db(); post=conn.execute('SELECT * FROM coordination_posts WHERE id=?',(post_id,)).fetchone()
+    if not post: conn.close(); abort(404)
+    if request.method=='POST':
+        title=request.form.get('title','').strip(); body=request.form.get('body','').strip(); link_url=request.form.get('link_url','').strip()
+        if not title or not body:
+            conn.close(); flash('A post title and message are required.','info'); return redirect(url_for('coordination_post_edit',post_id=post_id))
+        media_name,media_type=post['media_name'],post['media_type']; upload=request.files.get('media'); old_media=''
+        if upload and upload.filename:
+            replacement_name,replacement_type=save_community_media(upload,u['id'])
+            if replacement_name: old_media=media_name or ''; media_name,media_type=replacement_name,replacement_type
+        conn.execute('UPDATE coordination_posts SET title=?,body=?,link_url=?,media_name=?,media_type=? WHERE id=?',(title,body,link_url,media_name,media_type,post_id)); conn.commit(); conn.close()
+        if old_media and old_media!=media_name:
+            try: (UPLOAD_DIR/old_media).unlink(missing_ok=True)
+            except Exception: pass
+        flash('Conscious Coordination post updated.','success'); return redirect(url_for('connections')+f'#coordination-post-{post_id}')
+    conn.close()
+    media_note=(f'<p class="muted small">The current photo/video remains unless you select a replacement.</p>' if post['media_name'] else '')
+    return page('Edit Conscious Coordination Post',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION</span><h1>Edit Post</h1></div><form class="card" method="post" enctype="multipart/form-data"><label><b>Post title</b><input class="input" name="title" value="{html.escape(post['title'],quote=True)}" required></label><label><b>Post/message</b><textarea class="input" name="body" required>{html.escape(post['body'])}</textarea></label><label><b>Optional Link</b><input class="input" type="url" name="link_url" value="{html.escape(post['link_url'] or '',quote=True)}"></label><label><b>Replace Photo or Video</b><input class="input" type="file" name="media" accept="image/*,video/*"></label>{media_note}<div class="actions"><button class="btn">Save Changes</button><a class="out" href="{url_for('connections')}#coordination-post-{post_id}">Cancel</a></div></form>''','coordination')
+
+
+@app.route('/conscious-coordination/post/<int:post_id>/delete',methods=['POST'])
+@login_required
+def coordination_post_delete(post_id):
+    u=current_user()
+    if not _can_create_coordination_post(u): abort(403)
+    conn=db(); post=conn.execute('SELECT * FROM coordination_posts WHERE id=?',(post_id,)).fetchone()
+    if not post: conn.close(); abort(404)
+    conn.execute('DELETE FROM coordination_posts WHERE id=?',(post_id,)); conn.commit(); conn.close()
+    if post['media_name']:
+        try: (UPLOAD_DIR/post['media_name']).unlink(missing_ok=True)
+        except Exception: pass
+    flash('Conscious Coordination post deleted.','success'); return redirect(url_for('connections'))
 
 
 @app.route('/conscious-coordination/post/<int:post_id>/comment', methods=['POST'])
