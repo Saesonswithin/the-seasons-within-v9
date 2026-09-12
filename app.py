@@ -5779,11 +5779,121 @@ def home():
     other=regular_business_cards(businesses,home_swipe=True,module_map=_home_business_module_map(businesses))
 
     content=f'''<div class="hero"><span class="badge">THE SEASONS WITHIN</span><h1>Discover Wellness Within the Community</h1><p class="muted">A mobile-first wellness marketplace and member community for businesses, Retreats, Conscious Coordination, reflection and shared experiences.</p><div class="actions"><a class="btn" href="{url_for('business_network')}">Explore Wellness Apps</a><a class="out" href="{url_for('join')}">Join Free</a><a class="out" href="{url_for('earn_while_you_grow')}">Earn While You Grow</a><a class="out" href="{url_for('business_dashboard')}">Free Business Plan Package</a><a class="out" href="{url_for('retreats')}">Explore Retreats</a></div></div>
+    <article class="card paid"><span class="badge heart">PUBLIC COMMUNITY SUPPORT</span><h2>Emergency Resources</h2><p>Find food, shelter, clothing, emergency assistance and community resources in your area.</p><a class="btn" href="{url_for('emergency_resources')}">Find Local Support</a></article>
     <form method="get" class="card"><input class="input" name="q" value="{html.escape(q,quote=True)}" placeholder="Search businesses, services, classes, creators or wellness experiences..."><button class="btn">Search</button></form>
     <div class="topspace"><div><span class="badge gold">HOSTED BUSINESS APPS</span><h2>Community Businesses</h2><p class="muted small">Swipe horizontally to browse. Tap a section or View Full App to open the selected business.</p></div></div><section class="home-business-swipe" data-home-business-swipe aria-label="Hosted Business Apps"><div class="home-business-swipe-deck">{other}</div>{f'<div class="home-business-swipe-controls"><button class="out" type="button" data-business-prev aria-label="Previous business">Previous</button><span class="muted small" data-business-status aria-live="polite"></span><button class="out" type="button" data-business-next aria-label="Next business">Next</button></div>' if businesses else ''}</section>
     <style>.home-business-swipe{{max-width:760px;margin:0 auto}}.home-business-swipe-deck{{touch-action:pan-y}}.home-business-card{{display:none;margin:0}}.home-business-card.is-active{{display:block}}.home-business-card .chips{{margin:18px 0 12px;padding-top:14px;border-top:1px solid var(--line)}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}@media(max-width:640px){{.home-business-swipe{{width:100%}}.home-business-card{{width:100%;overflow:hidden}}}}</style>
     <script>(()=>{{const root=document.querySelector('[data-home-business-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-home-business-card]')];if(!cards.length)return;let i=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-business-status]');function show(n){{i=(n+cards.length)%cards.length;cards.forEach((card,x)=>card.classList.toggle('is-active',x===i));if(status)status.textContent=`${{i+1}} of ${{cards.length}}`;}}root.querySelector('[data-business-prev]').onclick=()=>show(i-1);root.querySelector('[data-business-next]').onclick=()=>show(i+1);root.addEventListener('touchstart',e=>{{startX=e.changedTouches[0].clientX;startY=e.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?i+1:i-1)}},{{passive:true}});root.addEventListener('click',e=>{{if(moved){{e.preventDefault();e.stopPropagation();moved=false;}}}},true);show(0);}})();</script>'''
     return page('Home',content,'home')
+
+EMERGENCY_RESOURCE_CATEGORIES={
+    'shelter':('🏠','Shelter & Housing','emergency shelter housing rent eviction assistance'),
+    'food':('🍎','Food','food pantry food bank community meal emergency food'),
+    'clothing':('👕','Clothing','free clothing pantry work clothes community closet'),
+    'utilities':('💡','Utilities & Emergency Assistance','utility electricity gas water shutoff assistance'),
+    'financial':('💰','Financial Assistance','emergency financial rent transportation family assistance'),
+    'health':('🏥','Health & Wellness','community health center mental health crisis low cost healthcare'),
+    'family':('👨‍👩‍👧','Family & Children','family childcare diapers baby supplies parenting assistance'),
+    'transportation':('🚗','Transportation','transportation bus gas medical transportation assistance'),
+    'employment':('🧑‍💼','Employment','workforce job training resume employment clothing assistance'),
+    'community':('🤝','Community & Nonprofit Support','nonprofit church faith community charitable assistance'),
+    'other':('📚','Other Assistance','community assistance resources')
+}
+
+def _emergency_categories_for_need(need,selected):
+    selected=[x for x in selected if x in EMERGENCY_RESOURCE_CATEGORIES]
+    lower=(need or '').lower(); keywords={
+        'shelter':('shelter','homeless','evict','housing','rent','domestic violence','place to stay'),
+        'food':('food','hungry','meal','pantry','groceries'), 'clothing':('clothes','clothing','shoes','coat'),
+        'utilities':('electric','utility','utilities','water bill','gas bill','shutoff'),
+        'financial':('money','financial','grant','cash','bill','deposit'),
+        'health':('health','doctor','medical','mental','crisis','suicide','therapy','prescription'),
+        'family':('child','baby','diaper','parent','family','daycare'),
+        'transportation':('transport','bus','ride','gas card'), 'employment':('job','work','resume','career','employment'),
+        'community':('church','nonprofit','charity','community')}
+    for category,terms in keywords.items():
+        if any(term in lower for term in terms) and category not in selected: selected.append(category)
+    if not selected: selected=['other']
+    # AI is used only as a constrained need classifier. It never supplies
+    # organizations, contact information, eligibility or availability.
+    if need and OPENAI_API_KEY:
+        allowed=','.join(EMERGENCY_RESOURCE_CATEGORIES)
+        prompt=f'''Classify this U.S. emergency-resource request into one or more of these exact category keys only: {allowed}. Return a comma-separated list and nothing else. Request: {need[:1000]}'''
+        try:
+            for value in re.split(r'[,\s]+',(_openai_text(prompt) or '').lower()):
+                if value in EMERGENCY_RESOURCE_CATEGORIES and value not in selected: selected.append(value)
+        except Exception: pass
+    return selected[:4]
+
+def _emergency_directory_resources(categories):
+    rows=[]
+    def add(name,kind,url,phone='',note='Use the official directory to search by location.'):
+        if not any(x['url']==url for x in rows): rows.append({'name':name,'kind':kind,'url':url,'phone':phone,'location':'United States','address':'','eligibility':'Eligibility and current availability must be confirmed with the program.','hours':'','how_to_apply':note,'verification':'Verified','verified_at':'Official directory','snippet':note})
+    add('211 — Local Community Resources','Community & emergency assistance','https://www.211.org/','211','Call 211 or use the official directory for nearby help.')
+    if 'shelter' in categories: add('HUD Find Shelter','Shelter, food, health and clothing resources','https://www.hud.gov/findshelter','','Search the official HUD directory by location.'); add('National Domestic Violence Hotline','Domestic violence safety support','https://www.thehotline.org/','800-799-7233','Call, chat or text START to 88788. Use a safer device if your internet use may be monitored.')
+    if 'food' in categories: add('Feeding America Food Bank Finder','Food banks and pantries','https://www.feedingamerica.org/find-your-local-foodbank','','Enter a ZIP code in the official food-bank finder.')
+    if 'health' in categories: add('HRSA Find a Health Center','Community health centers','https://findahealthcenter.hrsa.gov/','','Search the official federal health-center directory.'); add('988 Suicide & Crisis Lifeline','Mental health or suicide crisis support','https://988lifeline.org/','988','Call or text 988, or use the official chat service.')
+    if 'utilities' in categories: add('LIHEAP Local Office Search','Home energy assistance','https://liheapch.acf.hhs.gov/search-tool/','','Find the state, territory or tribal LIHEAP office serving your area.')
+    if 'employment' in categories: add('CareerOneStop Local Help','Employment and workforce services','https://www.careeronestop.org/LocalHelp/local-help.aspx','','Use the U.S. Department of Labor sponsored local-help finder.')
+    if 'financial' in categories or 'family' in categories: add('USA.gov Benefit Finder','Government benefits and assistance','https://www.usa.gov/benefit-finder','','Answer the official questionnaire to identify programs that may apply.')
+    return rows
+
+def _trusted_emergency_domain(url):
+    try: host=(urllib.parse.urlparse(url).hostname or '').lower().removeprefix('www.')
+    except Exception: return False
+    trusted=('211.org','hud.gov','feedingamerica.org','hrsa.gov','acf.hhs.gov','usa.gov','thehotline.org','988lifeline.org','careeronestop.org')
+    return host.endswith('.gov') or any(host==x or host.endswith('.'+x) for x in trusted)
+
+def _emergency_live_results(city,state,county,zip_code,categories,need):
+    if not (os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip())): return [],'Authoritative directories are available below. Live local search is not configured.'
+    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=[]; errors=[]
+    searches=[]
+    for key in categories:
+        terms=EMERGENCY_RESOURCE_CATEGORIES[key][2]
+        searches.append(f'{place} {terms} official government nonprofit assistance')
+    if need: searches.insert(0,f'{place} {need[:180]} official assistance nonprofit government')
+    with ThreadPoolExecutor(max_workers=min(4,len(searches))) as pool:
+        futures={pool.submit(_configured_funding_web_search,q,8):q for q in searches[:5]}
+        for future in as_completed(futures):
+            try:
+                found,provider=future.result()
+                for item in found:
+                    url=_clean_text(item.get('url')); title=_clean_text(item.get('title')); snippet=_clean_text(item.get('description'))
+                    if not url or not title or not url.startswith('https://'): continue
+                    page_text=_safe_public_page_text(url)
+                    if not page_text and not _trusted_emergency_domain(url): continue
+                    evidence=(snippet+' '+page_text[:50000]); phone=_published_field(evidence,[r'((?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4})'])
+                    verified=_trusted_emergency_domain(url)
+                    rows.append({'name':title[:180],'kind':'Local resource search result','url':url,'phone':phone,'location':place,'address':'','eligibility':'Eligibility requirements may apply. Contact the program to confirm eligibility and current availability.','hours':'','how_to_apply':'Visit the official resource page or contact the organization.','verification':'Verified' if verified else 'Information may have changed','verified_at':now()[:10] if verified else 'Confirm before relying on this information','snippet':snippet[:700]})
+            except Exception as exc: errors.append(type(exc).__name__)
+    unique={}
+    for row in rows: unique.setdefault(row['url'].lower().rstrip('/'),row)
+    return list(unique.values())[:20],('Some local searches could not be completed.' if errors else '')
+
+def _emergency_resource_cards(rows):
+    cards=[]
+    for row in rows:
+        phone=re.sub(r'[^0-9+]','',row.get('phone',''))
+        phone_action=f'''<a class="out" href="tel:{phone}">Call {html.escape(row['phone'])}</a>''' if phone else ''
+        status_class='gold' if row['verification']=='Verified' else ''
+        cards.append(f'''<article class="card"><span class="badge {status_class}">{html.escape(row['verification'])}</span><h3>{html.escape(row['name'])}</h3><p><b>{html.escape(row['kind'])}</b></p>{f'<p>{html.escape(row["location"])}</p>' if row.get('location') else ''}{f'<p>{html.escape(row["snippet"])}</p>' if row.get('snippet') else ''}<p class="muted"><b>Eligibility:</b> {html.escape(row['eligibility'])}</p><p class="muted"><b>How to apply:</b> {html.escape(row['how_to_apply'])}</p><div class="actions"><a class="btn" href="{html.escape(row['url'],quote=True)}" target="_blank" rel="noopener noreferrer">Get Help / Visit Resource</a>{phone_action}</div><p class="muted small">Confirm hours, eligibility and availability directly before traveling.</p></article>''')
+    return ''.join(cards)
+
+@app.route('/emergency-resources',methods=['GET','POST'])
+def emergency_resources():
+    values={k:(request.form.get(k,'').strip()[:160] if request.method=='POST' else request.args.get(k,'').strip()[:160]) for k in ('city','state','county','zip','need')}
+    selected=request.form.getlist('category') if request.method=='POST' else request.args.getlist('category')
+    categories=_emergency_categories_for_need(values['need'],selected) if (request.method=='POST' or any(values.values()) or selected) else []
+    results=[]; search_note=''
+    if request.method=='POST':
+        if not (values['state'] and (values['city'] or values['county'] or values['zip'])):
+            flash('Enter a state and at least a city, county or ZIP code so resources can be searched in the correct area.','error')
+        else:
+            local,search_note=_emergency_live_results(values['city'],values['state'],values['county'],values['zip'],categories,values['need']); results=local+_emergency_directory_resources(categories)
+    category_html=''.join(f'''<label class="fact" style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="category" value="{key}" {'checked' if key in categories else ''}> <span>{icon} {html.escape(label)}</span></label>''' for key,(icon,label,terms) in EMERGENCY_RESOURCE_CATEGORIES.items())
+    result_html=f'''<section class="topspace"><h2>Resources to Contact</h2>{f'<p class="muted">{html.escape(search_note)}</p>' if search_note else ''}<div class="grid">{_emergency_resource_cards(results)}</div><p class="muted small">Resource details and availability can change. Contact each program directly. “Verified” means the link is an authoritative government or established nationwide resource directory; it does not guarantee eligibility or current openings.</p></section>''' if results else ''
+    direct_url=(APP_BASE_URL or request.url_root.rstrip('/'))+url_for('emergency_resources'); qr='https://api.qrserver.com/v1/create-qr-code/?'+urllib.parse.urlencode({'size':'260x260','data':direct_url})
+    return page('Emergency Resources',f'''<div class="hero"><span class="badge heart">PUBLIC RESOURCE SEARCH</span><h1>Emergency Resources</h1><p>Whatever you may be going through, let’s help you find resources that may be available in your community.</p><p><b>If you are in immediate danger or experiencing a life-threatening emergency, call <a href="tel:911">911</a>. If you are experiencing a mental health or suicide crisis in the U.S., call or text <a href="tel:988">988</a>.</b></p></div><form class="card" method="post"><h2>What do you need help with?</h2><div class="grid">{category_html}</div><label><b>Describe what you need</b></label><textarea class="input" name="need" placeholder="For example: I need help paying my electric bill in Detroit.">{html.escape(values['need'])}</textarea><p class="muted small">The assistant uses this only to identify search categories. Organizations and program facts come from verifiable public sources.</p><h2>Where are you located?</h2><div class="grid"><label><b>City</b><input class="input" name="city" value="{html.escape(values['city'],quote=True)}"></label><label><b>State</b><input class="input" name="state" value="{html.escape(values['state'],quote=True)}" required></label><label><b>County</b><input class="input" name="county" value="{html.escape(values['county'],quote=True)}"></label><label><b>ZIP Code</b><input class="input" name="zip" inputmode="numeric" value="{html.escape(values['zip'],quote=True)}"></label></div><button class="btn">Find Resources</button></form>{result_html}<article class="card topspace" id="qr-code"><h2>Emergency Resources QR Code</h2><p class="muted">Scan to open this public search page. No membership or login is required.</p><img src="{html.escape(qr,quote=True)}" alt="QR code for the public Emergency Resources page" style="width:260px;max-width:100%;height:auto"><p><a class="out" href="{html.escape(qr,quote=True)}" target="_blank" rel="noopener">Open / Save QR Code</a></p><p class="muted small">Direct page: {html.escape(direct_url)}</p></article>''','home')
 
 @app.route('/join', methods=['GET','POST'])
 
