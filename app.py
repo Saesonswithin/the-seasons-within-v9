@@ -5844,17 +5844,74 @@ def _trusted_emergency_domain(url):
     trusted=('211.org','hud.gov','feedingamerica.org','hrsa.gov','acf.hhs.gov','usa.gov','thehotline.org','988lifeline.org','careeronestop.org')
     return host.endswith('.gov') or any(host==x or host.endswith('.'+x) for x in trusted)
 
+def _emergency_search_plan(city,state,county,zip_code,categories,need):
+    """Build locality-first passes across actual community-provider types."""
+    city_place=' '.join(x for x in (city,state) if x).strip()
+    county_name=(county+' County' if county and 'county' not in county.lower() else county).strip()
+    county_place=' '.join(x for x in (county_name,state) if x).strip()
+    places=[('City',city_place),('ZIP',' '.join(x for x in (zip_code,state) if x).strip()),('County',county_place),('State',state)]
+    unique_places=[]; seen_places=set()
+    for level,place in places:
+        key=place.lower()
+        if place and key not in seen_places: seen_places.add(key); unique_places.append((level,place))
+    provider_terms={
+        'shelter':['emergency shelter transitional housing direct assistance','eviction prevention rent assistance housing nonprofit','domestic violence shelter services'],
+        'food':['food pantry distribution hours','church food pantry community meals','community center free food program'],
+        'clothing':['clothing closet free clothing program','church clothing pantry','school district family resource center clothing assistance'],
+        'utilities':['utility shutoff assistance community action agency','church emergency utility assistance','county energy water assistance'],
+        'financial':['emergency financial assistance nonprofit','rent deposit assistance community action agency','church family emergency assistance'],
+        'health':['community health center low cost care','community mental health crisis services','nonprofit wellness assistance'],
+        'family':['family resource center diapers baby supplies','school district family assistance program','nonprofit children family emergency help'],
+        'transportation':['transportation assistance nonprofit bus passes','medical transportation community program','community action transportation help'],
+        'employment':['workforce center job training','work clothing program nonprofit','school community career resource center'],
+        'community':['community action agency emergency assistance','church assistance program food clothing rent','neighborhood nonprofit family resource center'],
+        'other':['community emergency assistance nonprofit','community action agency assistance','church community help program']}
+    plan=[]
+    def add(level,place,focus,provider_type):
+        if place and focus: plan.append({'level':level,'place':place,'provider_type':provider_type,'query':f'{place} {focus} official contact address phone hours'})
+    # The exact need receives the first city and county passes.
+    if need:
+        for level,place in unique_places[:3]: add(level,place,need[:180]+' direct assistance','Direct local provider')
+    for category in categories:
+        terms=provider_terms.get(category,provider_terms['other'])
+        for index,focus in enumerate(terms):
+            level,place=unique_places[min(index,len(unique_places)-1)]
+            add(level,place,focus,('Church / faith-based' if 'church' in focus else 'School / family resource center' if 'school' in focus else 'Local organization'))
+        if county_place: add('County',county_place,EMERGENCY_RESOURCE_CATEGORIES[category][2]+' county program','County program')
+    unique=[]; seen=set()
+    for item in plan:
+        key=re.sub(r'\W+',' ',item['query'].lower()).strip()
+        if key not in seen: seen.add(key); unique.append(item)
+    return unique[:18]
+
+def _emergency_contact_fields(text):
+    text=re.sub(r'\s+',' ',text or '')
+    phone=_published_field(text,[r'((?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4})'])
+    email=_published_field(text,[r'([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})'])
+    address=_published_field(text,[r'(\d{1,6}\s+[A-Z0-9][A-Z0-9 .#\-]{2,80}\s(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Boulevard|Blvd\.?|Drive|Dr\.?|Lane|Ln\.?|Highway|Hwy\.?|Way|Court|Ct\.?)[^.;|]{0,90}\b[A-Z]{2}\s+\d{5}(?:-\d{4})?)'])
+    hours=_published_field(text,[r'((?:hours|open)\s*[:\-]\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)[^.;]{3,240})'])
+    apply=_published_field(text,[r'((?:how to apply|request assistance|to receive help|appointments?|intake)\s*[:\-]?\s*[^.;]{15,350})'])
+    eligibility=_published_field(text,[r'((?:eligibility|eligible|who qualifies|requirements?)\s*[:\-]?\s*[^.;]{15,350})'])
+    return {'phone':phone,'email':email,'address':address,'hours':hours,'how_to_apply':apply,'eligibility':eligibility}
+
+def _emergency_relevance(text,city,state,county,zip_code,categories):
+    lower=(text or '').lower(); score=0
+    if city and city.lower() in lower: score+=45
+    if zip_code and zip_code.lower() in lower: score+=40
+    if county and county.lower().removesuffix(' county') in lower: score+=28
+    if state and state.lower() in lower: score+=12
+    requested=' '.join(EMERGENCY_RESOURCE_CATEGORIES[x][2] for x in categories if x in EMERGENCY_RESOURCE_CATEGORIES).lower()
+    score+=min(28,sum(3 for word in set(re.findall(r'[a-z]{4,}',requested)) if word in lower))
+    if any(x in lower for x in ('pantry','shelter','assistance','community center','resource center','nonprofit','church','food bank','clothing closet','community action')): score+=18
+    return score
+
 def _emergency_live_results(city,state,county,zip_code,categories,need):
     if not (os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip())): return [],'Authoritative directories are available below. Live local search is not configured.'
-    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=[]; errors=[]
-    searches=[]
-    for key in categories:
-        terms=EMERGENCY_RESOURCE_CATEGORIES[key][2]
-        searches.append(f'{place} {terms} official government nonprofit assistance')
-    if need: searches.insert(0,f'{place} {need[:180]} official assistance nonprofit government')
-    with ThreadPoolExecutor(max_workers=min(4,len(searches))) as pool:
-        futures={pool.submit(_configured_funding_web_search,q,8):q for q in searches[:5]}
+    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=[]; errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need)
+    with ThreadPoolExecutor(max_workers=min(6,len(plan))) as pool:
+        futures={pool.submit(_configured_funding_web_search,item['query'],10):item for item in plan}
         for future in as_completed(futures):
+            query_meta=futures[future]
             try:
                 found,provider=future.result()
                 for item in found:
@@ -5862,21 +5919,32 @@ def _emergency_live_results(city,state,county,zip_code,categories,need):
                     if not url or not title or not url.startswith('https://'): continue
                     page_text=_safe_public_page_text(url)
                     if not page_text and not _trusted_emergency_domain(url): continue
-                    evidence=(snippet+' '+page_text[:50000]); phone=_published_field(evidence,[r'((?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4})'])
-                    verified=_trusted_emergency_domain(url)
-                    rows.append({'name':title[:180],'kind':'Local resource search result','url':url,'phone':phone,'location':place,'address':'','eligibility':'Eligibility requirements may apply. Contact the program to confirm eligibility and current availability.','hours':'','how_to_apply':'Visit the official resource page or contact the organization.','verification':'Verified' if verified else 'Information may have changed','verified_at':now()[:10] if verified else 'Confirm before relying on this information','snippet':snippet[:700]})
+                    evidence=(title+' '+snippet+' '+page_text[:70000]); relevance=_emergency_relevance(evidence,city,state,county,zip_code,categories)
+                    # A local organization must be geographically relevant and
+                    # publicly describe assistance. Search ranking alone is not proof.
+                    assistance=bool(re.search(r'\b(help|assist|service|program|pantry|shelter|meal|clothing|housing|utility|health|transport|employment|resource)\w*\b',evidence,re.I))
+                    if relevance<30 or not assistance: continue
+                    contact=_emergency_contact_fields(evidence); trusted=_trusted_emergency_domain(url)
+                    direct=bool(contact['phone'] or contact['email'] or contact['address'])
+                    status='Verified' if (trusted or (page_text and direct and assistance)) else 'Information may have changed'
+                    score=relevance+(24 if direct else 0)+(12 if trusted else 0)+(8 if query_meta['level']=='City' else 5 if query_meta['level']=='ZIP' else 2 if query_meta['level']=='County' else 0)
+                    rows.append({'name':title[:180],'kind':query_meta['provider_type'],'url':url,'phone':contact['phone'],'email':contact['email'],'location':query_meta['place'],'address':contact['address'],'eligibility':contact['eligibility'] or 'Eligibility requirements may apply. Contact the program to confirm eligibility and current availability.','hours':contact['hours'],'how_to_apply':contact['how_to_apply'] or 'Call or visit the organization’s official website to request assistance and confirm current availability.','verification':status,'verified_at':now()[:10] if status=='Verified' else 'Confirm before relying on this information','snippet':snippet[:700],'local_score':score})
             except Exception as exc: errors.append(type(exc).__name__)
     unique={}
-    for row in rows: unique.setdefault(row['url'].lower().rstrip('/'),row)
-    return list(unique.values())[:20],('Some local searches could not be completed.' if errors else '')
+    for row in sorted(rows,key=lambda x:x.get('local_score',0),reverse=True): unique.setdefault(row['url'].lower().rstrip('/'),row)
+    return list(unique.values())[:30],('Some local search passes could not be completed; the verified results below were retained.' if errors else f'Deep local search reviewed {len(plan)} locality and provider-type searches.')
 
 def _emergency_resource_cards(rows):
     cards=[]
     for row in rows:
-        phone=re.sub(r'[^0-9+]','',row.get('phone',''))
+        phone=re.sub(r'[^0-9+]','',row.get('phone','')); email=row.get('email',''); address=row.get('address','')
         phone_action=f'''<a class="out" href="tel:{phone}">Call {html.escape(row['phone'])}</a>''' if phone else ''
+        email_action=f'''<a class="out" href="mailto:{html.escape(email,quote=True)}">Email</a>''' if email else ''
+        directions_query=' '.join(x for x in (row.get('name',''),address,row.get('location','')) if x)
+        directions='https://www.google.com/maps/search/?'+urllib.parse.urlencode({'api':'1','query':directions_query})
+        saved_payload=html.escape(json.dumps({'name':row.get('name',''),'kind':row.get('kind',''),'url':row.get('url',''),'phone':row.get('phone',''),'email':email,'address':address,'location':row.get('location','')},separators=(',',':')),quote=True)
         status_class='gold' if row['verification']=='Verified' else ''
-        cards.append(f'''<article class="card"><span class="badge {status_class}">{html.escape(row['verification'])}</span><h3>{html.escape(row['name'])}</h3><p><b>{html.escape(row['kind'])}</b></p>{f'<p>{html.escape(row["location"])}</p>' if row.get('location') else ''}{f'<p>{html.escape(row["snippet"])}</p>' if row.get('snippet') else ''}<p class="muted"><b>Eligibility:</b> {html.escape(row['eligibility'])}</p><p class="muted"><b>How to apply:</b> {html.escape(row['how_to_apply'])}</p><div class="actions"><a class="btn" href="{html.escape(row['url'],quote=True)}" target="_blank" rel="noopener noreferrer">Get Help / Visit Resource</a>{phone_action}</div><p class="muted small">Confirm hours, eligibility and availability directly before traveling.</p></article>''')
+        cards.append(f'''<article class="card"><span class="badge {status_class}">{html.escape(row['verification'])}</span><h3>{html.escape(row['name'])}</h3><p><b>{html.escape(row['kind'])}</b></p>{f'<p><b>📍 Address:</b> {html.escape(address)}</p>' if address else f'<p><b>Area:</b> {html.escape(row.get("location", ""))}</p>'}{f'<p><b>📞 Phone:</b> {html.escape(row["phone"])}</p>' if phone else ''}{f'<p><b>✉️ Email:</b> {html.escape(email)}</p>' if email else ''}{f'<p><b>Hours:</b> {html.escape(row["hours"])}</p>' if row.get('hours') else ''}{f'<p>{html.escape(row["snippet"])}</p>' if row.get('snippet') else ''}<p class="muted"><b>Eligibility:</b> {html.escape(row['eligibility'])}</p><p class="muted"><b>How to request assistance:</b> {html.escape(row['how_to_apply'])}</p><div class="actions"><a class="btn" href="{html.escape(row['url'],quote=True)}" target="_blank" rel="noopener noreferrer">🌐 Website</a>{phone_action}{email_action}<a class="out" href="{html.escape(directions,quote=True)}" target="_blank" rel="noopener noreferrer">📍 Directions</a><button class="out" type="button" data-save-emergency="{saved_payload}">Save Resource</button></div><p class="muted small">Confirm hours, eligibility and availability directly before traveling.</p></article>''')
     return ''.join(cards)
 
 @app.route('/emergency-resources',methods=['GET','POST'])
@@ -5891,9 +5959,9 @@ def emergency_resources():
         else:
             local,search_note=_emergency_live_results(values['city'],values['state'],values['county'],values['zip'],categories,values['need']); results=local+_emergency_directory_resources(categories)
     category_html=''.join(f'''<label class="fact" style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="category" value="{key}" {'checked' if key in categories else ''}> <span>{icon} {html.escape(label)}</span></label>''' for key,(icon,label,terms) in EMERGENCY_RESOURCE_CATEGORIES.items())
-    result_html=f'''<section class="topspace"><h2>Resources to Contact</h2>{f'<p class="muted">{html.escape(search_note)}</p>' if search_note else ''}<div class="grid">{_emergency_resource_cards(results)}</div><p class="muted small">Resource details and availability can change. Contact each program directly. “Verified” means the link is an authoritative government or established nationwide resource directory; it does not guarantee eligibility or current openings.</p></section>''' if results else ''
+    result_html=f'''<section class="topspace"><h2>Local Resources to Contact</h2>{f'<p class="muted">{html.escape(search_note)}</p>' if search_note else ''}<div class="grid">{_emergency_resource_cards(results)}</div><p class="muted small">Local providers are ranked before county, state, federal and national directories. Resource details and availability can change. Contact each program directly. “Verified” means assistance and contact evidence were found on an authoritative or direct organization page; it does not guarantee eligibility or current openings.</p></section>''' if results else ''
     direct_url=(APP_BASE_URL or request.url_root.rstrip('/'))+url_for('emergency_resources'); qr='https://api.qrserver.com/v1/create-qr-code/?'+urllib.parse.urlencode({'size':'260x260','data':direct_url})
-    return page('Emergency Resources',f'''<div class="hero"><span class="badge heart">PUBLIC RESOURCE SEARCH</span><h1>Emergency Resources</h1><p>Whatever you may be going through, let’s help you find resources that may be available in your community.</p><p><b>If you are in immediate danger or experiencing a life-threatening emergency, call <a href="tel:911">911</a>. If you are experiencing a mental health or suicide crisis in the U.S., call or text <a href="tel:988">988</a>.</b></p></div><form class="card" method="post"><h2>What do you need help with?</h2><div class="grid">{category_html}</div><label><b>Describe what you need</b></label><textarea class="input" name="need" placeholder="For example: I need help paying my electric bill in Detroit.">{html.escape(values['need'])}</textarea><p class="muted small">The assistant uses this only to identify search categories. Organizations and program facts come from verifiable public sources.</p><h2>Where are you located?</h2><div class="grid"><label><b>City</b><input class="input" name="city" value="{html.escape(values['city'],quote=True)}"></label><label><b>State</b><input class="input" name="state" value="{html.escape(values['state'],quote=True)}" required></label><label><b>County</b><input class="input" name="county" value="{html.escape(values['county'],quote=True)}"></label><label><b>ZIP Code</b><input class="input" name="zip" inputmode="numeric" value="{html.escape(values['zip'],quote=True)}"></label></div><button class="btn">Find Resources</button></form>{result_html}<article class="card topspace" id="qr-code"><h2>Emergency Resources QR Code</h2><p class="muted">Scan to open this public search page. No membership or login is required.</p><img src="{html.escape(qr,quote=True)}" alt="QR code for the public Emergency Resources page" style="width:260px;max-width:100%;height:auto"><p><a class="out" href="{html.escape(qr,quote=True)}" target="_blank" rel="noopener">Open / Save QR Code</a></p><p class="muted small">Direct page: {html.escape(direct_url)}</p></article>''','home')
+    return page('Emergency Resources',f'''<div class="hero"><span class="badge heart">PUBLIC RESOURCE SEARCH</span><h1>Emergency Resources</h1><p>Whatever you may be going through, let’s help you find resources that may be available in your community.</p><p><b>If you are in immediate danger or experiencing a life-threatening emergency, call <a href="tel:911">911</a>. If you are experiencing a mental health or suicide crisis in the U.S., call or text <a href="tel:988">988</a>.</b></p></div><form class="card" method="post"><h2>What do you need help with?</h2><div class="grid">{category_html}</div><label><b>Describe what you need</b></label><textarea class="input" name="need" placeholder="For example: I need help paying my electric bill in Detroit.">{html.escape(values['need'])}</textarea><p class="muted small">The assistant uses this only to identify search categories. Organizations and program facts come from verifiable public sources.</p><h2>Where are you located?</h2><div class="grid"><label><b>City</b><input class="input" name="city" value="{html.escape(values['city'],quote=True)}"></label><label><b>State</b><input class="input" name="state" value="{html.escape(values['state'],quote=True)}" required></label><label><b>County</b><input class="input" name="county" value="{html.escape(values['county'],quote=True)}"></label><label><b>ZIP Code</b><input class="input" name="zip" inputmode="numeric" value="{html.escape(values['zip'],quote=True)}"></label></div><button class="btn">Deep Local Search</button></form>{result_html}<section class="topspace" id="saved-emergency-resources" hidden><h2>Saved Resources on This Device</h2><p class="muted">Saved only in this browser. No member account or private app data is used.</p><div class="grid" data-saved-emergency-list></div><button class="out" type="button" data-clear-emergency>Clear Saved Resources</button></section><article class="card topspace" id="qr-code"><h2>Emergency Resources QR Code</h2><p class="muted">Scan to open this public search page. No membership or login is required.</p><img src="{html.escape(qr,quote=True)}" alt="QR code for the public Emergency Resources page" style="width:260px;max-width:100%;height:auto"><p><a class="out" href="{html.escape(qr,quote=True)}" target="_blank" rel="noopener">Open / Save QR Code</a></p><p class="muted small">Direct page: {html.escape(direct_url)}</p></article><script>(()=>{{const key='tsw_emergency_saved_resources_v1',section=document.querySelector('#saved-emergency-resources'),list=document.querySelector('[data-saved-emergency-list]');const read=()=>{{try{{return JSON.parse(localStorage.getItem(key)||'[]')}}catch(e){{return[]}}}};function draw(){{const rows=read();section.hidden=!rows.length;list.innerHTML='';rows.forEach((r,i)=>{{const card=document.createElement('article');card.className='card';const h=document.createElement('h3');h.textContent=r.name||'Saved Resource';const p=document.createElement('p');p.textContent=[r.kind,r.address||r.location,r.phone].filter(Boolean).join(' • ');const a=document.createElement('a');a.className='out';a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Open Resource';const remove=document.createElement('button');remove.className='out danger';remove.type='button';remove.textContent='Remove';remove.onclick=()=>{{const next=read();next.splice(i,1);localStorage.setItem(key,JSON.stringify(next));draw()}};card.append(h,p,a,remove);list.append(card)}})}}document.querySelectorAll('[data-save-emergency]').forEach(button=>button.addEventListener('click',()=>{{let item;try{{item=JSON.parse(button.dataset.saveEmergency)}}catch(e){{return}}const rows=read();if(!rows.some(x=>x.url===item.url))rows.push(item);localStorage.setItem(key,JSON.stringify(rows));button.textContent='Saved';draw()}}));document.querySelector('[data-clear-emergency]').addEventListener('click',()=>{{localStorage.removeItem(key);draw()}});draw()}})();</script>''','home')
 
 @app.route('/join', methods=['GET','POST'])
 
