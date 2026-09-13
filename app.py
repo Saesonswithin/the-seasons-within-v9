@@ -5801,6 +5801,49 @@ EMERGENCY_RESOURCE_CATEGORIES={
     'other':('📚','Other Assistance','community assistance resources')
 }
 
+# Official-provider records are a dependable floor beneath live discovery.
+# They are scoped to the listed service area and are never shown elsewhere.
+EMERGENCY_VERIFIED_LOCAL_PROVIDERS=(
+    {'cities':('detroit',),'counties':('wayne',),'states':('michigan','mi'),'categories':('utilities','financial','other'),
+     'name':'THAW — The Heat and Warmth Fund','kind':'Local nonprofit — energy bill assistance',
+     'url':'https://thawfund.org/assistance-2/','phone':'1-800-866-8429','email':'',
+     'address':'3031 West Grand Boulevard, Suite 660, Detroit, MI 48202','location':'Detroit, Michigan / Wayne County',
+     'hours':'Utility Assistance Specialists: Monday–Friday, 8:00 AM–4:45 PM',
+     'eligibility':'Serves eligible Michigan households experiencing an energy crisis. Program funding and daily application capacity can change.',
+     'how_to_apply':'Call or text “THAW” to 1-800-866-8429, or use the Apply Now option on the official assistance page. Call first to confirm current application availability.',
+     'snippet':'Direct nonprofit assistance for electricity, heat and other qualifying home-energy needs.',
+     'verification':'Verified official provider','verified_at':'Official provider page checked 2026-09-13','local_score':260},
+    {'cities':('detroit',),'counties':('wayne',),'states':('michigan','mi'),'categories':('utilities','financial','family','community','other'),
+     'name':'Wayne Metro Community Action Agency','kind':'Local nonprofit — utility, housing and family assistance',
+     'url':'https://www.waynemetro.org/programs-water-energy/','phone':'313-388-9799','email':'wmconnectcenter@waynemetro.org',
+     'address':'Wayne County, Michigan','location':'Detroit / Wayne County, Michigan',
+     'hours':'Connect Center: Monday–Friday, 8:00 AM–6:00 PM; Saturday, 9:00 AM–12:00 PM',
+     'eligibility':'Wayne Metro serves Wayne County. Each program has its own eligibility and funding status.',
+     'how_to_apply':'Call the Wayne Metro Connect Center for screening and current utility-program availability. Water Programs may also be reached at 313-386-9727.',
+     'snippet':'Community Action Agency providing water and energy programs, housing support and screening for more than 100 local programs.',
+     'verification':'Verified official provider','verified_at':'Official provider page checked 2026-09-13','local_score':250},
+    {'cities':('detroit',),'counties':('wayne',),'states':('michigan','mi'),'categories':('utilities','financial','family','community','other'),
+     'name':'The Salvation Army — Conner Creek Corps','kind':'Local church / faith-based provider — utility and rent assistance',
+     'url':'https://www.salvationarmyusa.org/mi/detroit/conner-st-corps/utility-rent-assistance/','phone':'313-822-2800','email':'',
+     'address':'3000 Conner Street, Detroit, MI 48215','location':'Detroit, Michigan',
+     'hours':'Call the local center to confirm intake hours.',
+     'eligibility':'Local program availability and financial eligibility must be confirmed directly with the Conner Creek Corps.',
+     'how_to_apply':'Call 313-822-2800 and ask for Utility, Mortgage and Rent Assistance intake before traveling.',
+     'snippet':'Detroit faith-based provider offering emergency rent and utility assistance to local individuals and families.',
+     'verification':'Verified official provider','verified_at':'Official provider page checked 2026-09-13','local_score':240},
+)
+
+def _emergency_verified_local_results(city,state,county,categories):
+    city_key=(city or '').strip().lower(); state_key=(state or '').strip().lower()
+    county_key=(county or '').strip().lower().removesuffix(' county')
+    wanted=set(categories)
+    rows=[]
+    for provider in EMERGENCY_VERIFIED_LOCAL_PROVIDERS:
+        area_match=bool((city_key and city_key in provider['cities']) or (county_key and county_key in provider['counties']))
+        if not area_match or state_key not in provider['states'] or not wanted.intersection(provider['categories']): continue
+        rows.append({k:v for k,v in provider.items() if k not in ('cities','counties','states','categories')})
+    return rows
+
 def _emergency_categories_for_need(need,selected):
     selected=[x for x in selected if x in EMERGENCY_RESOURCE_CATEGORIES]
     lower=(need or '').lower(); keywords={
@@ -6017,7 +6060,10 @@ def _emergency_location_matches(text,city,county,zip_code):
     return False
 
 def _emergency_live_results(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
-    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
+    place=' '.join(x for x in (city,county,state,zip_code) if x).strip()
+    rows=_emergency_verified_local_results(city,state,county,categories)
+    rows.extend(_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type))
+    errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
     traditional_web=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
     search_jobs=plan[:24]
     search_function=_configured_funding_web_search
@@ -6026,7 +6072,7 @@ def _emergency_live_results(city,state,county,zip_code,categories,need,assistanc
         search_jobs=[{'level':'City','place':place,'provider_type':'Verified local direct provider','query':combined}]
         search_function=lambda query,count: (_openai_emergency_web_search(query,15),'OpenAI web search')
     elif not traditional_web:
-        search_jobs=plan[:12]
+        search_jobs=plan[:9]
         search_function=_keyless_emergency_web_search
     with ThreadPoolExecutor(max_workers=min(6,len(search_jobs))) as pool:
         futures={pool.submit(search_function,item['query'],10):item for item in search_jobs}
@@ -11050,13 +11096,55 @@ def _bing_rss_emergency_search(query,count=10):
             rows.append({'title':title,'url':url,'description':description})
     return rows
 
+class _EmergencySearchHTMLParser(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.rows=[]; self.link=None; self.title=[]; self.snippet=[]; self.in_title=False; self.in_snippet=False
+    def handle_starttag(self,tag,attrs):
+        attrs=dict(attrs); classes=set((attrs.get('class') or '').split())
+        if tag=='a' and classes.intersection({'result__a','result-link'}):
+            self.link=attrs.get('href',''); self.title=[]; self.in_title=True
+        if classes.intersection({'result__snippet','result-snippet'}):
+            self.snippet=[]; self.in_snippet=True
+    def handle_data(self,data):
+        if self.in_title: self.title.append(data)
+        if self.in_snippet: self.snippet.append(data)
+    def handle_endtag(self,tag):
+        if tag=='a' and self.in_title:
+            href=html.unescape(self.link or '')
+            if href.startswith('//'): href='https:'+href
+            parsed=urllib.parse.urlparse(href)
+            if parsed.hostname and parsed.hostname.endswith('duckduckgo.com'):
+                href=(urllib.parse.parse_qs(parsed.query).get('uddg') or [''])[0]
+            title=_clean_text(html.unescape(' '.join(self.title)))
+            if title and href.startswith('https://'): self.rows.append({'title':title,'url':href,'description':''})
+            self.in_title=False; self.link=None; self.title=[]
+        if tag in {'div','td','span'} and self.in_snippet:
+            if self.rows: self.rows[-1]['description']=_clean_text(html.unescape(' '.join(self.snippet)))
+            self.in_snippet=False; self.snippet=[]
+
+def _duckduckgo_emergency_search(query,count=10):
+    """Keyless HTML search used only for local emergency-provider discovery."""
+    errors=[]
+    for endpoint in ('https://html.duckduckgo.com/html/','https://lite.duckduckgo.com/lite/'):
+        try:
+            data=urllib.parse.urlencode({'q':query,'kl':'us-en'}).encode()
+            req=urllib.request.Request(endpoint,data=data,headers={'User-Agent':'Mozilla/5.0 (compatible; TheSeasonsWithin/1.0)','Accept':'text/html,application/xhtml+xml'},method='POST')
+            with urllib.request.urlopen(req,timeout=25) as response: body=response.read(250000).decode('utf-8','ignore')
+            parser=_EmergencySearchHTMLParser(); parser.feed(body)
+            rows=[x for x in parser.rows if not _emergency_is_directory(x.get('url',''),x.get('title',''))]
+            if rows: return rows[:max(1,min(int(count),15))]
+        except Exception as exc: errors.append(type(exc).__name__)
+    raise RuntimeError('DuckDuckGo provider search failed: '+', '.join(errors))
+
 def _keyless_emergency_web_search(query,count=10):
     """Search without deployment API keys; official pages are still fetched and verified afterward."""
     rows=[]; providers=[]; failures=[]
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future=pool.submit(_bing_rss_emergency_search,query,count)
-        try: rows.extend(future.result()); providers.append('public web search')
-        except Exception as exc: failures.append(type(exc).__name__)
+    searches=(('DuckDuckGo',_duckduckgo_emergency_search),('Bing RSS',_bing_rss_emergency_search))
+    with ThreadPoolExecutor(max_workers=len(searches)) as pool:
+        futures={pool.submit(fn,query,count):name for name,fn in searches}
+        for future in as_completed(futures):
+            try: rows.extend(future.result()); providers.append(futures[future])
+            except Exception as exc: failures.append(f'{futures[future]} {type(exc).__name__}')
     if not rows: raise RuntimeError('Public emergency-provider search failed: '+', '.join(failures))
     unique={}
     for row in rows:
