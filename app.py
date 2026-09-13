@@ -1625,6 +1625,9 @@ def business_development_required(fn):
             session.pop('user_id',None)
             flash('Please log in to continue.','info')
             return redirect(url_for('login',next=request.path))
+        if not has_full_access(user):
+            flash('Upgrade your membership to access Business Development.','info')
+            return redirect(url_for('membership'))
         return fn(*args,**kwargs)
     return wrapper
 
@@ -1640,9 +1643,9 @@ def professional_business_development_access():
         session.pop('user_id',None)
         flash('Please log in to continue.','info')
         return redirect(url_for('login',next=request.path))
-    if not bool(user['business_dev_paid'] or user['is_admin']):
-        flash('Professional Business Development is available with the $10.99/month upgrade.','info')
-        return redirect(url_for('payment_info',product='business-development',next=url_for('business_plan')))
+    if not has_full_access(user):
+        flash('Upgrade your membership to access Business Development.','info')
+        return redirect(url_for('membership'))
     return None
 
 
@@ -7167,6 +7170,9 @@ def journal_entry_delete(entry_id):
 @login_required
 def experience_invitation(user_id):
     u=current_user()
+    if not has_full_access(u):
+        flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
+        return redirect(url_for('membership'))
     if user_id==u['id']: abort(400)
     conn=db(); recipient=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); businesses=conn.execute('SELECT id,name,category,location FROM businesses WHERE active=1 ORDER BY name').fetchall()
     if not recipient: conn.close(); abort(404)
@@ -7188,7 +7194,11 @@ def experience_invitation(user_id):
 @login_required
 def experience_invitation_respond(invitation_id,decision):
     if decision not in {'yes','no'}: abort(400)
-    u=current_user(); conn=db(); row=conn.execute('SELECT * FROM member_experience_invitations WHERE id=? AND recipient_id=? AND status=?',(invitation_id,u['id'],'Pending')).fetchone()
+    u=current_user()
+    if not has_full_access(u):
+        flash('Upgrade your membership to access private Conscious Coordination interactions.','info')
+        return redirect(url_for('membership'))
+    conn=db(); row=conn.execute('SELECT * FROM member_experience_invitations WHERE id=? AND recipient_id=? AND status=?',(invitation_id,u['id'],'Pending')).fetchone()
     if not row: conn.close(); abort(404)
     if decision=='yes':
         conflict=conn.execute("""SELECT id FROM member_experience_invitations WHERE id<>? AND status='Accepted' AND proposed_date=? AND proposed_time=? AND (sender_id IN (?,?) OR recipient_id IN (?,?)) LIMIT 1""",(invitation_id,row['proposed_date'],row['proposed_time'],row['sender_id'],row['recipient_id'],row['sender_id'],row['recipient_id'])).fetchone()
@@ -7202,7 +7212,11 @@ def experience_invitation_respond(invitation_id,decision):
 @app.route('/experience-invitation/<int:invitation_id>/calendar.ics')
 @login_required
 def experience_invitation_calendar(invitation_id):
-    u=current_user(); conn=db(); row=conn.execute("SELECT * FROM member_experience_invitations WHERE id=? AND status='Accepted' AND (sender_id=? OR recipient_id=?)",(invitation_id,u['id'],u['id'])).fetchone(); conn.close()
+    u=current_user()
+    if not has_full_access(u):
+        flash('Upgrade your membership to access private Conscious Coordination interactions.','info')
+        return redirect(url_for('membership'))
+    conn=db(); row=conn.execute("SELECT * FROM member_experience_invitations WHERE id=? AND status='Accepted' AND (sender_id=? OR recipient_id=?)",(invitation_id,u['id'],u['id'])).fetchone(); conn.close()
     if not row: abort(404)
     try: start=datetime.fromisoformat(row['proposed_date']+'T'+row['proposed_time']); end=start+timedelta(hours=1)
     except Exception: abort(400)
@@ -7214,6 +7228,9 @@ def experience_invitation_calendar(invitation_id):
 @app.route('/experience-invitation/<int:invitation_id>/plan')
 @login_required
 def experience_invitation_plan(invitation_id):
+    if not has_full_access(current_user()):
+        flash('Upgrade your membership to access private Conscious Coordination interactions.','info')
+        return redirect(url_for('membership'))
     u=current_user(); conn=db()
     row=conn.execute('''SELECT i.*,s.name sender_name,r.name recipient_name,b.name business_name,b.category business_category,b.location business_location
         FROM member_experience_invitations i JOIN users s ON s.id=i.sender_id JOIN users r ON r.id=i.recipient_id
@@ -7334,6 +7351,9 @@ def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not r: abort(404)
     origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); gift_id=request.args.get('gift_id',type=int); subject=request.args.get('subject','')
+    if origin=='Conscious Coordination' and not has_full_access(u):
+        flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
+        return redirect(url_for('membership'))
     post=None; gift_context=None; category='Journal Entry'
     if post_id:
         conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
@@ -7346,6 +7366,9 @@ def message_member(recipient_id):
     show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
         body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int); gift_id=request.form.get('gift_id',type=int)
+        if origin=='Conscious Coordination' and not has_full_access(u):
+            flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
+            return redirect(url_for('membership'))
         category=post['category'] if post else ('Conscious Coordination' if origin=='Conscious Coordination' else 'Journal Entry')
         subject=request.form.get('subject','').strip()
         preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
@@ -8208,9 +8231,9 @@ def coordination_indicator_detail(user_id,category):
     conn=db(); user=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
     if not user: abort(404)
     is_self=(me['id']==user_id)
-    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
+    if not is_self and not has_full_access(me):
         flash('Upgrade to open the full Conscious Coordination descriptions for another member.','info')
-        return redirect(url_for('connection_profile',user_id=user_id))
+        return redirect(url_for('membership'))
     if category not in COORDINATION_INDICATOR_LABELS:
         abort(404)
     payload=_coordination_indicator_report_payload(me['id'],user_id,category)
@@ -8262,40 +8285,42 @@ def connection_profile(user_id):
     location=' • '.join(x for x in [(cp.get('preferred_city') or user['city'] or '').strip(),(cp.get('preferred_state') or user['birth_region'] or '').strip()] if x) or 'Location not shared'
     coordination_types=cp.get('coordination_types',''); about=cp.get('about_me') or user['about'] or ''
     photo=(f'<img src="{url_for("community_media",filename=main_photo["file_name"])}" style="width:132px;height:132px;object-fit:cover;border-radius:50%;{_crop_css(main_photo["crop_data"])}" alt="{html.escape(user["name"],quote=True)}">' if main_photo else f'<div class="portrait">{initials(user["name"])}</div>')
-    # This route is the profile owner's individual chart. Pair calculations
-    # belong only to /compatibility/<user_id> and must never replace this data.
-    chart=member_chart_data(user); scores=member_coordination_scores(user,cp_row)
-    wheel=_zodiac_wheel_html(chart,user['name'])
-    natal_interpretations=_natal_coordination_interpretations(user,chart,cp_row)
-    natal_positions_html=_natal_positions_html(chart,user['name'],cp_row,natal_interpretations,is_self)
-    can_open_details=is_self or bool(me['conscious_paid'] or me['is_admin'])
+    can_open_details=is_self or has_full_access(me)
+    # Protected natal data is not calculated or placed in the response for a
+    # free member viewing someone else.
+    chart=member_chart_data(user) if can_open_details else None
+    scores=member_coordination_scores(user,cp_row)
+    wheel=_zodiac_wheel_html(chart,user['name']) if can_open_details else ''
+    natal_interpretations=_natal_coordination_interpretations(user,chart,cp_row) if can_open_details else {}
+    natal_positions_html=_natal_positions_html(chart,user['name'],cp_row,natal_interpretations,is_self) if can_open_details else ''
     def metric_card(label,score):
         slug=_coordination_indicator_slug(label); inner=f'''<h3>{html.escape(label)} — {score}%</h3><div class="meter"><i style="width:{score}%"></i></div>'''
         if can_open_details and slug:
             return f'''<a class="card" style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category=slug)}">{inner}<p class="muted small">Read interpretation</p></a>'''
-        return f'''<article class="card">{inner}<p class="muted small">Upgrade to open this member’s full description.</p></article>'''
+        return f'''<article class="card">{inner}<p class="muted small">Upgrade to Full Conscious Coordination to view the full interpretation.</p></article>'''
     visible_metrics=scores['metrics']
     metric_cards=''.join(metric_card(label,score) for label,score in visible_metrics)
     overall_value=scores['overall']
     overall_title=(f'Overall Coordination — {overall_value}%' if is_self else f'{html.escape(user["name"])}’s Individual Coordination — {overall_value}%')
     if overall_value is not None:
-        overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Read interpretation ⌄</span></div><div class="meter"><i style="width:{overall_value}%"></i></div>'''
+        overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">{'Read interpretation ⌄' if can_open_details else 'Percentage preview'}</span></div><div class="meter"><i style="width:{overall_value}%"></i></div>'''
     else:
         overall_inner=f'''<div class="splitlabel"><h2>{overall_title}</h2><span class="muted small">Complete both profiles</span></div>'''
-    overall_html=(f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}</a>''' if can_open_details and overall_value is not None else overall_inner+('' if is_self else '<p class="muted small">The shared percentage appears when both member profiles have enough coordination information.</p>'))
+    overall_html=(f'''<a style="display:block;text-decoration:none;color:inherit" href="{url_for('coordination_indicator_detail',user_id=user_id,category='overall')}">{overall_inner}</a>''' if can_open_details and overall_value is not None else overall_inner+('' if is_self else '<p class="muted small">Upgrade to Full Conscious Coordination to view the full interpretation.</p>'))
     if is_self:
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
-        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a><a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a><a class="out" href="{url_for('experience_invitation',user_id=user_id)}">Will You Go Out With Me?</a>'''
+        private_member_actions=(f'''<a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a><a class="out" href="{url_for('experience_invitation',user_id=user_id)}">Will You Go Out With Me?</a>''' if can_open_details else f'''<a class="out" href="{url_for('membership')}">Upgrade Membership for Private Interactions</a>''')
+        top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a>{private_member_actions}'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
         journal_actions=''
     business_html=member_business_card(business) if business and cp.get('display_business_app') else ''
     title='My Conscious Coordination Profile' if is_self else f'{html.escape(user["name"])} — Conscious Coordination Profile'
     access_note=''
-    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
-        access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span><p class="muted">You can see this member’s Conscious Coordination percentages. Upgrade to the $10.99/month membership to open the full descriptions for another member.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Upgrade</a></article>'''
-    profile_interpretation=(_personal_profile_interpretation(user,cp_row,scores) if is_self else _other_member_profile_interpretation(me,user,cp_row,scores))
+    if not is_self and not can_open_details:
+        access_note=f'''<article class="card paid"><span class="badge gold">FULL INTERPRETATION</span><h2>Upgrade Required</h2><p class="muted">Upgrade your membership to read the full Conscious Coordination interpretation.</p><a class="btn" href="{url_for('membership')}">Upgrade Membership</a></article>'''
+    profile_interpretation=((_personal_profile_interpretation(user,cp_row,scores) if is_self else _other_member_profile_interpretation(me,user,cp_row,scores)) if can_open_details else '')
     profile_interpretation_html=(f'<div style="line-height:1.8;margin-top:20px">{html.escape(profile_interpretation).replace(chr(10),"<br>")}</div>' if profile_interpretation else '')
     wheel_title=('My Seasons Within' if is_self else f'{html.escape(user["name"])}’s Natal Chart')
     wheel_note=('' if is_self else f'This chart and every placement below come from {html.escape(user["name"])}’s saved birth information. Your chart is not used on this page.')
@@ -8309,8 +8334,10 @@ def connection_profile(user_id):
         <article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{wheel_title}</h2>{wheel}{natal_positions_html}{natal_grounding_html}{journal_actions_html}</article>
         {planetary_profile_html}{coordination_card}{access_note}{business_html}'''
     else:
-        planetary_url=url_for('member_planetary_coordination',user_id=user_id)
-        profile_visuals=f'''<div class="member-coordination-visuals"><div class="member-coordination-photo">{photo}<span class="muted small">Profile Photo</span></div><a class="member-coordination-wheel" href="{planetary_url}" aria-label="Open {html.escape(user['name'],quote=True)}’s Planetary Conscious Coordination">{wheel}<span class="muted small">Tap Natal Wheel for Planetary Conscious Coordination</span></a></div>'''
+        planetary_url=(url_for('member_planetary_coordination',user_id=user_id) if can_open_details else url_for('membership'))
+        locked_wheel=f'''<img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within logo" style="width:145px;height:145px;object-fit:contain"><strong style="display:block;margin-top:6px">Natal Wheel Access</strong><span class="muted small">Upgrade your membership to view this member’s natal wheel.</span>'''
+        wheel_visual=(wheel+f'''<span class="muted small">Tap Natal Wheel for Planetary Conscious Coordination</span>''' if can_open_details else locked_wheel)
+        profile_visuals=f'''<div class="member-coordination-visuals"><div class="member-coordination-photo">{photo}<span class="muted small">Profile Photo</span></div><a class="member-coordination-wheel" href="{planetary_url}" aria-label="{'Open '+html.escape(user['name'],quote=True)+'’s Planetary Conscious Coordination' if can_open_details else 'Upgrade membership for natal wheel access'}">{wheel_visual}</a></div>'''
         content=f'''<style>.member-coordination-visuals{{display:grid;grid-template-columns:minmax(0,132px) minmax(0,230px);align-items:center;justify-content:center;gap:14px;min-width:0}}.member-coordination-photo,.member-coordination-wheel{{min-width:0;text-align:center}}.member-coordination-photo>img,.member-coordination-photo>.portrait{{width:132px!important;height:132px!important}}.member-coordination-wheel{{display:block;color:inherit;text-decoration:none;border-radius:18px;padding:6px}}.member-coordination-wheel:focus-visible{{outline:3px solid var(--purple);outline-offset:3px}}.member-coordination-wheel svg{{width:100%!important;height:auto!important}}.member-coordination-visuals .small{{display:block;margin-top:5px}}@media(max-width:520px){{.member-coordination-visuals{{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;width:100%}}.member-coordination-photo>img,.member-coordination-photo>.portrait{{width:min(132px,100%)!important;height:auto!important;aspect-ratio:1}}.member-coordination-wheel{{padding:2px}}.member-coordination-visuals .small{{font-size:.68rem}}}}</style><article class="card {'paid' if user['conscious_paid'] else ''}"><div class="profilehero"><div><span class="badge heart">CONSCIOUS COORDINATION PROFILE</span><h1>{title}</h1><p class="muted">{html.escape(location)}{(' • '+html.escape(coordination_types)) if coordination_types else ''}</p>{f'<p>{html.escape(about)}</p>' if about else ''}{quick_profile_html}<div class="actions">{top_actions}</div></div>{profile_visuals}</div></article>
         {coordination_card}{access_note}{business_html}'''
     return page('Conscious Coordination Profile',content,'more')
@@ -8326,13 +8353,15 @@ def member_planetary_coordination(user_id):
     if not conscious_coordination_ready(user,cp_row):
         if user_id==me['id']: return redirect(url_for('edit_profile'))
         abort(404)
-    is_self=(user_id==me['id']); chart=member_chart_data(user)
+    is_self=(user_id==me['id'])
+    if not is_self and not has_full_access(me):
+        locked=f'''<div class="hero" style="text-align:center"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within logo" style="width:170px;height:170px;object-fit:contain"><span class="badge gold">PLANETARY CONSCIOUS COORDINATION</span><h1>Natal Wheel Access</h1><p class="muted">Upgrade your membership to view this member’s natal wheel.</p><p class="muted">Upgrade your membership to access Planetary Conscious Coordination.</p><div class="actions" style="justify-content:center"><a class="btn" href="{url_for('membership')}">Upgrade Membership</a><a class="out" href="{url_for('connection_profile',user_id=user_id)}">Back to Member Profile</a></div></div>'''
+        return page('Planetary Conscious Coordination',locked,'more')
+    chart=member_chart_data(user)
     interpretations=_natal_coordination_interpretations(user,chart,cp_row)
     natal_positions=_natal_positions_html(chart,user['name'],cp_row,interpretations,is_self)
     back_label=('Back to My Profile' if is_self else f'Back to {html.escape(user["name"])}’s Profile')
     access_note=''
-    if not is_self and not bool(me['conscious_paid'] or me['is_admin']):
-        access_note=f'''<article class="card paid"><span class="badge gold">UPGRADED MEMBER ACCESS</span><p class="muted">You can view this member’s factual natal foundation. Upgrade to open their full Planetary Conscious Coordination reflections.</p><a class="out" href="{url_for('payment_info',product='conscious-coordination')}">View Upgrade</a></article>'''
     wheel=_zodiac_wheel_html(chart,user['name'])
     content=f'''<div class="hero"><div class="actions"><a class="out" href="{url_for('connection_profile',user_id=user_id)}">← {back_label}</a></div><span class="badge heart">THE SEASONS WITHIN</span><h1>{html.escape(user['name'])}</h1><p class="muted">Planetary Conscious Coordination</p></div><article class="card planetary-member-wheel"><h2>{html.escape(user['name'])}’s Seasons Within</h2>{wheel}</article><style>.planetary-member-wheel{{max-width:680px;margin-left:auto;margin-right:auto;text-align:center}}.planetary-member-wheel svg{{width:100%!important;max-width:560px!important;height:auto!important}}@media(max-width:520px){{.planetary-member-wheel{{padding:12px}}.planetary-member-wheel svg{{max-width:100%!important}}}}</style>{_planetary_coordination_cards(user,self_view=is_self)}{access_note}<article class="card"><span class="badge heart">NATAL ASTROLOGY</span><h2>{html.escape(user['name'])}’s Natal Chart Breakdown</h2>{natal_positions}</article>'''
     return page('Planetary Conscious Coordination',content,'more')
@@ -8439,6 +8468,7 @@ def compatibility(user_id):
         flash('Join the Community before opening member compatibility.','info')
         return redirect(url_for('connections'))
     if not other: abort(404)
+    full_access=has_full_access(me)
     requested=request.args.get('type','').lower()
     kind=requested if requested in {'love','friendship','business'} else _preferred_connection_type(dict(me_cp) if me_cp else {})
     data=basic_compatibility(me['id'],user_id,kind)
@@ -8454,20 +8484,25 @@ def compatibility(user_id):
         slug=slugs.get(m['area']); action=''
         if slug:
             action=(f'<a class="out" href="{url_for("compatibility_detail",user_id=user_id,category=slug,type=kind)}">Open Full Report</a>'
-                    if has_full_access(me) else f'<a class="out" href="{url_for("membership")}">Upgrade to View Full Report</a>')
+                    if full_access else f'<a class="out" href="{url_for("membership")}">Upgrade to View Full Report</a>')
         cards.append(f'''<article class="card"><h3>{html.escape(m['area'])} — {m['score']}%</h3><div class="meter"><i style="width:{m['score']}%"></i></div>{action}</article>''')
     metrics=''.join(cards) or '<article class="card"><p class="muted">Complete more profile answers for additional compatibility percentages.</p></article>'
     tabs=''.join(f'<a class="chip" href="{url_for("compatibility",user_id=user_id,type=t)}">{label}</a>' for t,label in [('love','Love / Relationship'),('friendship','Friendship'),('business','Business')])
     overall=f"{data['score']}%" if data.get('score') is not None else 'Building'
-    viewer_chart=member_chart_data(me); other_chart=member_chart_data(other)
-    wheels=_two_natal_wheels_html(viewer_chart,other_chart,'You',other['name'])
-    overall_summary=_overall_pair_coordination_summary_html(me,other,me_cp,other_cp,data,kind,viewer_chart,other_chart)
+    if full_access:
+        viewer_chart=member_chart_data(me); other_chart=member_chart_data(other)
+        wheels=_two_natal_wheels_html(viewer_chart,other_chart,'You',other['name'])
+        overall_summary=_overall_pair_coordination_summary_html(me,other,me_cp,other_cp,data,kind,viewer_chart,other_chart)
+        preview_insights=f'''<div class="grid"><article class="card"><h3>One Strength</h3><p>{html.escape(data['strength'])}</p></article><article class="card"><h3>One Difference Worth Discussing</h3><p>{html.escape(data['difference'])}</p></article><article class="card"><h3>Conversation Starter</h3><p>{html.escape(data['conversation_starter'])}</p></article></div><article class="card"><h2>Connection Ideas</h2><a class="out" href="{url_for('connection_ideas',user_id=user_id)}">Date • Friendship • Business • Retreat Ideas</a></article>'''
+    else:
+        wheels=f'''<article class="card locked" style="text-align:center"><img src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within logo" style="width:170px;height:170px;object-fit:contain"><h2>Natal Wheel Access</h2><p class="muted">Upgrade your membership to view this member’s natal wheel.</p><a class="btn" href="{url_for('membership')}">Upgrade Membership</a></article>'''
+        overall_summary=f'''<article class="card locked"><h2>Full Interpretation</h2><p class="muted">Upgrade your membership to read the full Conscious Coordination interpretation.</p><a class="btn" href="{url_for('membership')}">Upgrade Membership</a></article>'''
+        preview_insights=''
     paid_note=('<article class="card paid"><span class="badge gold">FULL PAID COMPATIBILITY</span><h2>Your full reports are open</h2><p class="muted">Open any category above for the written report built from both profiles and planetary coordination.</p></article>'
-               if has_full_access(me) else '<article class="card locked"><h2>Full Written Compatibility</h2><p class="muted">Your percentages and Basic Compatibility Preview are free. Upgrade to open the complete written reports behind the scores.</p><a class="btn" href="'+url_for('payment_info',product='conscious-coordination')+'">Upgrade to View Full Compatibility</a></article>')
+               if full_access else '<article class="card locked"><h2>Full Written Compatibility</h2><p class="muted">Your percentages and Basic Compatibility Preview are free. Upgrade to open the complete written reports behind the scores.</p><a class="btn" href="'+url_for('membership')+'">Upgrade Membership</a></article>')
     return page('Conscious Coordination Report',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION COMPATIBILITY</span><h1>{html.escape(data['member'])} — {overall} Overall Coordination</h1><div class="chips">{tabs}</div></div>
     {wheels}{overall_summary}<div class="actions" style="justify-content:center"><span class="badge">VIEW OUR CONSCIOUS COORDINATION — {html.escape(kind.upper())}</span></div>
-    <div class="grid">{metrics}</div><div class="grid"><article class="card"><h3>One Strength</h3><p>{html.escape(data['strength'])}</p></article><article class="card"><h3>One Difference Worth Discussing</h3><p>{html.escape(data['difference'])}</p></article><article class="card"><h3>Conversation Starter</h3><p>{html.escape(data['conversation_starter'])}</p></article></div>
-    <article class="card"><h2>Connection Ideas</h2><a class="out" href="{url_for('connection_ideas',user_id=user_id)}">Date • Friendship • Business • Retreat Ideas</a></article>{paid_note}''','more')
+    <div class="grid">{metrics}</div>{preview_insights}{paid_note}''','more')
 
 @app.route('/birth-chart/<int:user_id>')
 @login_required
@@ -8479,6 +8514,10 @@ def birth_chart(user_id):
 
 def connection_ideas(user_id):
     me=current_user(); conn=db()
+    if not has_full_access(me):
+        conn.close()
+        flash('Upgrade your membership to open private Conscious Coordination features.','info')
+        return redirect(url_for('membership'))
     arow=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone()
     if not conscious_coordination_ready(me,arow):
         conn.close()
@@ -8505,6 +8544,10 @@ def connection_ideas(user_id):
 
 def video(user_id):
     u=current_user(); conn=db()
+    if not has_full_access(u):
+        conn.close()
+        flash('Upgrade your membership to access private member video.','info')
+        return redirect(url_for('membership'))
     me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone()
     if not conscious_coordination_ready(u,me_cp):
         conn.close()
@@ -8674,7 +8717,7 @@ def compatibility_detail(user_id,category):
         return redirect(url_for('connections'))
     if not has_full_access(me):
         flash('Upgrade to open the full written compatibility report.','info')
-        return redirect(url_for('payment_info',product='conscious-coordination'))
+        return redirect(url_for('membership'))
 
     labels={
         'social-emotional':'Social & Emotional Intelligence',
@@ -9258,9 +9301,9 @@ WRITTEN REPORT FOR CONTEXT ONLY:
 def planet_interpretation(user_id,planet):
     me=current_user()
     is_self=(user_id==me['id'])
-    if user_id!=me['id'] and not bool(me['conscious_paid'] or me['is_admin']):
+    if user_id!=me['id'] and not has_full_access(me):
         flash('Upgrade to open another member’s deeper Conscious Coordination interpretation.','info')
-        return redirect(url_for('payment_info',product='conscious-coordination'))
+        return redirect(url_for('membership'))
     canonical={x.lower():x for x in PLANET_NAMES}; pname=canonical.get(planet.lower())
     if not pname: abort(404)
     try: payload=_planet_reflection_payload(user_id,pname,me['id'])
@@ -9302,7 +9345,7 @@ def video_request(user_id):
         return redirect(url_for('connections'))
     if not has_full_access(u):
         flash('Paid members can initiate private video requests.','info')
-        return redirect(url_for('payment_info',product='conscious-coordination'))
+        return redirect(url_for('membership'))
     if user_id==u['id']: abort(400)
     conn=db()
     other=conn.execute('SELECT id FROM users WHERE id=?',(user_id,)).fetchone()
@@ -9318,6 +9361,9 @@ def video_request(user_id):
 @login_required
 def video_response(request_id,decision):
     u=current_user()
+    if not has_full_access(u):
+        flash('Upgrade your membership to access private member video.','info')
+        return redirect(url_for('membership'))
     if decision not in {'accept','decline'}: abort(400)
     conn=db()
     row=conn.execute('SELECT * FROM coordination_video_requests WHERE id=? AND recipient_id=?',(request_id,u['id'])).fetchone()
@@ -10850,7 +10896,10 @@ def business_book(business_id,calendar_id):
 @login_required
 def business_dashboard():
     u=current_user(); conn=db(); b=conn.execute('SELECT * FROM businesses WHERE owner_id=? ORDER BY active DESC,updated_at DESC,id DESC LIMIT 1',(u['id'],)).fetchone(); plan=conn.execute("SELECT id FROM business_plans WHERE user_id=? AND status='Generated' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); intake=conn.execute('SELECT user_id FROM business_plan_intake WHERE user_id=?',(u['id'],)).fetchone(); unread=conn.execute('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']; conn.close()
-    if b or plan or intake: return redirect(url_for('business_plan'))
+    if (b or plan or intake) and has_full_access(u): return redirect(url_for('business_plan'))
+    if not b and (plan or intake) and not has_full_access(u):
+        flash('Upgrade your membership to access Business Development.','info')
+        return redirect(url_for('membership'))
     if not b:
         return page('Business Dashboard',f'''<div class="hero"><span class="badge">BUSINESS DASHBOARD</span><h1>My Business Dashboard</h1><p class="muted">You do not have a Hosted Business App. You can create a free Hosted Business App or begin your Free Business Plan Package without hosting a business.</p></div><div class="grid"><article class="card paid"><span class="badge gold">FREE HOSTED BUSINESS APP</span><h2>Do you host a business?</h2><p class="muted">Create your Hosted Business App to unlock your Business Journal, Inbox, Calendar and bookings.</p><a class="btn" href="{url_for('business_builder',step=1)}">Create My FREE Hosted App</a></article><article class="card paid"><span class="badge gold">BUSINESS DEVELOPMENT</span><h2>Free Business Plan Package</h2><p class="muted">Create a professional Business Plan, Marketing Strategy and 90-Day Launch Plan without creating or hosting a business app.</p><a class="btn" href="{url_for('business_plan')}">Free Business Plan Package</a></article></div>''','community')
     logo=business_media_src(b['logo_name'])
@@ -13013,10 +13062,10 @@ def _business_journal_saved_records(user_id):
 @business_development_required
 def business_plan():
     u=current_user(); conn=db(); row=conn.execute("SELECT * FROM business_plans WHERE user_id=? AND status='Generated' AND document_text<>'' ORDER BY version DESC LIMIT 1",(u['id'],)).fetchone(); conn.close()
-    professional_access=bool(u['business_dev_paid'] or u['is_admin'])
-    professional_url=url_for('business_journal_workspace') if professional_access else url_for('payment_info',product='business-development',next=url_for('business_plan'))
-    professional_label='Business Development' if professional_access else 'Professional Business Development — Upgrade $10.99/mo'
-    professional_note='Private records • certifications • funding • proposals' if professional_access else 'Unlock the advanced tools inside this existing workspace'
+    professional_access=has_full_access(u)
+    professional_url=url_for('business_journal_workspace')
+    professional_label='Business Development'
+    professional_note='Private records • certifications • funding • proposals'
     workspace_links=f'''<div class="card"><h2>Business Plan Workspace</h2><p class="muted">Your plan, strategies and launch actions stay connected while each saved version remains under your control.</p><div class="grid"><a class="moreitem" href="{url_for('plan_versions')}">Business Plan<br><small>Create and maintain your foundation</small></a><a class="moreitem" href="{url_for('marketing')}">Marketing Strategy<br><small>Build and refine customer outreach</small></a><a class="moreitem" href="{url_for('growth_strategy')}">Growth Strategy<br><small>Develop goals, priorities and milestones</small></a><a class="moreitem" href="{url_for('launch_plan')}">90-Day Launch Plan<br><small>Turn strategy into editable actions</small></a></div></div><div class="grid"><a class="moreitem" href="{url_for('inbox',category='Business')}">Business Inquiries</a><a class="moreitem" href="{url_for('corporate_record_book')}">📁 My Corporate Record Book<br><small>Private business documents</small></a><a class="moreitem" href="{professional_url}">{professional_label}<br><small>{professional_note}</small></a></div>'''
     if not row:
         content=f'''<div class="hero"><span class="badge">PROFESSIONAL BUSINESS DEVELOPMENT</span><h1>Business Development Workspace</h1><p class="muted">Complete the guided questionnaire. Your answers can be saved and continued later. The guided questionnaire is used to create your professional 10–15 page plan when the AI service is configured.</p><div class="actions"><a class="btn" href="{url_for('startup')}">Open Business Plan Questionnaire</a></div></div>{workspace_links}'''
