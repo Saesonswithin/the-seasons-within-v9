@@ -7351,9 +7351,6 @@ def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
     if not r: abort(404)
     origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); gift_id=request.args.get('gift_id',type=int); subject=request.args.get('subject','')
-    if origin=='Conscious Coordination' and not has_full_access(u):
-        flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
-        return redirect(url_for('membership'))
     post=None; gift_context=None; category='Journal Entry'
     if post_id:
         conn=db(); post=conn.execute('SELECT * FROM community_posts WHERE id=?',(post_id,)).fetchone(); conn.close()
@@ -7366,9 +7363,6 @@ def message_member(recipient_id):
     show_schedule=origin in {'Retreat','Business','Business Inquiry','Retreat Inquiry'}
     if request.method=='POST':
         body=request.form.get('body','').strip(); origin=request.form.get('origin','Profile'); source_post_id=request.form.get('source_post_id',type=int); gift_id=request.form.get('gift_id',type=int)
-        if origin=='Conscious Coordination' and not has_full_access(u):
-            flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
-            return redirect(url_for('membership'))
         category=post['category'] if post else ('Conscious Coordination' if origin=='Conscious Coordination' else 'Journal Entry')
         subject=request.form.get('subject','').strip()
         preferred_start=request.form.get('preferred_start','').strip(); preferred_end=request.form.get('preferred_end','').strip(); season=request.form.get('season','').strip()
@@ -7387,7 +7381,15 @@ def message_member(recipient_id):
     if show_schedule:
         schedule='''<div class="grid"><div><label><b>Choose Your Preferred Start Date</b></label><input class="input" type="date" name="preferred_start"></div><div><label><b>Choose Your Preferred End Date</b></label><input class="input" type="date" name="preferred_end"></div></div><label><b>Season</b></label><select class="input" name="season"><option value="">Choose a season</option><option>Spring Retreat</option><option>Summer Retreat</option><option>Autumn Retreat</option><option>Winter Retreat</option></select>'''
     locked_note=(f'<p><b>Public Journal post:</b> {html.escape(post["title"])} • {html.escape(post["category"])}</p>' if post else (f'''<p><b>Public gift:</b> {gift_context['emoji']} {html.escape(gift_context['label'])}</p>''' if gift_context else '<p class="muted">This private message will be filed automatically under <b>Journal Entry</b> in the recipient\'s Journal Inbox.</p>'))
-    private_actions=(f'''<article class="card"><h3>Additional Private Interactions</h3><div class="actions"><a class="out" href="{url_for('member_gallery',user_id=recipient_id)}#send-gift">🎁 Send Gift</a><a class="out" href="{url_for('video',user_id=recipient_id)}">🎥 Private Video</a><a class="out" href="{url_for('experience_invitation',user_id=recipient_id)}">💜 Will You Go Out With Me?</a></div></article>''' if origin=='Conscious Coordination' else '')
+    if origin=='Conscious Coordination':
+        gift_action=f'''<a class="out" href="{url_for('member_gallery',user_id=recipient_id)}#send-gift">🎁 Send Gift</a>'''
+        if has_full_access(u):
+            additional_actions=f'''<a class="out" href="{url_for('video',user_id=recipient_id)}">🎥 Private Video</a><a class="out" href="{url_for('experience_invitation',user_id=recipient_id)}">💜 Will You Go Out With Me?</a>'''
+        else:
+            additional_actions=f'''<div class="locked"><p><b>🔒 Upgrade Membership</b></p><p class="muted">Upgrade to access Additional Private Interactions, including Private Video and Will You Go Out With Me.</p><a class="btn" href="{url_for('membership')}">Upgrade Membership</a></div>'''
+        private_actions=f'''<article class="card"><h3>Additional Private Interactions</h3><div class="actions">{gift_action}{additional_actions}</div></article>'''
+    else:
+        private_actions=''
     return page('Private Message',f'''<div class="hero"><span class="badge">PRIVATE MESSAGE</span><h1>Send Private Journal Entry</h1><p class="muted">This entry will be delivered privately to {html.escape(r['name'])}'s Journal Inbox. It will not appear as a public comment.</p></div><form class="card" method="post"><input type="hidden" name="origin" value="{html.escape(origin,quote=True)}"><input type="hidden" name="source_post_id" value="{post_id or ''}"><input type="hidden" name="gift_id" value="{gift_id or ''}"><label><b>Give your message a title</b></label><input class="input" name="subject" value="{html.escape(subject or '',quote=True)}" placeholder="Enter your message title" required>{locked_note}{schedule}<label><b>Message</b></label><textarea class="input" name="body" placeholder="Write your private message..." required></textarea><button class="btn">Send Private Entry</button></form>{private_actions}''','more')
 
 @app.route('/notifications')
@@ -8311,7 +8313,9 @@ def connection_profile(user_id):
         top_actions=f'''<a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('connections')}">♡ Conscious Coordination</a>'''
         journal_actions=f'''<a class="btn" href="{url_for('profile')}">View My Journal</a><a class="out" href="{url_for('journal',category='Conscious Coordination',title='Private Conscious Coordination Entry')}#new-entry">Private Journal Entry</a>'''
     else:
-        private_member_actions=(f'''<a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a><a class="out" href="{url_for('experience_invitation',user_id=user_id)}">Will You Go Out With Me?</a>''' if can_open_details else f'''<a class="out" href="{url_for('membership')}">Upgrade Membership for Private Interactions</a>''')
+        private_journal_action=f'''<a class="out" href="{url_for('message_member',recipient_id=user_id,origin='Conscious Coordination')}">Private Journal Entry</a>'''
+        additional_interaction_action=(f'''<a class="out" href="{url_for('experience_invitation',user_id=user_id)}">Will You Go Out With Me?</a>''' if can_open_details else f'''<a class="out" href="{url_for('membership')}">Upgrade Membership for Additional Private Interactions</a>''')
+        private_member_actions=private_journal_action+additional_interaction_action
         top_actions=f'''<a class="out" href="{url_for('compatibility',user_id=user_id)}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_profile',user_id=user_id)}">View Member's Journal</a>{private_member_actions}'''
         top_actions+=f'''<form method="post" action="{url_for('coordination_like',user_id=user_id)}" style="display:inline"><button class="out" type="submit">{'♡ Interested Sent' if liked else '♡ Like / Interested'}</button></form>'''
         journal_actions=''
