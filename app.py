@@ -1797,6 +1797,9 @@ BASE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 def page(title, content, active=''):
     user=current_user()
+    if title=='Emergency Resources':
+        emergency_logo=f'''<img src="{url_for('static',filename='galaxy-eve-emergency-logo.png')}" alt="Galaxy Eve" style="display:block;width:96px;max-width:24vw;height:auto;margin:0 0 12px;object-fit:contain">'''
+        content=content.replace('<div class="hero"><span class="badge heart">PUBLIC RESOURCE SEARCH</span>',f'<div class="hero">{emergency_logo}<span class="badge heart">PUBLIC RESOURCE SEARCH</span>',1)
     content='''<style>.topin{min-height:94px}.logo{width:72px!important;height:72px!important}@media(max-width:820px){.topin{min-height:78px}.logo{width:62px!important;height:62px!important}}</style>'''+content
     if user:
         content=content+_global_autosave_script()
