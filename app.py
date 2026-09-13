@@ -5938,6 +5938,9 @@ def _emergency_search_plan(city,state,county,zip_code,categories,need,assistance
     # The exact need receives the first city and county passes.
     if need:
         for level,place in unique_places[:3]: add(level,place,need[:180]+' direct assistance','Direct local provider')
+        for level,place in unique_places[:3]:
+            add(level,place,need[:140]+' local nonprofit direct phone intake','Local nonprofit')
+            add(level,place,need[:140]+' church faith based direct assistance contact','Church / faith-based direct provider')
     if 'shelter' in categories:
         shelter_focus={
             'men':['men emergency shelter','homeless shelter for men','transitional housing for men'],
@@ -5952,6 +5955,9 @@ def _emergency_search_plan(city,state,county,zip_code,categories,need,assistance
         for index,focus in enumerate(shelter_focus):
             level,place=unique_places[min(index,len(unique_places)-1)]
             add(level,place,focus+' accepts appropriate household official','Local shelter / housing provider')
+        for level,place in unique_places[:3]:
+            add(level,place,'church faith based nonprofit emergency shelter housing direct assistance','Church / faith-based direct provider')
+            add(level,place,'local nonprofit emergency housing shelter intake direct assistance','Local nonprofit')
     for category in categories:
         terms=provider_terms.get(category,provider_terms['other'])
         for index,focus in enumerate(terms):
@@ -5962,7 +5968,7 @@ def _emergency_search_plan(city,state,county,zip_code,categories,need,assistance
     for item in plan:
         key=re.sub(r'\W+',' ',item['query'].lower()).strip()
         if key not in seen: seen.add(key); unique.append(item)
-    return unique[:18]
+    return unique[:30]
 
 def _emergency_contact_fields(text):
     text=re.sub(r'\s+',' ',text or '')
@@ -5987,11 +5993,18 @@ def _emergency_relevance(text,city,state,county,zip_code,categories):
 
 def _emergency_live_results(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
     place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
-    web_configured=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
+    traditional_web=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
+    web_configured=bool(traditional_web or OPENAI_API_KEY)
     if not web_configured:
         return rows,'Nearby provider locations were searched directly. Configure a supported live web-search provider to investigate official organization pages and published contact details more deeply.'
-    with ThreadPoolExecutor(max_workers=min(6,len(plan))) as pool:
-        futures={pool.submit(_configured_funding_web_search,item['query'],10):item for item in plan}
+    search_jobs=plan
+    search_function=_configured_funding_web_search
+    if not traditional_web and OPENAI_API_KEY:
+        combined='\n'.join(f"- {item['query']}" for item in plan)
+        search_jobs=[{'level':'City','place':place,'provider_type':'Verified local direct provider','query':combined}]
+        search_function=lambda query,count: (_openai_emergency_web_search(query,15),'OpenAI web search')
+    with ThreadPoolExecutor(max_workers=min(6,len(search_jobs))) as pool:
+        futures={pool.submit(search_function,item['query'],10):item for item in search_jobs}
         for future in as_completed(futures):
             query_meta=futures[future]
             try:
@@ -6021,7 +6034,7 @@ def _emergency_resource_cards(rows):
     cards=[]
     for row in rows:
         phone=re.sub(r'[^0-9+]','',row.get('phone','')); email=row.get('email',''); address=row.get('address','')
-        phone_action=f'''<a class="out" href="tel:{phone}">Call {html.escape(row['phone'])}</a>''' if phone else ''
+        phone_action=f'''<a class="btn" href="tel:{phone}">📞 Call for Assistance</a>''' if phone else ''
         email_action=f'''<a class="out" href="mailto:{html.escape(email,quote=True)}">Email</a>''' if email else ''
         directions_query=' '.join(x for x in (row.get('name',''),address,row.get('location','')) if x)
         directions=row.get('map_url') or ('https://www.google.com/maps/search/?'+urllib.parse.urlencode({'api':'1','query':directions_query}))
@@ -10972,6 +10985,30 @@ def _google_cse_search(query,count=10):
     req=urllib.request.Request(endpoint+'?'+params,headers={'Accept':'application/json','User-Agent':'The-Seasons-Within/1.0'})
     with urllib.request.urlopen(req,timeout=20) as response: payload=json.loads(response.read().decode('utf-8'))
     return [{'title':x.get('title',''),'url':x.get('link',''),'description':x.get('snippet','')} for x in (payload.get('items') or []) if isinstance(x,dict)]
+
+def _openai_emergency_web_search(query,count=12):
+    """Provider discovery using OpenAI web search; facts are verified again from each returned official page."""
+    if not OPENAI_API_KEY: raise RuntimeError('OPENAI_API_KEY is not configured.')
+    prompt=f'''Search the live web for actual local emergency-assistance providers matching the searches below.
+Prioritize in this exact order: local nonprofit or shelter; church or faith-based direct provider; local government/county/state program; other community organization.
+Exclude 211, Findhelp, Yelp, search-result pages, social media, and generic directories. Return only organizations that appear to provide assistance directly.
+Return a JSON array with at most {max(1,min(int(count),15))} objects. Each object must contain only title, url, and description. URL must be the organization's official HTTPS website or official government program page, never a search URL. Do not guess a URL or contact detail.
+SEARCHES:
+{query[:9000]}'''
+    payload={'model':ASTROLOGY_AI_MODEL,'input':prompt,'tools':[{'type':'web_search_preview','search_context_size':'high'}],'store':False}
+    req=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload).encode('utf-8'),headers={'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},method='POST')
+    with urllib.request.urlopen(req,timeout=90) as response: raw=_responses_output_text(json.loads(response.read().decode('utf-8'))) or ''
+    match=re.search(r'\[\s*\{.*\}\s*\]',raw,re.S)
+    if not match: return []
+    try: items=json.loads(match.group(0))
+    except Exception: return []
+    rows=[]
+    for item in items if isinstance(items,list) else []:
+        if not isinstance(item,dict): continue
+        url=_clean_text(item.get('url')); title=_clean_text(item.get('title')); description=_clean_text(item.get('description'))
+        if title and url.startswith('https://') and not _emergency_is_directory(url,title):
+            rows.append({'title':title,'url':url,'description':description})
+    return rows
 
 def _configured_funding_web_search(query,count=10):
     """Search every configured provider independently and combine their discoveries."""
