@@ -5897,6 +5897,16 @@ def _emergency_open_map_results(city,state,county,zip_code,categories,assistance
         phone=_clean_text(tags.get('contact:phone') or tags.get('phone')); email=_clean_text(tags.get('contact:email') or tags.get('email'))
         street=' '.join(x for x in (_clean_text(tags.get('addr:housenumber')),_clean_text(tags.get('addr:street'))) if x)
         address=', '.join(x for x in (street,_clean_text(tags.get('addr:city')),_clean_text(tags.get('addr:state')),_clean_text(tags.get('addr:postcode'))) if x)
+        mapped_city=_clean_text(tags.get('addr:city') or tags.get('contact:city')).lower()
+        mapped_zip=_clean_text(tags.get('addr:postcode') or tags.get('contact:postcode')).lower()
+        mapped_county=_clean_text(tags.get('addr:county')).lower().removesuffix(' county')
+        wanted_city=(city or '').lower(); wanted_zip=(zip_code or '').lower(); wanted_county=(county or '').lower().removesuffix(' county')
+        # A mapped place is displayed only when its structured locality matches
+        # the area the member entered. Missing locality tags are not enough.
+        if wanted_city or wanted_zip:
+            if not ((wanted_city and mapped_city==wanted_city) or (wanted_zip and mapped_zip==wanted_zip)): continue
+        elif wanted_county and mapped_county!=wanted_county:
+            continue
         facility=_clean_text(tags.get('social_facility') or tags.get('amenity') or tags.get('healthcare') or 'Community resource').replace('_',' ').title()
         religious=bool(tags.get('religion') or tags.get('denomination')); kind=('Church / faith-based provider — ' if religious else 'Nearby direct provider — ')+facility
         distance=math.hypot((float(lat)-coords[0])*69 if lat else 99,(float(lon)-coords[1])*54 if lon else 99)
@@ -5992,6 +6002,20 @@ def _emergency_relevance(text,city,state,county,zip_code,categories):
     if any(x in lower for x in ('pantry','shelter','assistance','community center','resource center','nonprofit','church','food bank','clothing closet','community action')): score+=18
     return score
 
+def _emergency_location_matches(text,city,county,zip_code):
+    """Require positive local evidence; state-level relevance alone is never local enough."""
+    lower=(text or '').lower()
+    city_key=(city or '').strip().lower()
+    zip_key=(zip_code or '').strip().lower()
+    county_key=(county or '').strip().lower().removesuffix(' county')
+    if city_key or zip_key:
+        city_match=bool(city_key and re.search(r'(?<![a-z])'+re.escape(city_key)+r'(?![a-z])',lower))
+        zip_match=bool(zip_key and re.search(r'(?<!\d)'+re.escape(zip_key)+r'(?!\d)',lower))
+        return city_match or zip_match
+    if county_key:
+        return bool(re.search(r'(?<![a-z])'+re.escape(county_key)+r'(?:\s+county)?(?![a-z])',lower))
+    return False
+
 def _emergency_live_results(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
     place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
     traditional_web=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
@@ -6017,6 +6041,7 @@ def _emergency_live_results(city,state,county,zip_code,categories,need,assistanc
                     page_text=_safe_public_page_text(url)
                     if not page_text and not _trusted_emergency_domain(url): continue
                     evidence=(title+' '+snippet+' '+page_text[:70000]); relevance=_emergency_relevance(evidence,city,state,county,zip_code,categories)
+                    if not _emergency_location_matches(evidence,city,county,zip_code): continue
                     # A local organization must be geographically relevant and
                     # publicly describe assistance. Search ranking alone is not proof.
                     assistance=bool(re.search(r'\b(help|assist|service|program|pantry|shelter|meal|clothing|housing|utility|health|transport|employment|resource)\w*\b',evidence,re.I))
@@ -6048,6 +6073,8 @@ def _emergency_resource_cards(rows):
 @app.route('/emergency-resources',methods=['GET','POST'])
 def emergency_resources():
     values={k:(request.form.get(k,'').strip()[:160] if request.method=='POST' else request.args.get(k,'').strip()[:160]) for k in ('city','state','county','zip','need','assistance_for','shelter_type')}
+    if values['county'].lower() in {values['city'].lower(),values['state'].lower()}:
+        values['county']=''
     if values['assistance_for'] not in ('self','self_children','family','other'): values['assistance_for']='self'
     if values['shelter_type'] not in ('men','women','family','parents_children','youth','any','unsure'): values['shelter_type']=''
     selected=request.form.getlist('category') if request.method=='POST' else request.args.getlist('category')
