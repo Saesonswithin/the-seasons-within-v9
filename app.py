@@ -33,6 +33,7 @@ import io
 import csv
 import socket
 import ipaddress
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
 from collections import Counter
@@ -5994,15 +5995,15 @@ def _emergency_relevance(text,city,state,county,zip_code,categories):
 def _emergency_live_results(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
     place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
     traditional_web=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
-    web_configured=bool(traditional_web or OPENAI_API_KEY)
-    if not web_configured:
-        return rows,'Nearby provider locations were searched directly. Configure a supported live web-search provider to investigate official organization pages and published contact details more deeply.'
-    search_jobs=plan
+    search_jobs=plan[:24]
     search_function=_configured_funding_web_search
     if not traditional_web and OPENAI_API_KEY:
         combined='\n'.join(f"- {item['query']}" for item in plan)
         search_jobs=[{'level':'City','place':place,'provider_type':'Verified local direct provider','query':combined}]
         search_function=lambda query,count: (_openai_emergency_web_search(query,15),'OpenAI web search')
+    elif not traditional_web:
+        search_jobs=plan[:12]
+        search_function=_keyless_emergency_web_search
     with ThreadPoolExecutor(max_workers=min(6,len(search_jobs))) as pool:
         futures={pool.submit(search_function,item['query'],10):item for item in search_jobs}
         for future in as_completed(futures):
@@ -6028,7 +6029,7 @@ def _emergency_live_results(city,state,county,zip_code,categories,need,assistanc
             except Exception as exc: errors.append(type(exc).__name__)
     unique={}
     for row in sorted(rows,key=lambda x:x.get('local_score',0),reverse=True): unique.setdefault(row['url'].lower().rstrip('/'),row)
-    return list(unique.values())[:30],('Some local search passes could not be completed; the verified results below were retained.' if errors else f'Deep local search reviewed {len(plan)} locality and provider-type searches.')
+    return list(unique.values())[:30],('Some local search passes could not be completed; every displayed provider was still checked against its public page.' if errors else f'Deep local search reviewed {len(search_jobs)} locality and provider-type searches and checked discovered organization pages.')
 
 def _emergency_resource_cards(rows):
     cards=[]
@@ -11009,6 +11010,32 @@ SEARCHES:
         if title and url.startswith('https://') and not _emergency_is_directory(url,title):
             rows.append({'title':title,'url':url,'description':description})
     return rows
+
+def _bing_rss_emergency_search(query,count=10):
+    """Keyless public-web fallback for emergency provider discovery."""
+    params=urllib.parse.urlencode({'q':query,'format':'rss','setlang':'en-US'})
+    req=urllib.request.Request('https://www.bing.com/search?'+params,headers={'User-Agent':'Mozilla/5.0 (compatible; TheSeasonsWithin/1.0)','Accept':'application/rss+xml,application/xml,text/xml'})
+    with urllib.request.urlopen(req,timeout=20) as response: root=ET.fromstring(response.read())
+    rows=[]
+    for item in root.findall('.//item')[:max(1,min(int(count),20))]:
+        title=_clean_text(item.findtext('title')); url=_clean_text(item.findtext('link')); description=_clean_text(re.sub(r'<[^>]+>',' ',item.findtext('description') or ''))
+        if title and url.startswith('https://') and not _emergency_is_directory(url,title):
+            rows.append({'title':title,'url':url,'description':description})
+    return rows
+
+def _keyless_emergency_web_search(query,count=10):
+    """Search without deployment API keys; official pages are still fetched and verified afterward."""
+    rows=[]; providers=[]; failures=[]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future=pool.submit(_bing_rss_emergency_search,query,count)
+        try: rows.extend(future.result()); providers.append('public web search')
+        except Exception as exc: failures.append(type(exc).__name__)
+    if not rows: raise RuntimeError('Public emergency-provider search failed: '+', '.join(failures))
+    unique={}
+    for row in rows:
+        url=_clean_text(row.get('url')).lower().rstrip('/')
+        if url: unique.setdefault(url,row)
+    return list(unique.values()),' + '.join(providers)
 
 def _configured_funding_web_search(query,count=10):
     """Search every configured provider independently and combine their discoveries."""
