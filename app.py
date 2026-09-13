@@ -5860,7 +5860,7 @@ def _emergency_geocode(city,state,county,zip_code):
         return (float(data[0]['lat']),float(data[0]['lon'])) if data else None
     except Exception: return None
 
-def _emergency_open_map_results(city,state,county,zip_code,categories):
+def _emergency_open_map_results(city,state,county,zip_code,categories,assistance_for='',shelter_type=''):
     """Keyless nearby-provider discovery from structured OpenStreetMap tags."""
     coords=_emergency_geocode(city,state,county,zip_code)
     if not coords: return []
@@ -5892,19 +5892,25 @@ def _emergency_open_map_results(city,state,county,zip_code,categories):
         lat=element.get('lat') or (element.get('center') or {}).get('lat'); lon=element.get('lon') or (element.get('center') or {}).get('lon')
         website=_clean_text(tags.get('contact:website') or tags.get('website') or tags.get('url'))
         if website and not website.startswith(('http://','https://')): website='https://'+website
-        osm_type=element.get('type','node'); osm_id=element.get('id'); fallback_url=f'https://www.openstreetmap.org/{osm_type}/{osm_id}'
+        osm_type=element.get('type','node'); osm_id=element.get('id'); map_url=f'https://www.openstreetmap.org/{osm_type}/{osm_id}'
         phone=_clean_text(tags.get('contact:phone') or tags.get('phone')); email=_clean_text(tags.get('contact:email') or tags.get('email'))
         street=' '.join(x for x in (_clean_text(tags.get('addr:housenumber')),_clean_text(tags.get('addr:street'))) if x)
         address=', '.join(x for x in (street,_clean_text(tags.get('addr:city')),_clean_text(tags.get('addr:state')),_clean_text(tags.get('addr:postcode'))) if x)
         facility=_clean_text(tags.get('social_facility') or tags.get('amenity') or tags.get('healthcare') or 'Community resource').replace('_',' ').title()
         religious=bool(tags.get('religion') or tags.get('denomination')); kind=('Church / faith-based provider — ' if religious else 'Nearby direct provider — ')+facility
         distance=math.hypot((float(lat)-coords[0])*69 if lat else 99,(float(lon)-coords[1])*54 if lon else 99)
-        rows.append({'name':name,'kind':kind,'url':website or fallback_url,'phone':phone,'email':email,'location':' '.join(x for x in (city,state) if x),'address':address,'eligibility':'Not published in the mapped record. Contact the provider directly.','hours':_clean_text(tags.get('opening_hours')),'how_to_apply':'Contact the provider directly to confirm the requested service, eligibility, hours and current availability.','verification':'Information may have changed','verified_at':'Structured local map listing; confirm directly','snippet':f'Listed as a nearby {facility.lower()}. The map listing identifies the place; call or check its official site to confirm current assistance.','local_score':140-max(0,distance),'latitude':lat,'longitude':lon})
+        serves=_clean_text(tags.get('social_facility:for') or tags.get('social_facility:for:gender')).lower()
+        shelter_key=(shelter_type or '').lower()
+        if 'shelter' in categories and serves:
+            if shelter_key=='men' and any(x in serves for x in ('women','female')) and not any(x in serves for x in ('men','male','all')): continue
+            if shelter_key=='women' and any(x in serves for x in ('men','male')) and not any(x in serves for x in ('women','female','all')): continue
+            if shelter_key in ('family','parents_children') and any(x in serves for x in ('men','male','women','female')) and not any(x in serves for x in ('family','children','parent','all')): continue
+        rows.append({'name':name,'kind':kind,'url':website,'map_url':map_url,'phone':phone,'email':email,'location':' '.join(x for x in (city,state) if x),'address':address,'eligibility':'Not published in the mapped record. Contact the provider directly.','hours':_clean_text(tags.get('opening_hours')),'how_to_apply':'Contact the provider directly to confirm the requested service, eligibility, hours and current availability.','verification':'Information may have changed','verified_at':'Structured local map listing; confirm directly','snippet':f'Listed as a nearby {facility.lower()}. Contact the provider to confirm services, eligibility and current availability.','local_score':140-max(0,distance),'latitude':lat,'longitude':lon})
     unique={}
     for row in sorted(rows,key=lambda x:x['local_score'],reverse=True): unique.setdefault((row['name'].lower(),row['address'].lower()),row)
     return list(unique.values())[:25]
 
-def _emergency_search_plan(city,state,county,zip_code,categories,need):
+def _emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
     """Build locality-first passes across actual community-provider types."""
     city_place=' '.join(x for x in (city,state) if x).strip()
     county_name=(county+' County' if county and 'county' not in county.lower() else county).strip()
@@ -5932,6 +5938,20 @@ def _emergency_search_plan(city,state,county,zip_code,categories,need):
     # The exact need receives the first city and county passes.
     if need:
         for level,place in unique_places[:3]: add(level,place,need[:180]+' direct assistance','Direct local provider')
+    if 'shelter' in categories:
+        shelter_focus={
+            'men':['men emergency shelter','homeless shelter for men','transitional housing for men'],
+            'women':['women emergency shelter','women transitional housing','women housing nonprofit'],
+            'family':['family emergency shelter','family emergency housing','family transitional housing'],
+            'parents_children':['shelter parents with children','family emergency housing children','family transitional housing'],
+            'youth':['youth emergency shelter','runaway homeless youth shelter','youth transitional housing'],
+            'any':['emergency shelter intake','emergency housing program','local housing nonprofit'],
+            'unsure':['coordinated entry emergency shelter','emergency housing program','local housing nonprofit']}.get(shelter_type,[])
+        if assistance_for in ('self_children','family') and shelter_type not in ('family','parents_children'):
+            shelter_focus=['family emergency shelter','shelter parents with children','family transitional housing']+shelter_focus
+        for index,focus in enumerate(shelter_focus):
+            level,place=unique_places[min(index,len(unique_places)-1)]
+            add(level,place,focus+' accepts appropriate household official','Local shelter / housing provider')
     for category in categories:
         terms=provider_terms.get(category,provider_terms['other'])
         for index,focus in enumerate(terms):
@@ -5965,8 +5985,8 @@ def _emergency_relevance(text,city,state,county,zip_code,categories):
     if any(x in lower for x in ('pantry','shelter','assistance','community center','resource center','nonprofit','church','food bank','clothing closet','community action')): score+=18
     return score
 
-def _emergency_live_results(city,state,county,zip_code,categories,need):
-    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need)
+def _emergency_live_results(city,state,county,zip_code,categories,need,assistance_for='',shelter_type=''):
+    place=' '.join(x for x in (city,county,state,zip_code) if x).strip(); rows=_emergency_open_map_results(city,state,county,zip_code,categories,assistance_for,shelter_type); errors=[]; plan=_emergency_search_plan(city,state,county,zip_code,categories,need,assistance_for,shelter_type)
     web_configured=bool(os.environ.get('BRAVE_SEARCH_API_KEY','').strip() or os.environ.get('BING_SEARCH_API_KEY','').strip() or (os.environ.get('GOOGLE_CSE_API_KEY','').strip() and os.environ.get('GOOGLE_CSE_ID','').strip()))
     if not web_configured:
         return rows,'Nearby provider locations were searched directly. Configure a supported live web-search provider to investigate official organization pages and published contact details more deeply.'
@@ -6004,15 +6024,18 @@ def _emergency_resource_cards(rows):
         phone_action=f'''<a class="out" href="tel:{phone}">Call {html.escape(row['phone'])}</a>''' if phone else ''
         email_action=f'''<a class="out" href="mailto:{html.escape(email,quote=True)}">Email</a>''' if email else ''
         directions_query=' '.join(x for x in (row.get('name',''),address,row.get('location','')) if x)
-        directions='https://www.google.com/maps/search/?'+urllib.parse.urlencode({'api':'1','query':directions_query})
+        directions=row.get('map_url') or ('https://www.google.com/maps/search/?'+urllib.parse.urlencode({'api':'1','query':directions_query}))
         saved_payload=html.escape(json.dumps({'name':row.get('name',''),'kind':row.get('kind',''),'url':row.get('url',''),'phone':row.get('phone',''),'email':email,'address':address,'location':row.get('location','')},separators=(',',':')),quote=True)
         status_class='gold' if row['verification']=='Verified' else ''
-        cards.append(f'''<article class="card"><span class="badge {status_class}">{html.escape(row['verification'])}</span><h3>{html.escape(row['name'])}</h3><p><b>{html.escape(row['kind'])}</b></p>{f'<p><b>📍 Address:</b> {html.escape(address)}</p>' if address else f'<p><b>Area:</b> {html.escape(row.get("location", ""))}</p>'}{f'<p><b>📞 Phone:</b> {html.escape(row["phone"])}</p>' if phone else ''}{f'<p><b>✉️ Email:</b> {html.escape(email)}</p>' if email else ''}{f'<p><b>Hours:</b> {html.escape(row["hours"])}</p>' if row.get('hours') else ''}{f'<p>{html.escape(row["snippet"])}</p>' if row.get('snippet') else ''}<p class="muted"><b>Eligibility:</b> {html.escape(row['eligibility'])}</p><p class="muted"><b>How to request assistance:</b> {html.escape(row['how_to_apply'])}</p><div class="actions"><a class="btn" href="{html.escape(row['url'],quote=True)}" target="_blank" rel="noopener noreferrer">🌐 Website</a>{phone_action}{email_action}<a class="out" href="{html.escape(directions,quote=True)}" target="_blank" rel="noopener noreferrer">📍 Directions</a><button class="out" type="button" data-save-emergency="{saved_payload}">Save Resource</button></div><p class="muted small">Confirm hours, eligibility and availability directly before traveling.</p></article>''')
+        website_action=f'''<a class="btn" href="{html.escape(row['url'],quote=True)}" target="_blank" rel="noopener noreferrer">🌐 Visit Official Website</a>''' if row.get('url') else ''
+        cards.append(f'''<article class="card"><span class="badge {status_class}">{html.escape(row['verification'])}</span><h3>{html.escape(row['name'])}</h3><p><b>{html.escape(row['kind'])}</b></p>{f'<p><b>📞 Phone:</b> <a href="tel:{phone}">{html.escape(row["phone"])}</a></p>' if phone else '<p class="muted"><b>📞 Phone:</b> No direct number verified in the available source.</p>'}{f'<p><b>🌐 Official Website:</b> <a href="{html.escape(row["url"],quote=True)}" target="_blank" rel="noopener noreferrer">Open organization website</a></p>' if row.get('url') else '<p class="muted"><b>🌐 Official Website:</b> No official organization website verified.</p>'}{f'<p><b>📍 Address:</b> {html.escape(address)}</p>' if address else f'<p><b>📍 Area:</b> {html.escape(row.get("location", ""))}</p>'}{f'<p><b>✉️ Email:</b> {html.escape(email)}</p>' if email else ''}{f'<p><b>🕐 Hours:</b> {html.escape(row["hours"])}</p>' if row.get('hours') else '<p class="muted"><b>🕐 Hours:</b> Call to confirm.</p>'}{f'<p>{html.escape(row["snippet"])}</p>' if row.get('snippet') else ''}<p class="muted"><b>Eligibility:</b> {html.escape(row['eligibility'])}</p><p><b>How to get assistance:</b> {html.escape(row['how_to_apply'])}</p><div class="actions">{phone_action}{website_action}<a class="out" href="{html.escape(directions,quote=True)}" target="_blank" rel="noopener noreferrer">📍 Directions</a>{email_action}<button class="out" type="button" data-save-emergency="{saved_payload}">Save Resource</button></div><p class="muted small">Availability may change. Please call the organization to confirm that assistance is currently available.</p></article>''')
     return ''.join(cards)
 
 @app.route('/emergency-resources',methods=['GET','POST'])
 def emergency_resources():
-    values={k:(request.form.get(k,'').strip()[:160] if request.method=='POST' else request.args.get(k,'').strip()[:160]) for k in ('city','state','county','zip','need')}
+    values={k:(request.form.get(k,'').strip()[:160] if request.method=='POST' else request.args.get(k,'').strip()[:160]) for k in ('city','state','county','zip','need','assistance_for','shelter_type')}
+    if values['assistance_for'] not in ('self','self_children','family','other'): values['assistance_for']='self'
+    if values['shelter_type'] not in ('men','women','family','parents_children','youth','any','unsure'): values['shelter_type']=''
     selected=request.form.getlist('category') if request.method=='POST' else request.args.getlist('category')
     categories=_emergency_categories_for_need(values['need'],selected) if (request.method=='POST' or any(values.values()) or selected) else []
     local_results=[]; directory_results=[]; search_note=''
@@ -6020,8 +6043,11 @@ def emergency_resources():
         if not (values['state'] and (values['city'] or values['county'] or values['zip'])):
             flash('Enter a state and at least a city, county or ZIP code so resources can be searched in the correct area.','error')
         else:
-            local_results,search_note=_emergency_live_results(values['city'],values['state'],values['county'],values['zip'],categories,values['need']); directory_results=_emergency_directory_resources(categories)
+            local_results,search_note=_emergency_live_results(values['city'],values['state'],values['county'],values['zip'],categories,values['need'],values['assistance_for'],values['shelter_type']); directory_results=_emergency_directory_resources(categories)
     category_html=''.join(f'''<label class="fact" style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="category" value="{key}" {'checked' if key in categories else ''}> <span>{icon} {html.escape(label)}</span></label>''' for key,(icon,label,terms) in EMERGENCY_RESOURCE_CATEGORIES.items())
+    assistance_html=''.join(f'''<option value="{key}" {'selected' if values['assistance_for']==key else ''}>{label}</option>''' for key,label in (('self','Myself'),('self_children','Myself and my children'),('family','My family'),('other','Another person')))
+    shelter_html=''.join(f'''<option value="{key}" {'selected' if values['shelter_type']==key else ''}>{label}</option>''' for key,label in (('', 'Select one'),('men',"Men's shelter"),('women',"Women's shelter"),('family','Family shelter'),('parents_children','Shelter for parents with children'),('youth','Youth shelter'),('any','Any appropriate shelter'),('unsure',"I'm not sure")))
+    category_html+=f'''</div><div class="topspace"><label><b>Who are you looking for assistance for?</b><select class="input" name="assistance_for">{assistance_html}</select></label><div data-shelter-question {'hidden' if 'shelter' not in categories else ''}><label><b>What type of shelter are you looking for?</b><select class="input" name="shelter_type">{shelter_html}</select></label></div></div><div><script>(()=>{{const shelter=document.querySelector('input[name="category"][value="shelter"]'),question=document.querySelector('[data-shelter-question]');if(!shelter||!question)return;const sync=()=>question.hidden=!shelter.checked;shelter.addEventListener('change',sync);sync()}})();</script>'''
     local_html=f'''<section class="topspace"><h2>Local Resources Found</h2>{f'<p class="muted">{html.escape(search_note)}</p>' if search_note else ''}{f'<div class="grid">{_emergency_resource_cards(local_results)}</div>' if local_results else '<div class="empty"><h3>No direct local provider could be verified in this search.</h3><p>Try a nearby city, county name, ZIP code, or a more specific description. The referral resources below can also help locate currently operating programs.</p></div>'}<p class="muted small">Actual providers are ranked by city, ZIP and county relevance. Details and availability can change, so contact each provider directly before traveling.</p></section>''' if request.method=='POST' and values['state'] else ''
     directory_html=f'''<section class="topspace"><h2>Additional Referral and Government Resources</h2><p class="muted">These are backup options after the local-provider search—not substitutes for it.</p><div class="grid">{_emergency_resource_cards(directory_results)}</div></section>''' if directory_results else ''
     result_html=local_html+directory_html
