@@ -126,7 +126,7 @@ PG_ID_TABLES = {
     'planetary_coordination_snapshots','daily_attention_reports','coordination_reports',
     'report_embeddings','member_pair_coordination','member_pair_planetary_scores'
     ,'financial_forecasts','financial_entries','financial_imports','financial_questions','corporate_record_documents','business_strategy_versions','business_launch_tasks',
-    'financial_connections','business_protection_records','business_legal_checklist'
+    'financial_connections','business_protection_records','business_legal_checklist','member_reports'
 }
 
 def _pg_qmarks(sql):
@@ -1100,7 +1100,8 @@ def _ensure_runtime_compat_schema():
                 ('birth_time_unknown','INTEGER NOT NULL DEFAULT 0'),('is_admin','INTEGER NOT NULL DEFAULT 0'),
                 ('conscious_paid','INTEGER NOT NULL DEFAULT 0'),('business_dev_paid','INTEGER NOT NULL DEFAULT 0'),
                 ('email_verified','INTEGER NOT NULL DEFAULT 0'),('email_verified_at','TEXT'),('verification_sent_at','TEXT')
-                ,('age','INTEGER'),('dating_age_min','INTEGER'),('dating_age_max','INTEGER')
+                ,('age','INTEGER'),('dating_age_min','INTEGER'),('dating_age_max','INTEGER'),
+                ('personal_profile_disabled','INTEGER NOT NULL DEFAULT 0'),('profile_disabled_at','TEXT'),('account_deleted_at','TEXT')
             ],
             'connection_profiles': [
                 ('coordination_types',"TEXT DEFAULT ''"),('meet_preferences',"TEXT DEFAULT ''"),
@@ -1169,6 +1170,18 @@ def _ensure_runtime_compat_schema():
             # members that already existed before verification was introduced.
             conn.execute("UPDATE users SET email_verified=1, email_verified_at=COALESCE(email_verified_at,created_at)")
         try:
+            conn.execute('''CREATE TABLE IF NOT EXISTS member_blocks (
+                blocker_id INTEGER NOT NULL, blocked_id INTEGER NOT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(blocker_id,blocked_id),
+                FOREIGN KEY(blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(blocked_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS member_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id INTEGER NOT NULL, reported_id INTEGER NOT NULL,
+                reason TEXT NOT NULL, details TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'New', created_at TEXT NOT NULL,
+                FOREIGN KEY(reporter_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(reported_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS account_drafts (
                 user_id INTEGER NOT NULL,
                 draft_key TEXT NOT NULL,
@@ -2038,6 +2051,19 @@ def _delete_account_draft(user_id, draft_key):
     finally:
         conn.close()
 
+def _clear_page_drafts(user_id, path):
+    """Clear only autosaved composers for a successfully submitted page."""
+    conn=db()
+    try:
+        rows=conn.execute("SELECT draft_key,payload FROM account_drafts WHERE user_id=? AND draft_key LIKE 'page:%'",(user_id,)).fetchall()
+        for row in rows:
+            payload=_safe_json(row['payload'],{})
+            if payload.get('path')==path:
+                conn.execute('DELETE FROM account_drafts WHERE user_id=? AND draft_key=?',(user_id,row['draft_key']))
+        conn.commit()
+    finally:
+        conn.close()
+
 def _autosave_script(draft_key):
     endpoint=url_for('account_autosave',draft_key=draft_key)
     return f'''<p class="muted small" id="autosave-status">Saved</p><script>(function(){{
@@ -2197,11 +2223,34 @@ def conscious_coordination_ready(user, cp=None):
         conn=db()
         cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(getv(user,'id',0),)).fetchone()
         conn.close()
+    if getv(user,'personal_profile_disabled',0) or getv(user,'account_deleted_at',''):
+        return False
+    try:
+        born=datetime.strptime(str(getv(user,'dob',''))[:10],'%Y-%m-%d').date()
+        today=datetime.utcnow().date()
+        adult=(today.year-born.year-((today.month,today.day)<(born.month,born.day)))>=18
+    except Exception:
+        adult=False
     birth_time_ack=bool(getv(user,'birth_time','') or getv(user,'birth_time_unknown',0))
     birth_ready=bool(getv(user,'dob','') and getv(user,'birth_city','') and getv(user,'birth_country','') and birth_time_ack)
     opted_in=bool(getv(cp,'opted_in',0))
     completed=bool(getv(cp,'profile_completed',0))
-    return bool(cp and completed and opted_in and birth_ready)
+    return bool(cp and completed and opted_in and birth_ready and adult)
+
+def _member_blocked(user_a, user_b):
+    if not user_a or not user_b or int(user_a)==int(user_b):
+        return False
+    conn=db()
+    try:
+        return bool(conn.execute('SELECT 1 FROM member_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)',(user_a,user_b,user_b,user_a)).fetchone())
+    finally:
+        conn.close()
+
+def _personal_profile_available(user):
+    if not user:
+        return False
+    keys=set(user.keys())
+    return not bool(('personal_profile_disabled' in keys and user['personal_profile_disabled']) or ('account_deleted_at' in keys and user['account_deleted_at']))
 
 FULL_ACCESS_TESTING = os.environ.get('FULL_ACCESS_TESTING','false').lower() in {'1','true','yes'}
 
@@ -6226,6 +6275,8 @@ def join():
         conn.close()
 
     if request.method=='POST':
+        participation=request.form.get('participation','business')
+        wants_coordination=participation in {'coordination','both'}
         name=request.form.get('name','').strip()
         email=request.form.get('email','').strip().lower()
         password=request.form.get('password','')
@@ -6238,9 +6289,11 @@ def join():
         exact=1 if request.form.get('exact_time') and birth_time else 0
         adult=1 if request.form.get('adult') else 0
 
-        if not name or not email or len(password)<8 or not dob or not birth_city or not birth_country or not adult:
-            flash('Name, email, birth date, birth city, country, 18+ confirmation, and a password of at least 8 characters are required.','error')
-        elif not birth_time and not time_unknown:
+        if not name or not email or len(password)<8:
+            flash('Name, email, and a password of at least 8 characters are required.','error')
+        elif wants_coordination and (not dob or not birth_city or not birth_country or not adult):
+            flash('Conscious Coordination requires birth date, birth city, country, and confirmation that you are at least 18.','error')
+        elif wants_coordination and not birth_time and not time_unknown:
             flash('Enter your birth time, or choose “I do not know my birth time.”','error')
         else:
             conn=db()
@@ -6262,7 +6315,7 @@ def join():
                     flash('Your account is ready. We sent your email verification. Your private setup can save while you verify.','success')
                 else:
                     flash('Your account and private setup are saved, but the verification email could not be delivered. Please use Resend Code after email delivery is configured.','error')
-                return redirect(url_for('edit_profile'))
+                return redirect(url_for('edit_profile') if wants_coordination else url_for('business_dashboard'))
             except DB_INTEGRITY_ERRORS:
                 flash('An account with that email already exists. Use Login or Forgot Password.','error')
             finally:
@@ -6274,25 +6327,26 @@ def join():
         <p>You are joining through <b>{html.escape(referrer['name'])}</b>’s personal Seasons Within referral link.</p>
         <p class="muted small">This records that member as your direct referrer. Joining does not require you to purchase an upgrade.</p></article>'''
 
-    return page('Join Free',f'''<div class="hero"><span class="badge">JOIN FREE</span><h1>Create Your Member Profile</h1>
-    <p class="muted">Conscious Coordination begins with your member information and birth information. You will complete your connection preferences next.</p></div>
+    return page('Join Free',f'''<div class="hero"><span class="badge">JOIN FREE</span><h1>Create Your Account</h1>
+    <p class="muted">Choose business-only participation without a personal Conscious Coordination profile, or opt into Conscious Coordination if you are 18 or older.</p></div>
     {referral_note}
     <form class="card" method="post">
     <input type="hidden" name="referral_code" value="{html.escape(referral_code,quote=True)}">
     <label><b>Name</b></label><input class="input" name="name" required>
     <label><b>Email</b></label><input class="input" type="email" name="email" required>
     <label><b>Password</b></label><input class="input" type="password" name="password" minlength="8" required>
-    <h2>Birth Information</h2><p class="muted">This is a core part of Conscious Coordination and is entered once here.</p>
-    <label><b>Birth Date</b></label><input class="input" type="date" name="dob" required>
+    <label><b>How will you participate?</b></label><select class="input" name="participation" id="participation"><option value="business">Business only / Hosted Business App</option><option value="coordination">Conscious Coordination</option><option value="both">Business and Conscious Coordination</option></select>
+    <div id="coordination-join-fields"><h2>Conscious Coordination Information</h2><p class="muted">Only required if you choose Conscious Coordination. You may add it later.</p>
+    <label><b>Birth Date</b></label><input class="input" type="date" name="dob">
     <label><b>Birth Time</b></label><input class="input" type="time" name="birth_time">
     <div class="fact"><label><input type="checkbox" name="exact_time"> Exact birth time is known</label><br>
     <label><input type="checkbox" name="birth_time_unknown"> I do not know my birth time</label></div>
-    <label><b>Birth City</b></label><input class="input" name="birth_city" required>
+    <label><b>Birth City</b></label><input class="input" name="birth_city">
     <label><b>State / Province</b></label><input class="input" name="birth_region">
-    <label><b>Country</b></label><input class="input" name="birth_country" required>
-    <label><input type="checkbox" name="adult" required> I confirm I am 18 or older.</label>
-    <div class="actions"><button class="btn">Continue to My Profile</button><a class="out" href="{url_for('login')}">I Already Have an Account</a></div>
-    </form>''')
+    <label><b>Country</b></label><input class="input" name="birth_country">
+    <label><input type="checkbox" name="adult"> I confirm I am 18 or older.</label></div>
+    <div class="actions"><button class="btn">Create My Account</button><a class="out" href="{url_for('login')}">I Already Have an Account</a></div>
+    </form><script>(()=>{{const choice=document.querySelector('#participation'),fields=document.querySelector('#coordination-join-fields');function sync(){{fields.hidden=choice.value==='business'}}choice.addEventListener('change',sync);sync()}})();</script>''')
 
 @app.route('/login', methods=['GET','POST'])
 def login():
@@ -6301,10 +6355,13 @@ def login():
         password=request.form.get('password','')
         remember=bool(request.form.get('remember'))
         conn=db(); u=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone(); conn.close()
-        if u and check_password_hash(u['password_hash'],password):
+        if u and not u['account_deleted_at'] and check_password_hash(u['password_hash'],password):
             session.clear(); session['user_id']=u['id']; session.permanent=remember
             flash('Welcome back. Your existing account and saved information are loaded.','success')
             destination=_safe_next_url(request.args.get('next'))
+            if u['personal_profile_disabled']:
+                destination=url_for('settings')
+                flash('Your personal profile is disabled. Reactivate it in Settings when you are ready.','info')
             if not u['email_verified']:
                 return redirect(url_for('verify_email',next=destination))
             response=redirect(destination)
@@ -6518,13 +6575,14 @@ def community():
     if request.method=='POST':
         title=request.form.get('title','').strip() or 'Community Reflection'; category=journal_category_for_public(request.form.get('category','Reflection').strip()); body=request.form.get('body','').strip(); media_name,media_type=save_community_media(request.files.get('media'),u['id'])
         if body:
-            conn=db(); conn.execute('INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,category,body,media_name,media_type,now())); conn.commit(); conn.close(); flash('Posted to Community.','success'); return redirect(url_for('community'))
+            conn=db(); conn.execute('INSERT INTO community_posts(user_id,title,category,body,media_name,media_type,created_at) VALUES(?,?,?,?,?,?,?)',(u['id'],title,category,body,media_name,media_type,now())); conn.commit(); conn.close(); _clear_page_drafts(u['id'],request.path); flash('Posted to Community.','success'); return redirect(url_for('community'))
     conn=db()
     galaxy_user=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
     galaxy_business=conn.execute("SELECT b.* FROM businesses b JOIN users owner ON owner.id=b.owner_id WHERE b.active=1 AND lower(owner.name)=lower('Galaxy Eve') ORDER BY b.id LIMIT 1").fetchone()
     posts=conn.execute('''SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id
-                          WHERE lower(u.name)<>lower('Galaxy Eve')
-                          ORDER BY p.id DESC LIMIT 50''').fetchall()
+                          WHERE lower(u.name)<>lower('Galaxy Eve') AND coalesce(u.personal_profile_disabled,0)=0 AND coalesce(u.account_deleted_at,'')=''
+                          AND NOT EXISTS (SELECT 1 FROM member_blocks mb WHERE (mb.blocker_id=? AND mb.blocked_id=u.id) OR (mb.blocker_id=u.id AND mb.blocked_id=?))
+                          ORDER BY p.id DESC LIMIT 50''',(u['id'],u['id'])).fetchall()
     conn.close()
 
     galaxy_feature=''
@@ -6707,6 +6765,14 @@ def edit_profile():
         if not name or not dob or not birth_city or not birth_country:
             flash('Name, birth date, birth city and country are required.','error')
             return redirect(url_for('edit_profile'))
+        try:
+            born=datetime.strptime(dob[:10],'%Y-%m-%d').date(); today=datetime.utcnow().date()
+            if today.year-born.year-((today.month,today.day)<(born.month,born.day)) < 18:
+                flash('You must be at least 18 years old to create a Conscious Coordination profile.','error')
+                return redirect(url_for('edit_profile'))
+        except ValueError:
+            flash('Enter a valid birth date for Conscious Coordination.','error')
+            return redirect(url_for('edit_profile'))
         if not birth_time and not time_unknown:
             flash('Enter your birth time, or choose “I do not know my birth time.”','error')
             return redirect(url_for('edit_profile'))
@@ -6842,7 +6908,7 @@ def member_profile(user_id):
     if not conscious_coordination_ready(u,me_cp):
         conn.close(); flash('Join the Community by completing your profile.','info'); return redirect(url_for('connections'))
     m=conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone(); business=conn.execute('SELECT * FROM businesses WHERE owner_id=? AND active=1 ORDER BY updated_at DESC,id DESC LIMIT 1',(user_id,)).fetchone(); conn.close()
-    if not m: abort(404)
+    if not m or not _personal_profile_available(m) or _member_blocked(u['id'],user_id): abort(404)
     if m['id']==u['id']: return redirect(url_for('profile'))
     public_html=public_journal_cards(m['id'],u['id'])
     business_html=''
@@ -6853,7 +6919,8 @@ def member_profile(user_id):
     journal_identity=f'''<div class="member-journal-identity">{portrait}<div class="portrait member-journal-logo journal-logo-frame"><img class="journal-logo-artwork" src="{url_for('static',filename='seasons-within-logo.png')}" alt="The Seasons Within" style="width:100%;height:100%;border-radius:50%"></div></div>'''
     age_text=f' • Age {m["age"]}' if 'age' in m.keys() and m['age'] else ''
     business_profile_action=(f'''<a class="out" href="{url_for('business_app',business_id=business['id'])}">View Business App</a>''' if business else '')
-    content=f'''<style>.member-journal-identity{{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}}.member-journal-identity>img,.member-journal-identity>.portrait{{width:132px!important;height:132px!important;flex:0 0 132px}}.journal-logo-frame{{overflow:hidden}}.journal-logo-artwork{{display:block;transform:scale(1.42);transform-origin:center;object-fit:contain}}@media(max-width:520px){{.member-journal-identity{{gap:10px}}.member-journal-identity>img,.member-journal-identity>.portrait{{width:108px!important;height:108px!important;flex-basis:108px}}}}</style><article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('compatibility',user_id=m['id'])}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div></div>{journal_identity}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
+    safety=f'''<div class="actions"><form method="post" action="{url_for('block_member',user_id=m['id'])}" data-no-autosave="1"><button class="out danger">Block Member</button></form><a class="out" href="{url_for('report_member',user_id=m['id'])}">Report Member</a></div>'''
+    content=f'''<style>.member-journal-identity{{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}}.member-journal-identity>img,.member-journal-identity>.portrait{{width:132px!important;height:132px!important;flex:0 0 132px}}.journal-logo-frame{{overflow:hidden}}.journal-logo-artwork{{display:block;transform:scale(1.42);transform-origin:center;object-fit:contain}}@media(max-width:520px){{.member-journal-identity{{gap:10px}}.member-journal-identity>img,.member-journal-identity>.portrait{{width:108px!important;height:108px!important;flex-basis:108px}}}}</style><article class="card"><div class="profilehero"><div><span class="badge">{'★ FULL MEMBER / CONSCIOUS COORDINATION' if (m['conscious_paid'] or m['is_admin']) else 'COMMUNITY MEMBER'}</span><h1>{html.escape(m['name'])}</h1><p class="muted">{html.escape(m['city'] or '')} • {html.escape(m['headline'] or '')}{age_text}</p><p>{html.escape(m['about'] or '')}</p><div class="actions"><a class="btn" href="{url_for('message_member',recipient_id=m['id'],origin='Profile')}">Private Journal Entry</a><a class="out" href="{url_for('connection_profile',user_id=m['id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('compatibility',user_id=m['id'])}">View Our Conscious Coordination</a><a class="out" href="{url_for('member_gallery',user_id=m['id'])}">Picture Gallery</a>{business_profile_action}</div>{safety}</div>{journal_identity}</div></article>{business_html}<div class="topspace"><span class="badge">PUBLIC JOURNAL</span><h2>{html.escape(m['name'])}'s Community Posts</h2><p class="muted">Only writing this member chose to publish to Community appears here.</p></div>{public_html}'''
     return page(f'{m["name"]} — Public Journal',content,'profile')
 
 def _remove_member_media(conn, row):
@@ -7054,6 +7121,7 @@ def member_media_delete(media_id):
 def send_virtual_gift(user_id):
     me=current_user()
     if me['id']==user_id: flash('Choose a gift when viewing another member.','info'); return redirect(url_for('member_gallery',user_id=user_id))
+    if _member_blocked(me['id'],user_id): flash('This member interaction is unavailable.','info'); return redirect(url_for('connections'))
     code=request.form.get('gift_code',''); gift_message=request.form.get('gift_message','').strip()[:500]; conn=db(); recipient=conn.execute('SELECT u.*,cp.opted_in FROM users u JOIN connection_profiles cp ON cp.user_id=u.id WHERE u.id=?',(user_id,)).fetchone(); gift=conn.execute('SELECT * FROM virtual_gift_types WHERE code=? AND active=1',(code,)).fetchone()
     if not recipient or not recipient['opted_in'] or not gift: conn.close(); abort(404)
     conn.execute('INSERT INTO member_virtual_gifts(sender_id,recipient_id,gift_type_id,gift_message,created_at) VALUES(?,?,?,?,?)',(me['id'],user_id,gift['id'],gift_message,now())); conn.commit(); conn.close()
@@ -7156,6 +7224,7 @@ def journal():
                 conn.execute('INSERT INTO journal_entries(user_id,title,body,category,shared_copy,source_post_id,media_name,media_type,created_at,updated_at) VALUES(?,?,?,?,0,NULL,?,?,?,?)',
                              (u['id'],title,body,category,media_name,media_type,now(),now()))
             conn.commit(); conn.close()
+            _clear_page_drafts(u['id'],request.path)
             flash('Posted to Community.' if shared else 'Journal entry saved privately.','success')
             return redirect(url_for('community') if shared else url_for('journal',category=category))
     conn=db()
@@ -7228,6 +7297,7 @@ def journal_entry_delete(entry_id):
 @login_required
 def experience_invitation(user_id):
     u=current_user()
+    if _member_blocked(u['id'],user_id): abort(404)
     if not has_full_access(u):
         flash('Upgrade your membership to use private Conscious Coordination interactions.','info')
         return redirect(url_for('membership'))
@@ -7403,11 +7473,48 @@ def inbox_delete(message_id):
     conn.commit(); conn.close(); flash('Inbox item removed.','success')
     return redirect(url_for('inbox'))
 
+@app.route('/member/<int:user_id>/block',methods=['POST'])
+@login_required
+def block_member(user_id):
+    me=current_user()
+    if user_id==me['id']: abort(400)
+    conn=db(); target=conn.execute('SELECT id FROM users WHERE id=?',(user_id,)).fetchone()
+    if not target: conn.close(); abort(404)
+    conn.execute('INSERT INTO member_blocks(blocker_id,blocked_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING',(me['id'],user_id,now()))
+    conn.commit(); conn.close(); flash('Member blocked. They can no longer interact with your personal profile.','success')
+    return redirect(url_for('connections'))
+
+@app.route('/member/<int:user_id>/unblock',methods=['POST'])
+@login_required
+def unblock_member(user_id):
+    me=current_user(); conn=db(); conn.execute('DELETE FROM member_blocks WHERE blocker_id=? AND blocked_id=?',(me['id'],user_id)); conn.commit(); conn.close()
+    flash('Member unblocked.','success'); return redirect(url_for('settings'))
+
+@app.route('/member/<int:user_id>/report',methods=['GET','POST'])
+@login_required
+def report_member(user_id):
+    me=current_user(); conn=db(); target=conn.execute('SELECT id,name FROM users WHERE id=?',(user_id,)).fetchone(); conn.close()
+    if not target or user_id==me['id']: abort(404)
+    if request.method=='POST':
+        reason=request.form.get('reason','').strip()[:120]; details=request.form.get('details','').strip()[:5000]
+        if not reason or not details:
+            flash('Choose a reason and provide report details.','error')
+        else:
+            conn=db(); cur=conn.execute('INSERT INTO member_reports(reporter_id,reported_id,reason,details,created_at) VALUES(?,?,?,?,?)',(me['id'],user_id,reason,details,now())); report_id=cur.lastrowid; conn.commit(); conn.close()
+            body=f'''Private member safety report #{report_id}\n\nReporter account ID: {me['id']}\nReported member: {target['name']} (ID {user_id})\nReason: {reason}\n\nDetails:\n{details}\n\nThis report is private and was not shown to the reported member.'''
+            delivered=_send_account_email('e.reed81@gmail.com',f'Member safety report #{report_id}',body)
+            flash('Your private report was submitted to moderation.' if delivered else 'Your private report was saved for moderation; email delivery is currently unavailable.','success')
+            return redirect(url_for('connections'))
+    options=''.join(f'<option>{html.escape(x)}</option>' for x in ('Harassment or bullying','Threats or safety concern','Spam or scam','Inappropriate content','Impersonation','Other'))
+    return page('Report Member',f'''<div class="hero"><span class="badge">PRIVATE SAFETY REPORT</span><h1>Report {html.escape(target['name'])}</h1><p class="muted">This report is private and will not be shown to the reported member.</p></div><form class="card" method="post"><label><b>Reason</b></label><select class="input" name="reason" required><option value="">Choose a reason</option>{options}</select><label><b>Details</b></label><textarea class="input" name="details" maxlength="5000" required></textarea><div class="actions"><button class="btn">Submit Private Report</button><a class="out" href="{url_for('member_profile',user_id=user_id)}">Cancel</a></div></form>''','more')
+
 @app.route('/message/<int:recipient_id>', methods=['GET','POST'])
 @login_required
 def message_member(recipient_id):
     u=current_user(); conn=db(); r=conn.execute('SELECT * FROM users WHERE id=?',(recipient_id,)).fetchone(); conn.close()
-    if not r: abort(404)
+    if not r or not _personal_profile_available(r): abort(404)
+    if _member_blocked(u['id'],recipient_id):
+        flash('This member interaction is unavailable.','info'); return redirect(url_for('connections'))
     origin=request.args.get('origin','Profile'); post_id=request.args.get('post_id',type=int); gift_id=request.args.get('gift_id',type=int); subject=request.args.get('subject','')
     post=None; gift_context=None; category='Journal Entry'
     if post_id:
@@ -7432,6 +7539,7 @@ def message_member(recipient_id):
             conn=db(); cur=conn.execute('''INSERT INTO messages(sender_id,recipient_id,origin,subject,body,category,source_post_id,gift_id,preferred_dates,season,created_at,read_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)''',(u['id'],recipient_id,origin,subject,body,category,source_post_id,gift_id,preferred_dates,season,now())); message_id=cur.lastrowid; conn.commit(); conn.close()
             link=url_for('inbox_read',message_id=message_id)
             notify(recipient_id,'New Private Message',f'{u["name"]} sent you “{subject}”. Open your Journal Inbox to read it.',link)
+            _clear_page_drafts(u['id'],request.path)
             flash(f'Message sent privately to {r["name"]}\'s Journal Inbox.','success')
             return redirect(url_for('inbox',message_id=message_id)+f'#message-{message_id}')
         flash('Please give your message a title and write your message.','info')
@@ -7692,7 +7800,7 @@ def connections():
     try:
         conn=db()
         host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid,u.age,u.dating_age_min,u.dating_age_max FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
+        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid,u.age,u.dating_age_min,u.dating_age_max FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.personal_profile_disabled,0)=0 AND coalesce(u.account_deleted_at,'')='' AND NOT EXISTS (SELECT 1 FROM member_blocks mb WHERE (mb.blocker_id=? AND mb.blocked_id=u.id) OR (mb.blocker_id=u.id AND mb.blocked_id=?)) AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],u['id'],u['id'])).fetchall()
         posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
         conn.close()
     except Exception:
@@ -8334,7 +8442,7 @@ def connection_profile(user_id):
     liked=conn.execute('SELECT 1 FROM coordination_likes WHERE from_user_id=? AND to_user_id=?',(me['id'],user_id)).fetchone()
     main_photo=conn.execute("SELECT * FROM coordination_media WHERE user_id=? AND media_role='profile' AND media_type='image' ORDER BY id DESC LIMIT 1",(user_id,)).fetchone()
     conn.close()
-    if not user: abort(404)
+    if not user or not _personal_profile_available(user) or _member_blocked(me['id'],user_id): abort(404)
     me_ready=conscious_coordination_ready(me,me_cp); target_ready=conscious_coordination_ready(user,cp_row)
     if user_id!=me['id'] and not me_ready:
         flash('Complete your profile before entering member Conscious Coordination.','info'); return redirect(url_for('edit_profile'))
@@ -8432,6 +8540,7 @@ def member_planetary_coordination(user_id):
 @login_required
 def coordination_like(user_id):
     me=current_user()
+    if _member_blocked(me['id'],user_id): abort(404)
     conn=db(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(me['id'],)).fetchone(); conn.close()
     if not conscious_coordination_ready(me,me_cp):
         flash('Join the Community before connecting with members.','info')
@@ -8606,6 +8715,7 @@ def connection_ideas(user_id):
 
 def video(user_id):
     u=current_user(); conn=db()
+    if _member_blocked(u['id'],user_id): conn.close(); abort(404)
     if not has_full_access(u):
         conn.close()
         flash('Upgrade your membership to access private member video.','info')
@@ -9401,6 +9511,7 @@ def planet_interpretation_audio(user_id,planet):
 @login_required
 def video_request(user_id):
     u=current_user()
+    if _member_blocked(u['id'],user_id): abort(404)
     conn=db(); me_cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
     if not conscious_coordination_ready(u,me_cp):
         flash('Join the Community before using private member video.','info')
@@ -10221,10 +10332,6 @@ def build_simple_pdf(title, text):
 # -----------------------------------------------------------------------------
 @app.route('/business')
 def business_network():
-    if session.get('user_id'):
-        u=current_user(); conn=db(); cp=conn.execute('SELECT * FROM connection_profiles WHERE user_id=?',(u['id'],)).fetchone(); conn.close()
-        if not conscious_coordination_ready(u,cp):
-            return page('Business Tools',f'''<div class="hero"><span class="badge gold">BUSINESS TOOLS</span><h1>Your Business Tools Are Available</h1><p class="muted">You can create and manage your Hosted Business App before joining the member Community. Community business discovery opens after your profile is complete.</p><div class="actions"><a class="btn" href="{url_for('business_dashboard')}">My Business Dashboard</a><a class="out" href="{url_for('business_builder',step=1)}">Create My FREE Hosted Business App</a><a class="out" href="{url_for('edit_profile')}">Join the Community</a></div></div>''','business')
     q=request.args.get('q','').strip()
     conn=db(); rows=conn.execute("SELECT b.*,u.name owner_name FROM businesses b JOIN users u ON u.id=b.owner_id WHERE b.active=1 ORDER BY b.name").fetchall(); conn.close()
     if q:
@@ -13471,7 +13578,40 @@ def settings():
     if u and u['is_admin']:
         admin_storage=f'''<article class="card"><h3>Admin Storage Check</h3><p class="muted">Verify the permanent user ID and saved-record counts attached to this account.</p><a class="out" href="{url_for('account_storage_status')}">Profile Persistence Check</a></article>'''
     verified='Verified ✓' if u['email_verified'] else 'Verification required'
-    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">One account, one profile and one password for the entire Seasons Within experience.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b><br>{verified}</p><div class="actions"><a class="out" href="{url_for('account_security')}">Email & Trusted Devices</a><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>My Profile</h3><p class="muted">Identity, birth information, connection preferences and Conscious Coordination questions are edited together in one place.</p><a class="btn" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('profile')}">View My Journal</a></article>{admin_storage}<article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+    profile_state=('Temporarily disabled' if u['personal_profile_disabled'] else 'Active')
+    profile_action=(f'''<form method="post" action="{url_for('reactivate_personal_profile')}" data-no-autosave="1"><button class="btn">Reactivate Personal Profile</button></form>''' if u['personal_profile_disabled'] else f'''<form method="post" action="{url_for('disable_personal_profile')}" data-no-autosave="1"><button class="out">Temporarily Disable / Come Back Later</button></form>''')
+    return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">Manage your personal account without changing your independently hosted business app.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b><br>{verified}</p><div class="actions"><a class="out" href="{url_for('account_security')}">Email & Trusted Devices</a><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>Personal Profile</h3><p class="muted">Status: <b>{profile_state}</b>. Disabling hides your personal member profile and interactions. Your Hosted Business App stays published and manageable.</p>{profile_action}<a class="out" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('profile')}">View My Journal</a></article>{admin_storage}<article class="card"><h3>Permanently Delete Personal Account</h3><p class="muted">This permanently removes access to your personal account and cannot be undone. Your independently hosted business app is not automatically deleted.</p><a class="out danger" href="{url_for('delete_account')}">Permanently Delete Account</a></article><article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
+
+@app.route('/settings/profile/disable',methods=['POST'])
+@login_required
+def disable_personal_profile():
+    u=current_user(); conn=db()
+    conn.execute('UPDATE users SET personal_profile_disabled=1,profile_disabled_at=? WHERE id=?',(now(),u['id']))
+    conn.commit(); conn.close(); flash('Your personal profile is disabled. Your Hosted Business App remains available.','success')
+    return redirect(url_for('settings'))
+
+@app.route('/settings/profile/reactivate',methods=['POST'])
+@login_required
+def reactivate_personal_profile():
+    u=current_user(); conn=db()
+    conn.execute('UPDATE users SET personal_profile_disabled=0,profile_disabled_at=NULL WHERE id=?',(u['id'],))
+    conn.commit(); conn.close(); flash('Your personal profile is active again.','success')
+    return redirect(url_for('settings'))
+
+@app.route('/settings/account/delete',methods=['GET','POST'])
+@login_required
+def delete_account():
+    u=current_user()
+    if request.method=='POST':
+        if request.form.get('confirmation','').strip().upper()!='DELETE':
+            flash('Type DELETE to confirm permanent deletion.','error')
+        else:
+            conn=db(); deleted_email=f'deleted-{u["id"]}-{secrets.token_hex(8)}@deleted.invalid'
+            conn.execute("UPDATE users SET name='Deleted Member',email=?,password_hash=?,dob='',adult_confirmed=0,city='',headline='',about='',birth_time='',birth_city='',birth_region='',birth_country='',birth_timezone='',birth_latitude=NULL,birth_longitude=NULL,age=NULL,dating_age_min=NULL,dating_age_max=NULL,personal_profile_disabled=1,profile_disabled_at=?,account_deleted_at=? WHERE id=?",(deleted_email,generate_password_hash(secrets.token_urlsafe(48)),now(),now(),u['id']))
+            conn.execute('DELETE FROM connection_profiles WHERE user_id=?',(u['id'],)); conn.execute('DELETE FROM account_drafts WHERE user_id=?',(u['id'],))
+            conn.commit(); conn.close(); session.clear(); flash('Your personal account was permanently deleted. Any independently hosted business app was preserved.','success')
+            return redirect(url_for('home'))
+    return page('Delete Account',f'''<div class="hero"><span class="badge">PERMANENT ACTION</span><h1>Delete Personal Account</h1><p>This cannot be undone. Your personal identity, profile access and Conscious Coordination profile will be removed. Your independently hosted business app will not be automatically deleted.</p></div><form class="card" method="post" data-no-autosave="1"><label><b>Type DELETE to confirm</b></label><input class="input" name="confirmation" autocomplete="off" required><div class="actions"><button class="out danger">Permanently Delete Account</button><a class="out" href="{url_for('settings')}">Cancel</a></div></form>''','more')
 
 @app.route('/payment/<product>')
 def payment_info(product):
