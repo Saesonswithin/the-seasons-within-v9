@@ -1608,6 +1608,13 @@ def current_user():
         return None
     return row
 
+def _row_value(row, key, default=None):
+    """Read optional compatibility columns without breaking older saved databases."""
+    try:
+        return row[key] if row is not None and key in row.keys() else default
+    except Exception:
+        return default
+
 
 
 def login_required(fn):
@@ -2242,7 +2249,11 @@ def _member_blocked(user_a, user_b):
         return False
     conn=db()
     try:
-        return bool(conn.execute('SELECT 1 FROM member_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)',(user_a,user_b,user_b,user_a)).fetchone())
+        try:
+            return bool(conn.execute('SELECT 1 FROM member_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)',(user_a,user_b,user_b,user_a)).fetchone())
+        except Exception:
+            app.logger.exception('Block compatibility table is not yet available')
+            return False
     finally:
         conn.close()
 
@@ -6355,11 +6366,11 @@ def login():
         password=request.form.get('password','')
         remember=bool(request.form.get('remember'))
         conn=db(); u=conn.execute('SELECT * FROM users WHERE lower(email)=lower(?)',(email,)).fetchone(); conn.close()
-        if u and not u['account_deleted_at'] and check_password_hash(u['password_hash'],password):
+        if u and not _row_value(u,'account_deleted_at','') and check_password_hash(u['password_hash'],password):
             session.clear(); session['user_id']=u['id']; session.permanent=remember
             flash('Welcome back. Your existing account and saved information are loaded.','success')
             destination=_safe_next_url(request.args.get('next'))
-            if u['personal_profile_disabled']:
+            if _row_value(u,'personal_profile_disabled',0):
                 destination=url_for('settings')
                 flash('Your personal profile is disabled. Reactivate it in Settings when you are ready.','info')
             if not u['email_verified']:
@@ -6580,9 +6591,8 @@ def community():
     galaxy_user=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
     galaxy_business=conn.execute("SELECT b.* FROM businesses b JOIN users owner ON owner.id=b.owner_id WHERE b.active=1 AND lower(owner.name)=lower('Galaxy Eve') ORDER BY b.id LIMIT 1").fetchone()
     posts=conn.execute('''SELECT p.*,u.name FROM community_posts p JOIN users u ON u.id=p.user_id
-                          WHERE lower(u.name)<>lower('Galaxy Eve') AND coalesce(u.personal_profile_disabled,0)=0 AND coalesce(u.account_deleted_at,'')=''
-                          AND NOT EXISTS (SELECT 1 FROM member_blocks mb WHERE (mb.blocker_id=? AND mb.blocked_id=u.id) OR (mb.blocker_id=u.id AND mb.blocked_id=?))
-                          ORDER BY p.id DESC LIMIT 50''',(u['id'],u['id'])).fetchall()
+                          WHERE lower(u.name)<>lower('Galaxy Eve')
+                          ORDER BY p.id DESC LIMIT 50''').fetchall()
     conn.close()
 
     galaxy_feature=''
@@ -7800,7 +7810,7 @@ def connections():
     try:
         conn=db()
         host=conn.execute("SELECT * FROM users WHERE lower(name)=lower('Galaxy Eve') ORDER BY is_admin DESC,id LIMIT 1").fetchone()
-        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid,u.age,u.dating_age_min,u.dating_age_max FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.personal_profile_disabled,0)=0 AND coalesce(u.account_deleted_at,'')='' AND NOT EXISTS (SELECT 1 FROM member_blocks mb WHERE (mb.blocker_id=? AND mb.blocked_id=u.id) OR (mb.blocker_id=u.id AND mb.blocked_id=?)) AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],u['id'],u['id'])).fetchall()
+        members=conn.execute('''SELECT cp.*,u.name,u.city,u.birth_region,u.conscious_paid,u.age,u.dating_age_min,u.dating_age_max FROM connection_profiles cp JOIN users u ON u.id=cp.user_id WHERE cp.opted_in=1 AND cp.user_id<>? AND coalesce(u.dob,'')<>'' AND coalesce(u.birth_city,'')<>'' AND coalesce(u.birth_country,'')<>'' AND (coalesce(u.birth_time,'')<>'' OR coalesce(u.birth_time_unknown,0)=1) ORDER BY u.name''',(u['id'],)).fetchall()
         posts=conn.execute('''SELECT p.*,u.name author_name FROM coordination_posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 40''').fetchall()
         conn.close()
     except Exception:
@@ -13578,8 +13588,8 @@ def settings():
     if u and u['is_admin']:
         admin_storage=f'''<article class="card"><h3>Admin Storage Check</h3><p class="muted">Verify the permanent user ID and saved-record counts attached to this account.</p><a class="out" href="{url_for('account_storage_status')}">Profile Persistence Check</a></article>'''
     verified='Verified ✓' if u['email_verified'] else 'Verification required'
-    profile_state=('Temporarily disabled' if u['personal_profile_disabled'] else 'Active')
-    profile_action=(f'''<form method="post" action="{url_for('reactivate_personal_profile')}" data-no-autosave="1"><button class="btn">Reactivate Personal Profile</button></form>''' if u['personal_profile_disabled'] else f'''<form method="post" action="{url_for('disable_personal_profile')}" data-no-autosave="1"><button class="out">Temporarily Disable / Come Back Later</button></form>''')
+    profile_state=('Temporarily disabled' if _row_value(u,'personal_profile_disabled',0) else 'Active')
+    profile_action=(f'''<form method="post" action="{url_for('reactivate_personal_profile')}" data-no-autosave="1"><button class="btn">Reactivate Personal Profile</button></form>''' if _row_value(u,'personal_profile_disabled',0) else f'''<form method="post" action="{url_for('disable_personal_profile')}" data-no-autosave="1"><button class="out">Temporarily Disable / Come Back Later</button></form>''')
     return page('Settings',f'''<div class="hero"><span class="badge">ACCOUNT</span><h1>Settings</h1><p class="muted">Manage your personal account without changing your independently hosted business app.</p></div><div class="grid"><article class="card"><h3>Email & Password</h3><p class="muted"><b>{html.escape(u['email'])}</b><br>{verified}</p><div class="actions"><a class="out" href="{url_for('account_security')}">Email & Trusted Devices</a><a class="out" href="{url_for('change_password')}">Change Password</a><a class="out" href="{url_for('forgot_password')}">Send Password Reset Email</a></div></article><article class="card"><h3>Personal Profile</h3><p class="muted">Status: <b>{profile_state}</b>. Disabling hides your personal member profile and interactions. Your Hosted Business App stays published and manageable.</p>{profile_action}<a class="out" href="{url_for('edit_profile')}">Edit My Profile</a><a class="out" href="{url_for('profile')}">View My Journal</a></article>{admin_storage}<article class="card"><h3>Permanently Delete Personal Account</h3><p class="muted">This permanently removes access to your personal account and cannot be undone. Your independently hosted business app is not automatically deleted.</p><a class="out danger" href="{url_for('delete_account')}">Permanently Delete Account</a></article><article class="card"><h3>Log Out</h3><p class="muted">Logging out ends this browser session. It does not delete your account or saved information.</p><a class="out danger" href="{url_for('logout')}">Log Out</a></article></div>''','more')
 
 @app.route('/settings/profile/disable',methods=['POST'])
