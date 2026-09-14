@@ -7416,6 +7416,8 @@ def inbox():
     experience_invites=conn.execute('''SELECT i.*,s.name sender_name,b.name business_name FROM member_experience_invitations i
         JOIN users s ON s.id=i.sender_id LEFT JOIN businesses b ON b.id=i.business_id
         WHERE i.recipient_id=? ORDER BY i.id DESC''',(u['id'],)).fetchall()
+    hosted_businesses=conn.execute('''SELECT id,name FROM businesses
+        WHERE owner_id=? AND active=1 ORDER BY updated_at DESC,id DESC''',(u['id'],)).fetchall()
     sender_photos={}
     if sender_ids:
         placeholders=','.join('?' for _ in sender_ids)
@@ -7459,7 +7461,16 @@ def inbox():
             actions=f'<div class="actions">{plan_link}{calendar_link}{virtual_link}</div>'
         invite_parts.append(f'''<article class="card paid"><span class="badge heart">WILL YOU GO OUT WITH ME?</span><h2>{html.escape(x['sender_name'])} would like to go out with you.</h2><p><b>Will you go out with me?</b></p><p><b>Experience:</b> {html.escape(x['activity'])}</p><p><b>When:</b> {html.escape(x['proposed_date'])} at {html.escape(x['proposed_time'])}</p><p><b>Format:</b> {html.escape(x['experience_mode'])}</p>{business_note}{personal_note}<p><b>Status:</b> {html.escape(x['status'])}</p>{actions}</article>''')
     invite_cards=''.join(invite_parts)
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{request_notice}{invite_cards}{status}{filters}{cards_html}''','more')
+    host_link_cards=[]
+    if category in {'All','Business'}:
+        for business in hosted_businesses:
+            app_path=url_for('business_app',business_id=business['id'])
+            host_link=(APP_BASE_URL or request.url_root.rstrip('/'))+app_path
+            safe_link=html.escape(host_link,quote=True)
+            host_link_cards.append(f'''<article class="card paid"><span class="badge gold">YOUR BUSINESS HOST LINK</span><h2>{html.escape(business['name'])}</h2><p>Your hosted app is ready to share.</p><div class="actions"><a class="btn" href="{app_path}">Open My Business App</a></div><label><b>Business Host Link:</b></label><input class="input" type="text" value="{safe_link}" readonly data-business-host-link aria-label="Business Host Link for {html.escape(business['name'],quote=True)}"><div class="actions"><button class="out" type="button" data-copy-business-host-link>Copy Link</button><span class="muted small" data-copy-business-host-status aria-live="polite"></span></div></article>''')
+    host_links_html=''.join(host_link_cards)
+    copy_link_script='''<script>(()=>{document.querySelectorAll('[data-copy-business-host-link]').forEach(button=>{button.addEventListener('click',async()=>{const card=button.closest('article'),input=card&&card.querySelector('[data-business-host-link]'),status=card&&card.querySelector('[data-copy-business-host-status]');if(!input)return;let copied=false;try{await navigator.clipboard.writeText(input.value);copied=true}catch(error){input.focus();input.select();copied=document.execCommand('copy')}if(status)status.textContent=copied?'Link copied.':'Select and copy the link above.';});});})();</script>''' if host_link_cards else ''
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{host_links_html}{request_notice}{invite_cards}{status}{filters}{cards_html}{copy_link_script}''','more')
 
 @app.route('/inbox/read/<int:message_id>')
 @login_required
