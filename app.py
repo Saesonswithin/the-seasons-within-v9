@@ -8692,7 +8692,7 @@ def compatibility(user_id):
         preview_insights=''
     paid_note=('<article class="card paid"><span class="badge gold">FULL PAID COMPATIBILITY</span><h2>Your full reports are open</h2><p class="muted">Open any category above for the written report built from both profiles and planetary coordination.</p></article>'
                if full_access else '<article class="card locked"><h2>Full Written Compatibility</h2><p class="muted">Your percentages and Basic Compatibility Preview are free. Upgrade to open the complete written reports behind the scores.</p><a class="btn" href="'+url_for('membership')+'">Upgrade Membership</a></article>')
-    return page('Conscious Coordination Report',f'''<div class="hero"><span class="badge heart">CONSCIOUS COORDINATION COMPATIBILITY</span><h1>{html.escape(data['member'])} — {overall} Overall Coordination</h1><div class="chips">{tabs}</div></div>
+    return page('Conscious Coordination Report',f'''<div class="hero"><div class="actions"><a class="out" href="{url_for('member_profile',user_id=user_id)}">← Back to Member's Profile</a></div><span class="badge heart">CONSCIOUS COORDINATION COMPATIBILITY</span><h1>{html.escape(data['member'])} — {overall} Overall Coordination</h1><div class="chips">{tabs}</div></div>
     {wheels}{overall_summary}<div class="actions" style="justify-content:center"><span class="badge">VIEW OUR CONSCIOUS COORDINATION — {html.escape(kind.upper())}</span></div>
     <div class="grid">{metrics}</div>{preview_insights}{paid_note}''','more')
 
