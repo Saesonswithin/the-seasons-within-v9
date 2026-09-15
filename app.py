@@ -91,6 +91,7 @@ SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER or RETREAT_ADMIN_EMAIL).strip(
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'true').lower() not in {'0','false','no'}
 APP_BASE_URL = os.environ.get('APP_BASE_URL','').strip().rstrip('/')
 RETREAT_GOOGLE_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSeVnIgf2nKh6vCqK9jtLg9AXff1A2CoSdhdvNP85oGO8d9PNQ/viewform'
+RETREAT_BUILDER_COPY_EMAIL = 'e.reed81@gmil.com'
 try:
     RETREAT_GOOGLE_FORM_ENTRY_IDS = json.loads(os.environ.get('RETREAT_GOOGLE_FORM_ENTRY_IDS','{}'))
 except Exception:
@@ -577,6 +578,25 @@ def init_db():
         season TEXT DEFAULT '', preferred_dates TEXT DEFAULT '', guests TEXT DEFAULT '', budget TEXT DEFAULT '', wellness TEXT DEFAULT '', lodging TEXT DEFAULT '', businesses TEXT DEFAULT '', meaning TEXT DEFAULT '', status TEXT DEFAULT 'Draft / Request Submitted',
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS retreat_host_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        requester_user_id INTEGER,
+        requester_name TEXT DEFAULT '',
+        requester_email TEXT DEFAULT '',
+        retreat_type TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        guests TEXT DEFAULT '',
+        city TEXT DEFAULT '',
+        state TEXT DEFAULT 'Michigan',
+        status TEXT NOT NULL DEFAULT 'Requested',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
+        FOREIGN KEY(requester_user_id) REFERENCES users(id) ON DELETE SET NULL
     );
     ''')
     for table, column, ddl in [
@@ -7423,6 +7443,9 @@ def inbox():
         WHERE i.recipient_id=? ORDER BY i.id DESC''',(u['id'],)).fetchall()
     hosted_businesses=conn.execute('''SELECT id,name FROM businesses
         WHERE owner_id=? AND active=1 ORDER BY updated_at DESC,id DESC''',(u['id'],)).fetchall()
+    retreat_host_requests=conn.execute('''SELECT r.*,b.name business_name
+        FROM retreat_host_requests r JOIN businesses b ON b.id=r.business_id
+        WHERE b.owner_id=? ORDER BY r.id DESC''',(u['id'],)).fetchall()
     sender_photos={}
     if sender_ids:
         placeholders=','.join('?' for _ in sender_ids)
@@ -7474,8 +7497,11 @@ def inbox():
             safe_link=html.escape(host_link,quote=True)
             host_link_cards.append(f'''<article class="card paid"><span class="badge gold">YOUR BUSINESS HOST LINK</span><h2>{html.escape(business['name'])}</h2><p>Your hosted app is ready to share.</p><div class="actions"><a class="btn" href="{app_path}">Open My Business App</a></div><label><b>Business Host Link:</b></label><input class="input" type="text" value="{safe_link}" readonly data-business-host-link aria-label="Business Host Link for {html.escape(business['name'],quote=True)}"><div class="actions"><button class="out" type="button" data-copy-business-host-link>Copy Link</button><span class="muted small" data-copy-business-host-status aria-live="polite"></span></div></article>''')
     host_links_html=''.join(host_link_cards)
+    retreat_request_cards=''
+    if category in {'All','Business'}:
+        retreat_request_cards=''.join(f'''<article class="card paid"><span class="badge heart">RETREAT HOST REQUEST</span><h2>{html.escape(r['business_name'])}</h2><p><b>{html.escape(r['requester_name'] or 'Guest Retreat Builder')}</b> is requesting to include this Hosted Business App in a Retreat.</p><p><b>Retreat Type:</b> {html.escape(r['retreat_type'])}<br><b>Start Date:</b> {html.escape(r['start_date'])}<br><b>End Date:</b> {html.escape(r['end_date'])}<br><b>Time:</b> {html.escape(r['start_time'])} – {html.escape(r['end_time'])}<br><b>Number of Guests:</b> {html.escape(r['guests'] or 'Not provided')}<br><b>City:</b> {html.escape(r['city'] or 'Not provided')}<br><b>State:</b> {html.escape(r['state'] or 'Michigan')}</p>{f'<p><b>Requester Email:</b> {html.escape(r["requester_email"])}</p>' if r['requester_email'] else ''}<p class="muted small">Request status: {html.escape(r['status'])} • This is an invitation/request, not a confirmed booking.</p></article>''' for r in retreat_host_requests)
     copy_link_script='''<script>(()=>{document.querySelectorAll('[data-copy-business-host-link]').forEach(button=>{button.addEventListener('click',async()=>{const card=button.closest('article'),input=card&&card.querySelector('[data-business-host-link]'),status=card&&card.querySelector('[data-copy-business-host-status]');if(!input)return;let copied=false;try{await navigator.clipboard.writeText(input.value);copied=true}catch(error){input.focus();input.select();copied=document.execCommand('copy')}if(status)status.textContent=copied?'Link copied.':'Select and copy the link above.';});});})();</script>''' if host_link_cards else ''
-    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{host_links_html}{request_notice}{invite_cards}{status}{filters}{cards_html}{copy_link_script}''','more')
+    return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{host_links_html}{retreat_request_cards}{request_notice}{invite_cards}{status}{filters}{cards_html}{copy_link_script}''','more')
 
 @app.route('/inbox/read/<int:message_id>')
 @login_required
@@ -13488,42 +13514,53 @@ STRUCTURED RETREAT CONTEXT PACKET:\n'''+json.dumps(packet,default=str)
     return {'season':selected_season,'support_tags':support_tags,'report':report,'packet':packet}
 
 
-def _retreat_host_availability(business_id,requested_date,start_time,end_time):
-    if not requested_date or not start_time or not end_time or end_time<=start_time:
-        return 'missing','Choose a valid date, start time and end time first.'
+def _retreat_host_availability(business_id,start_date,end_date,start_time,end_time):
+    if not start_date or not end_date or not start_time or not end_time or end_time<=start_time:
+        return 'missing','Choose valid start/end dates and times first.'
+    try:
+        first=datetime.strptime(start_date,'%Y-%m-%d').date()
+        last=datetime.strptime(end_date,'%Y-%m-%d').date()
+    except Exception:
+        return 'missing','Choose valid start/end dates and times first.'
+    if last<first:
+        return 'missing','Retreat End Date must be on or after Retreat Start Date.'
     conn=db()
-    rows=conn.execute("""SELECT event_type,start_time,end_time,booking_status,source
-                         FROM business_calendar
-                         WHERE business_id=? AND event_date=? AND booking_status<>'Cancelled'
-                         ORDER BY start_time,end_time""",(business_id,requested_date)).fetchall()
     business=conn.execute('SELECT google_calendar_connected FROM businesses WHERE id=?',(business_id,)).fetchone()
+    day=first
+    while day<=last:
+        rows=conn.execute("""SELECT event_type,start_time,end_time,booking_status,source
+                             FROM business_calendar
+                             WHERE business_id=? AND event_date=? AND booking_status<>'Cancelled'
+                             ORDER BY start_time,end_time""",(business_id,day.isoformat())).fetchall()
+        overlapping=[row for row in rows if (row['start_time'] or '')<end_time and (row['end_time'] or '')>start_time]
+        availability=[row for row in rows if row['booking_status']=='Open'
+                      and (row['event_type']=='Availability' or row['source']=='Weekly Availability')
+                      and (row['start_time'] or '')<=start_time and (row['end_time'] or '')>=end_time]
+        conflicts=[row for row in overlapping if not (row['booking_status']=='Open'
+                   and (row['event_type']=='Availability' or row['source']=='Weekly Availability'))]
+        if conflicts:
+            conn.close()
+            return 'unavailable','Not Available'
+        if not availability:
+            conn.close()
+            if business and business['google_calendar_connected']:
+                return 'unconfirmed','Availability Not Confirmed — the host’s connected calendar has not supplied an open time.'
+            return 'unconfirmed','Availability Not Confirmed — this host has not published an open time for the full Retreat date range.'
+        day+=timedelta(days=1)
     conn.close()
-    overlapping=[row for row in rows if (row['start_time'] or '')<end_time and (row['end_time'] or '')>start_time]
-    availability=[row for row in rows if row['booking_status']=='Open'
-                  and (row['event_type']=='Availability' or row['source']=='Weekly Availability')
-                  and (row['start_time'] or '')<=start_time and (row['end_time'] or '')>=end_time]
-    conflicts=[row for row in overlapping if not (row['booking_status']=='Open'
-               and (row['event_type']=='Availability' or row['source']=='Weekly Availability'))]
-    if conflicts:
-        return 'unavailable','Not Available'
-    if availability:
-        return 'available','Available'
-    if business and business['google_calendar_connected']:
-        return 'unconfirmed','Availability Not Confirmed — the host’s connected calendar has not supplied an open time.'
-    return 'unconfirmed','Availability Not Confirmed — this host has not published an open time for this request.'
+    return 'available','Available'
 
 def _retreat_google_prefill_url(draft,host_names):
     values={
         'retreat_type':draft.get('retreat_type',''),
-        'requested_date':draft.get('requested_date',''),
+        'start_date':draft.get('start_date',''),
+        'end_date':draft.get('end_date',''),
         'start_time':draft.get('start_time',''),
         'end_time':draft.get('end_time',''),
         'guests':draft.get('guests',''),
-        'location':draft.get('location',''),
-        'hosts':', '.join(host_names),
-        'services':draft.get('services',''),
-        'special_requests':draft.get('special_requests',''),
-        'other_information':draft.get('other_information','')
+        'city':draft.get('city',''),
+        'state':draft.get('state','Michigan'),
+        'hosts':', '.join(host_names)
     }
     params={'usp':'pp_url'}
     if isinstance(RETREAT_GOOGLE_FORM_ENTRY_IDS,dict):
@@ -13536,47 +13573,81 @@ def _retreat_google_prefill_url(draft,host_names):
 @app.route('/retreats/design',methods=['GET','POST'])
 def retreat_host_builder():
     conn=db()
-    providers=conn.execute('''SELECT id,name,owner_title,category,location,logo_name
+    providers=conn.execute('''SELECT id,owner_id,name,owner_title,category,location,logo_name
                               FROM businesses
                               WHERE active=1 AND retreat_participating=1
                               ORDER BY name''').fetchall()
     conn.close()
     draft=dict(session.get('retreat_host_builder') or {})
     action=request.form.get('action','') if request.method=='POST' else ''
-    fields=('retreat_type','requested_date','start_time','end_time','guests','location','services','special_requests','other_information')
+    fields=('retreat_type','start_date','end_date','start_time','end_time','guests','city','state')
     if request.method=='POST':
         for field in fields:
             draft[field]=request.form.get(field,'').strip()
         selected_ids=[int(value) for value in request.form.getlist('business_ids') if value.isdigit()]
         valid_provider_ids={row['id'] for row in providers}
         draft['selected_business_ids']=[business_id for business_id in selected_ids if business_id in valid_provider_ids]
-        signature='|'.join(draft.get(key,'') for key in ('requested_date','start_time','end_time'))
+        signature='|'.join(draft.get(key,'') for key in ('start_date','end_date','start_time','end_time'))
         if draft.get('availability_signature')!=signature:
             draft['availability_results']={}
         draft['availability_signature']=signature
         results=dict(draft.get('availability_results') or {})
         check_id=request.form.get('check_business_id','')
         if check_id.isdigit() and int(check_id) in valid_provider_ids:
-            status,message=_retreat_host_availability(int(check_id),draft.get('requested_date',''),draft.get('start_time',''),draft.get('end_time',''))
+            status,message=_retreat_host_availability(int(check_id),draft.get('start_date',''),draft.get('end_date',''),draft.get('start_time',''),draft.get('end_time',''))
             results[str(int(check_id))]={'status':status,'message':message}
             draft['availability_results']=results
             session['retreat_host_builder']=draft
         elif action=='continue':
             available_ids=[]
             for business_id in draft['selected_business_ids']:
-                status,_=_retreat_host_availability(business_id,draft.get('requested_date',''),draft.get('start_time',''),draft.get('end_time',''))
+                status,_=_retreat_host_availability(business_id,draft.get('start_date',''),draft.get('end_date',''),draft.get('start_time',''),draft.get('end_time',''))
                 if status=='available':
                     available_ids.append(business_id)
-            if not draft.get('retreat_type') or not draft.get('requested_date') or not draft.get('start_time') or not draft.get('end_time'):
-                flash('Choose the Retreat type, date, start time and end time before continuing.','info')
+            if not draft.get('retreat_type') or not draft.get('start_date') or not draft.get('end_date') or not draft.get('start_time') or not draft.get('end_time'):
+                flash('Choose the Retreat type, start date, end date, start time and end time before continuing.','info')
+            elif draft.get('end_date')<draft.get('start_date'):
+                flash('Retreat End Date must be on or after Retreat Start Date.','info')
             elif draft.get('end_time')<=draft.get('start_time'):
                 flash('The requested end time must be later than the start time.','info')
             elif draft['selected_business_ids'] and len(available_ids)!=len(draft['selected_business_ids']):
                 flash('Every selected host must show Available before it can be added to the Retreat request.','info')
             else:
-                chosen_names=[row['name'] for row in providers if row['id'] in available_ids]
+                chosen=[row for row in providers if row['id'] in available_ids]
+                chosen_names=[row['name'] for row in chosen]
                 draft['selected_business_ids']=available_ids
                 session['retreat_host_builder']=draft
+                requester=current_user()
+                requester_id=requester['id'] if requester else None
+                requester_name=requester['name'] if requester else ''
+                requester_email=requester['email'] if requester else ''
+                conn=db()
+                for business in chosen:
+                    conn.execute('''INSERT INTO retreat_host_requests(
+                        business_id,requester_user_id,requester_name,requester_email,retreat_type,
+                        start_date,end_date,start_time,end_time,guests,city,state,status,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business['id'],requester_id,requester_name,requester_email,
+                        draft['retreat_type'],draft['start_date'],draft['end_date'],draft['start_time'],draft['end_time'],
+                        draft.get('guests',''),draft.get('city',''),draft.get('state','Michigan'),'Requested',now()))
+                conn.commit(); conn.close()
+                request_copy=f'''Build Your Retreat submission
+
+Retreat Type: {draft['retreat_type']}
+Start Date: {draft['start_date']}
+End Date: {draft['end_date']}
+Time: {draft['start_time']} – {draft['end_time']}
+Number of Guests: {draft.get('guests','')}
+City: {draft.get('city','')}
+State: {draft.get('state','Michigan')}
+Selected Hosted Wellness Businesses / Apps: {', '.join(chosen_names) or 'None selected'}
+Requested By: {requester_name or 'Guest Retreat Builder'}
+Requester Email: {requester_email or 'Not available'}
+
+This is a Retreat host invitation/request, not a confirmed booking. Final submission and approval continue through the existing Google Form.
+'''
+                send_retreat_email([RETREAT_BUILDER_COPY_EMAIL],'Build Your Retreat — Submitted Request',request_copy)
+                for business in chosen:
+                    notify(business['owner_id'],'Retreat Host Request',f'{requester_name or "A guest Retreat builder"} requested to include {business["name"]} in a Retreat from {draft["start_date"]} to {draft["end_date"]}. Open Business Journal Inbox to review.',url_for('inbox',category='Business'))
                 return redirect(_retreat_google_prefill_url(draft,chosen_names))
         session['retreat_host_builder']=draft
     results=dict(draft.get('availability_results') or {})
@@ -13586,13 +13657,14 @@ def retreat_host_builder():
         result=results.get(str(business['id']),{})
         status=result.get('status','')
         badge=(f'''<span class="badge {'gold' if status=='available' else 'heart'}">{html.escape(result.get('message',''))}</span>''' if result else '')
-        add_control=(f'''<label class="fact"><input type="checkbox" name="business_ids" value="{business['id']}" {'checked' if business['id'] in selected else ''}> <b>Add Host to My Retreat</b></label>''' if status=='available' else '')
+        add_control=(f'''<label class="fact"><input type="checkbox" name="business_ids" value="{business['id']}" {'checked' if business['id'] in selected else ''}> <b>Add This Hosted App to My Retreat</b></label>''' if status=='available' else '')
         logo=(f'''<img src="{business_media_src(business['logo_name'])}" alt="{html.escape(business['name'],quote=True)}" style="width:100%;height:150px;object-fit:contain">''' if business['logo_name'] else f'''<div class="avatar" style="width:90px;height:90px">{initials(business['name'])}</div>''')
-        host_cards.append(f'''<article class="card"><div class="media" style="height:170px">{logo}</div><h3>{html.escape(business['name'])}</h3><p class="muted">{html.escape(business['owner_title'] or business['category'] or '')} • {html.escape(business['location'] or '')}</p>{badge}{add_control}<div class="actions"><a class="out" target="_blank" rel="noopener" href="{url_for('business_app',business_id=business['id'])}">View Hosted App</a><button class="out" type="submit" name="check_business_id" value="{business['id']}">Check Availability</button></div></article>''')
+        host_cards.append(f'''<article class="card retreat-host-card" data-retreat-host-card><div class="media" style="height:170px">{logo}</div><h3>{html.escape(business['name'])}</h3><p class="muted">{html.escape(business['owner_title'] or business['category'] or '')} • {html.escape(business['location'] or '')}</p>{badge}{add_control}<div class="actions"><a class="out" target="_blank" rel="noopener" href="{url_for('business_app',business_id=business['id'])}">View Hosted App</a><button class="out" type="submit" name="check_business_id" value="{business['id']}">Check Availability</button></div></article>''')
     def value(name,default=''):
         return html.escape(str(draft.get(name,default) or ''),quote=True)
     host_html=''.join(host_cards) or '<div class="empty"><p class="muted">No participating Hosted Retreat Hosts are available yet. You can still continue to the existing Retreat request form.</p></div>'
-    return page('Design Your Own Retreat',f'''<div class="hero"><span class="badge heart">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">Choose your Retreat details, check participating hosts’ published availability, and add one or more available hosts. Availability is not a booking; the final request goes through the existing Google Form and approval process.</p></div><form method="post"><article class="card"><h2>Retreat Details</h2><label><b>Retreat Type</b></label><input class="input" name="retreat_type" value="{value('retreat_type')}" placeholder="Day Retreat, Wellness Retreat, Private Retreat..." required><div class="grid"><div><label><b>Desired Date</b></label><input class="input" type="date" name="requested_date" value="{value('requested_date')}" required></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}" required></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}"><label><b>Location</b></label><input class="input" name="location" value="{value('location')}" placeholder="City, venue, travel area or virtual"><label><b>Services / Experiences Wanted</b></label><textarea class="input" name="services">{html.escape(draft.get('services',''))}</textarea><label><b>Special Requests</b></label><textarea class="input" name="special_requests">{html.escape(draft.get('special_requests',''))}</textarea><label><b>Other Retreat Information</b></label><textarea class="input" name="other_information">{html.escape(draft.get('other_information',''))}</textarea></article><div class="topspace"><div><span class="badge gold">HOSTED RETREAT HOSTS</span><h2>Choose Your Wellness Team</h2><p class="muted small">Check each host separately. Only a host showing Available can be added.</p></div></div><div class="grid">{host_html}</div><article class="card paid"><h2>Submit Retreat Request</h2><p class="muted">Continuing does not book a host. It opens the existing Google Form with supported details pre-filled for the final Retreat request and approval process.</p><button class="btn" type="submit" name="action" value="continue">Continue to Existing Google Form</button></article></form>''','retreats')
+    swipe_controls=(f'''<div class="home-business-swipe-controls"><button class="out" type="button" data-retreat-host-prev>Previous</button><span class="muted small" data-retreat-host-status aria-live="polite"></span><button class="out" type="button" data-retreat-host-next>Next</button></div>''' if host_cards else '')
+    return page('Design Your Own Retreat',f'''<div class="hero"><span class="badge heart">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">Choose your Retreat details, check participating hosts’ published availability, and add one or more available hosts. Availability is not a booking; the final request goes through the existing Google Form and approval process.</p></div><form method="post"><article class="card"><h2>Retreat Details</h2><label><b>Retreat Type</b></label><input class="input" name="retreat_type" value="{value('retreat_type')}" placeholder="Day Retreat, Wellness Retreat, Private Retreat..." required><div class="grid"><div><label><b>Retreat Start Date</b></label><input class="input" type="date" name="start_date" value="{value('start_date')}" required></div><div><label><b>Retreat End Date</b></label><input class="input" type="date" name="end_date" value="{value('end_date')}" required></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}" required></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}"><div class="grid"><div><label><b>City</b></label><input class="input" name="city" value="{value('city')}" placeholder="Michigan city" required></div><div><label><b>State</b></label><select class="input" name="state" required><option value="Michigan" selected>Michigan</option></select></div></div></article><div class="topspace"><div><span class="badge gold">HOSTED RETREAT HOSTS</span><h2>Choose Your Wellness Team</h2><p class="muted small">Swipe through actual participating Hosted Business Apps. Check each host separately; only a host showing Available can be added.</p></div></div><section class="retreat-host-swipe" data-retreat-host-swipe><div class="retreat-host-swipe-deck">{host_html}</div>{swipe_controls}</section><article class="card paid"><h2>Submit Retreat Request</h2><p class="muted">Submitting sends the selected business a Retreat Host Request in its Business Journal Inbox and emails a copy of these Retreat details. It does not book a host. The existing Google Form remains the final request and approval step.</p><button class="btn" type="submit" name="action" value="continue">Submit Retreat Request</button></article></form><style>.retreat-host-swipe{{max-width:760px;margin:0 auto}}.retreat-host-swipe-deck{{touch-action:pan-y}}.retreat-host-card{{display:none;margin:0}}.retreat-host-card.is-active{{display:block}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}</style><script>(()=>{{const root=document.querySelector('[data-retreat-host-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-retreat-host-card]')];if(!cards.length)return;let index=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-retreat-host-status]');function show(next){{index=(next+cards.length)%cards.length;cards.forEach((card,i)=>card.classList.toggle('is-active',i===index));if(status)status.textContent=(index+1)+' of '+cards.length;}}root.querySelector('[data-retreat-host-prev]').onclick=()=>show(index-1);root.querySelector('[data-retreat-host-next]').onclick=()=>show(index+1);root.addEventListener('touchstart',event=>{{startX=event.changedTouches[0].clientX;startY=event.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?index+1:index-1)}},{{passive:true}});root.addEventListener('click',event=>{{if(moved){{event.preventDefault();event.stopPropagation();moved=false}}}},true);show(0);}})();</script>''','retreats')
 
 @app.route('/retreats')
 def retreats():
