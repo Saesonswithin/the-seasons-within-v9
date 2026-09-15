@@ -589,6 +589,8 @@ def init_db():
         city TEXT DEFAULT '',
         state TEXT DEFAULT 'Michigan',
         status TEXT NOT NULL DEFAULT 'Requested',
+        inbox_saved INTEGER NOT NULL DEFAULT 0,
+        inbox_deleted INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
         FOREIGN KEY(requester_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -633,6 +635,9 @@ def init_db():
         ("messages","read_at","ALTER TABLE messages ADD COLUMN read_at TEXT"),
         ("messages","gift_id","ALTER TABLE messages ADD COLUMN gift_id INTEGER"),
         ("messages","recipient_deleted","ALTER TABLE messages ADD COLUMN recipient_deleted INTEGER NOT NULL DEFAULT 0"),
+        ("messages","recipient_saved","ALTER TABLE messages ADD COLUMN recipient_saved INTEGER NOT NULL DEFAULT 0"),
+        ("retreat_host_requests","inbox_saved","ALTER TABLE retreat_host_requests ADD COLUMN inbox_saved INTEGER NOT NULL DEFAULT 0"),
+        ("retreat_host_requests","inbox_deleted","ALTER TABLE retreat_host_requests ADD COLUMN inbox_deleted INTEGER NOT NULL DEFAULT 0"),
         ("community_posts","source_gallery_media_id","ALTER TABLE community_posts ADD COLUMN source_gallery_media_id INTEGER"),
         ("community_posts","source_gift_id","ALTER TABLE community_posts ADD COLUMN source_gift_id INTEGER"),
         ("users","dob","ALTER TABLE users ADD COLUMN dob TEXT DEFAULT ''"),
@@ -2184,7 +2189,7 @@ def _logo_crop_css(payload):
         x=float(data.get('x',50)); y=float(data.get('y',50)); zoom=float(data.get('zoom',1)); rotate=float(data.get('rotate',0))
     except Exception:
         x,y,zoom,rotate=50,50,1,0
-    return f'object-fit:contain;object-position:{x:.2f}% {y:.2f}%;transform:scale({max(.25,min(3,zoom)):.3f}) rotate({max(-180,min(180,rotate)):.2f}deg)'
+    return f'object-fit:contain;object-position:center;transform:rotate({max(-180,min(180,rotate)):.2f}deg)'
 
 def _module_list(b):
     raw=(b['enabled_modules'] if 'enabled_modules' in b.keys() else '') or ''
@@ -7439,7 +7444,7 @@ def experience_invitation_plan(invitation_id):
 @app.route('/inbox')
 @login_required
 def inbox():
-    u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int)
+    u=current_user(); category=request.args.get('category','All'); focus=request.args.get('message_id',type=int); saved_view=request.args.get('view')=='saved'
     conn=db()
     unread=conn.execute('SELECT COUNT(*) n FROM messages WHERE recipient_id=? AND read_at IS NULL',(u['id'],)).fetchone()['n']
     msgs=conn.execute('''SELECT m.*,s.name sender_name,r.name recipient_name,gt.label gift_label,gt.emoji gift_emoji
@@ -7448,17 +7453,17 @@ def inbox():
                          JOIN users r ON r.id=m.recipient_id
                          LEFT JOIN member_virtual_gifts vg ON vg.id=m.gift_id
                          LEFT JOIN virtual_gift_types gt ON gt.id=vg.gift_type_id
-                         WHERE m.recipient_id=? AND COALESCE(m.recipient_deleted,0)=0 ORDER BY m.id DESC''',(u['id'],)).fetchall()
+                         WHERE m.recipient_id=? AND COALESCE(m.recipient_deleted,0)=0 AND COALESCE(m.recipient_saved,0)=? ORDER BY m.id DESC''',(u['id'],1 if saved_view else 0)).fetchall()
     sender_ids=sorted({m['sender_id'] for m in msgs})
     community_requests=conn.execute('''SELECT r.*,s.name sender_name FROM conscious_community_requests r JOIN users s ON s.id=r.sender_user_id WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall()
     experience_invites=conn.execute('''SELECT i.*,s.name sender_name,b.name business_name FROM member_experience_invitations i
         JOIN users s ON s.id=i.sender_id LEFT JOIN businesses b ON b.id=i.business_id
         WHERE i.recipient_id=? ORDER BY i.id DESC''',(u['id'],)).fetchall()
-    hosted_businesses=conn.execute('''SELECT id,name FROM businesses
+    hosted_businesses=conn.execute('''SELECT id,name,logo_name FROM businesses
         WHERE owner_id=? AND active=1 ORDER BY updated_at DESC,id DESC''',(u['id'],)).fetchall()
     retreat_host_requests=conn.execute('''SELECT r.*,b.name business_name
         FROM retreat_host_requests r JOIN businesses b ON b.id=r.business_id
-        WHERE b.owner_id=? ORDER BY r.id DESC''',(u['id'],)).fetchall()
+        WHERE b.owner_id=? AND COALESCE(r.inbox_deleted,0)=0 AND COALESCE(r.inbox_saved,0)=? ORDER BY r.id DESC''',(u['id'],1 if saved_view else 0)).fetchall()
     sender_photos={}
     if sender_ids:
         placeholders=','.join('?' for _ in sender_ids)
@@ -7481,10 +7486,11 @@ def inbox():
         open_action=f'<a class="btn" href="{url_for("inbox_read",message_id=m["id"])}">Open Message</a>' if m['recipient_id']==u['id'] and 'read_at' in m.keys() and not m['read_at'] else ''
         coordination_profile_action=f'<a class="out" href="{url_for("connection_profile",user_id=m["sender_id"])}">View Coordination Profile</a>' if m['category']=='Conscious Coordination' and m['sender_id']!=u['id'] else ''
         gift_context=(f'''<p class="muted small"><b>About gift:</b> {m['gift_emoji']} {html.escape(m['gift_label'])}</p>''' if m['gift_label'] else '')
+        save=(f'''<form method="post" action="{url_for('inbox_save',message_id=m['id'])}" style="display:inline"><button class="out" type="submit">Save</button></form>''' if m['category']=='Business' and not saved_view else '')
         delete=f'''<form method="post" action="{url_for('inbox_delete',message_id=m['id'])}" style="display:inline" onsubmit="return confirm('Remove this item from your inbox?')"><button class="out danger" type="submit">Delete</button></form>'''
-        cards.append(f'''<article class="card"{anchor}{highlight}><div class="post">{sender_avatar}<div>{unread_badge}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {html.escape(m["sender_name"])} to {html.escape(m["recipient_name"])} • {html.escape(m["origin"])} • {m["created_at"]}</p>{gift_context}{dates}{season}<p>{html.escape(m["body"]).replace(chr(10),'<br>')}</p><div class="actions">{open_action}{coordination_profile_action}{reply}{delete}</div></div></div></article>''')
+        cards.append(f'''<article class="card"{anchor}{highlight}><div class="post">{sender_avatar}<div>{unread_badge}{'<span class="badge gold">SAVED</span>' if saved_view else ''}<span class="badge">{m["category"]}</span><h3>{m["subject"]}</h3><p class="muted small">From {html.escape(m["sender_name"])} to {html.escape(m["recipient_name"])} • {html.escape(m["origin"])} • {m["created_at"]}</p>{gift_context}{dates}{season}<p>{html.escape(m["body"]).replace(chr(10),'<br>')}</p><div class="actions">{open_action}{coordination_profile_action}{reply}{save}{delete}</div></div></div></article>''')
     cards_html=''.join(cards) or '<div class="empty"><h3>No private conversations in this section yet</h3><p class="muted">Private messages will appear here.</p></div>'
-    filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+'</div>'
+    filters='<div class="chips"><a class="chip" href="'+url_for('inbox')+'">All</a>'+''.join(f'<a class="chip" href="{url_for("inbox",category=c)}">{c}</a>' for c in JOURNAL_CATEGORIES)+f'<a class="chip" href="{url_for("inbox",category="Business",view="saved")}">Saved Business Journal</a></div>'
     status=f'<article class="card"><span class="badge">NEW PRIVATE MESSAGES</span><h2>{unread} New Message{"s" if unread!=1 else ""}</h2><p class="muted">Open a new message to mark it read. Conversations stay filed below in Journal Inbox.</p></article>'
     request_notice=(f'''<article class="card paid"><span class="badge heart">CONSCIOUS COMMUNITY REQUEST</span><h2>{len(community_requests)} Community Request{'s' if len(community_requests)!=1 else ''}</h2><p class="muted">Review the sender, note and requested purpose, then accept or decline.</p><a class="btn" href="{url_for('conscious_community')}">Review Community Requests</a></article>''' if community_requests else '')
     invite_parts=[]
@@ -7508,11 +7514,17 @@ def inbox():
             app_path=url_for('business_app',business_id=business['id'])
             host_link=(APP_BASE_URL or request.url_root.rstrip('/'))+app_path
             safe_link=html.escape(host_link,quote=True)
-            host_link_cards.append(f'''<article class="card paid"><span class="badge gold">YOUR BUSINESS HOST LINK</span><h2>{html.escape(business['name'])}</h2><p>Your hosted app is ready to share.</p><div class="actions"><a class="btn" href="{app_path}">Open My Business App</a></div><label><b>Business Host Link:</b></label><input class="input" type="text" value="{safe_link}" readonly data-business-host-link aria-label="Business Host Link for {html.escape(business['name'],quote=True)}"><div class="actions"><button class="out" type="button" data-copy-business-host-link>Copy Link</button><span class="muted small" data-copy-business-host-status aria-live="polite"></span></div></article>''')
+            business_logo=(f'''<img src="{business_media_src(business['logo_name'])}" alt="{html.escape(business['name'],quote=True)} logo" style="display:block;width:120px;height:120px;object-fit:contain;margin:0 0 12px">''' if business['logo_name'] else '')
+            host_link_cards.append(f'''<article class="card paid">{business_logo}<span class="badge gold">YOUR BUSINESS HOST LINK</span><h2>{html.escape(business['name'])}</h2><p>Your hosted app is ready to share.</p><div class="actions"><a class="btn" href="{app_path}">Open My Business App</a></div><label><b>Business Host Link:</b></label><input class="input" type="text" value="{safe_link}" readonly data-business-host-link aria-label="Business Host Link for {html.escape(business['name'],quote=True)}"><div class="actions"><button class="out" type="button" data-copy-business-host-link>Copy Link</button><span class="muted small" data-copy-business-host-status aria-live="polite"></span></div></article>''')
     host_links_html=''.join(host_link_cards)
     retreat_request_cards=''
     if category in {'All','Business'}:
-        retreat_request_cards=''.join(f'''<article class="card paid"><span class="badge heart">RETREAT INVITATION / RETREAT INTEREST</span><h2>{html.escape(r['business_name'])}</h2><p><b>{html.escape(r['requester_name'] or 'Someone')}</b> added this business to their Wellness Team and is interested in having it participate in a Retreat.</p><p><b>Chosen Season:</b> {html.escape(r['retreat_type'])}<br><b>Retreat Start Date:</b> {html.escape(r['start_date'])}<br><b>Retreat End Date:</b> {html.escape(r['end_date'])}<br><b>Retreat Time:</b> {html.escape(r['start_time'])} – {html.escape(r['end_time'])}<br><b>Number of Guests:</b> {html.escape(r['guests'] or 'Not provided')}<br><b>City:</b> {html.escape(r['city'] or 'Not provided')}<br><b>State:</b> {html.escape(r['state'] or 'Michigan')}<br><b>Selected Wellness Business / Hosted App:</b> {html.escape(r['business_name'])}</p>{f'<p><b>Requester Email:</b> {html.escape(r["requester_email"])}</p>' if r['requester_email'] and r['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''}<p class="muted small">Interest status: {html.escape(r['status'])} • This is a Retreat interest/invitation, not a confirmed booking.</p></article>''' for r in retreat_host_requests)
+        retreat_cards=[]
+        for r in retreat_host_requests:
+            save=(f'''<form method="post" action="{url_for('retreat_inbox_manage',request_id=r['id'],action='save')}" style="display:inline"><button class="out" type="submit">Save</button></form>''' if not saved_view else '')
+            delete=f'''<form method="post" action="{url_for('retreat_inbox_manage',request_id=r['id'],action='delete')}" style="display:inline" onsubmit="return confirm('Remove this Retreat Interest from your inbox?')"><button class="out danger" type="submit">Delete</button></form>'''
+            retreat_cards.append(f'''<article class="card paid">{'<span class="badge gold">SAVED</span>' if saved_view else ''}<span class="badge heart">RETREAT INVITATION / RETREAT INTEREST</span><h2>{html.escape(r['business_name'])}</h2><p><b>{html.escape(r['requester_name'] or 'Someone')}</b> added this business to their Wellness Team and is interested in having it participate in a Retreat.</p><p><b>Chosen Season:</b> {html.escape(r['retreat_type'])}<br><b>Retreat Start Date:</b> {html.escape(r['start_date'])}<br><b>Retreat End Date:</b> {html.escape(r['end_date'])}<br><b>Retreat Time:</b> {html.escape(r['start_time'])} – {html.escape(r['end_time'])}<br><b>Number of Guests:</b> {html.escape(r['guests'] or 'Not provided')}<br><b>City:</b> {html.escape(r['city'] or 'Not provided')}<br><b>State:</b> {html.escape(r['state'] or 'Michigan')}<br><b>Selected Wellness Business / Hosted App:</b> {html.escape(r['business_name'])}</p>{f'<p><b>Requester Email:</b> {html.escape(r["requester_email"])}</p>' if r['requester_email'] and r['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''}<p class="muted small">Interest status: {html.escape(r['status'])} • This is a Retreat interest/invitation, not a confirmed booking.</p><div class="actions">{save}{delete}</div></article>''')
+        retreat_request_cards=''.join(retreat_cards)
     copy_link_script='''<script>(()=>{document.querySelectorAll('[data-copy-business-host-link]').forEach(button=>{button.addEventListener('click',async()=>{const card=button.closest('article'),input=card&&card.querySelector('[data-business-host-link]'),status=card&&card.querySelector('[data-copy-business-host-status]');if(!input)return;let copied=false;try{await navigator.clipboard.writeText(input.value);copied=true}catch(error){input.focus();input.select();copied=document.execCommand('copy')}if(status)status.textContent=copied?'Link copied.':'Select and copy the link above.';});});})();</script>''' if host_link_cards else ''
     return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{host_links_html}{retreat_request_cards}{request_notice}{invite_cards}{status}{filters}{cards_html}{copy_link_script}''','more')
 
@@ -7537,6 +7549,33 @@ def inbox_delete(message_id):
     conn.execute('UPDATE messages SET recipient_deleted=1 WHERE id=? AND recipient_id=?',(message_id,u['id']))
     conn.commit(); conn.close(); flash('Inbox item removed.','success')
     return redirect(url_for('inbox'))
+
+@app.route('/inbox/<int:message_id>/save',methods=['POST'])
+@login_required
+def inbox_save(message_id):
+    u=current_user(); conn=db()
+    row=conn.execute("SELECT id FROM messages WHERE id=? AND recipient_id=? AND category='Business'",(message_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    conn.execute('UPDATE messages SET recipient_saved=1 WHERE id=? AND recipient_id=?',(message_id,u['id']))
+    conn.commit(); conn.close(); flash('Business Journal message saved.','success')
+    return redirect(url_for('inbox',category='Business',view='saved'))
+
+@app.route('/inbox/retreat-interest/<int:request_id>/<action>',methods=['POST'])
+@login_required
+def retreat_inbox_manage(request_id,action):
+    if action not in {'save','delete'}: abort(404)
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT r.id FROM retreat_host_requests r JOIN businesses b ON b.id=r.business_id
+                        WHERE r.id=? AND b.owner_id=?''',(request_id,u['id'])).fetchone()
+    if not row: conn.close(); abort(404)
+    if action=='save':
+        conn.execute('UPDATE retreat_host_requests SET inbox_saved=1 WHERE id=?',(request_id,))
+        destination=url_for('inbox',category='Business',view='saved'); message='Retreat Interest saved.'
+    else:
+        conn.execute('UPDATE retreat_host_requests SET inbox_deleted=1 WHERE id=?',(request_id,))
+        destination=url_for('inbox',category='Business'); message='Retreat Interest removed from the inbox.'
+    conn.commit(); conn.close(); flash(message,'success')
+    return redirect(destination)
 
 @app.route('/member/<int:user_id>/block',methods=['POST'])
 @login_required
@@ -10726,7 +10765,7 @@ def _hosted_app_render(b,media,events,preview=False,owner=False,draft=None):
     logo_html=(f'<img src="{business_media_src(logo_name)}" alt="{name} logo" style="{_logo_crop_css(get("logo_crop","{}"))}">' if logo_name else '<div class="branded-placeholder">LOGO</div>')
     if cover_name:
         src=business_media_src(cover_name)
-        cover_html=(f'<video controls playsinline src="{src}"></video>' if get('cover_type')=='video' else f'<img src="{src}" alt="{name} cover" style="{_crop_css(get("cover_crop","{}"))}">')
+        cover_html=(f'<video controls playsinline src="{src}"></video>' if get('cover_type')=='video' else f'<img src="{src}" alt="{name} cover" style="object-fit:contain;object-position:center;transform:none">')
     else: cover_html='<div class="branded-placeholder">The Seasons Within • Business Cover</div>'
     galleries=[m for m in media if m['media_kind']=='gallery']; videos=[m for m in media if m['media_kind']=='video']
     content=[]
