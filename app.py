@@ -5675,7 +5675,7 @@ def regular_business_cards(rows,home_swipe=False,module_map=None,business_action
     cards=[]
     for b in rows:
         logo=business_media_src(b['logo_name']) if 'logo_name' in b.keys() and b['logo_name'] else ''
-        media=f'<img src="{logo}" alt="{html.escape(b["name"],quote=True)} profile image" style="width:100%;height:100%;object-fit:contain;object-position:center;padding:12px">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
+        media=f'<img src="{logo}" alt="{html.escape(b["name"],quote=True)} profile image" style="width:100%;height:100%;object-fit:contain;object-position:center">' if logo else f'<div class="avatar" style="width:90px;height:90px">{initials(b["name"])}</div>'
         shortcuts=''
         if home_swipe:
             enabled=set(_module_list(b)); selected=[key for key in _module_order(b) if key in enabled]
