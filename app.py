@@ -319,6 +319,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS conscious_community_businesses (
         user_id INTEGER NOT NULL,
         business_id INTEGER NOT NULL,
+        note TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         PRIMARY KEY(user_id,business_id),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -589,6 +590,7 @@ def init_db():
         city TEXT DEFAULT '',
         state TEXT DEFAULT 'Michigan',
         status TEXT NOT NULL DEFAULT 'Requested',
+        details_json TEXT DEFAULT '{}',
         inbox_saved INTEGER NOT NULL DEFAULT 0,
         inbox_deleted INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
@@ -638,6 +640,8 @@ def init_db():
         ("messages","recipient_saved","ALTER TABLE messages ADD COLUMN recipient_saved INTEGER NOT NULL DEFAULT 0"),
         ("retreat_host_requests","inbox_saved","ALTER TABLE retreat_host_requests ADD COLUMN inbox_saved INTEGER NOT NULL DEFAULT 0"),
         ("retreat_host_requests","inbox_deleted","ALTER TABLE retreat_host_requests ADD COLUMN inbox_deleted INTEGER NOT NULL DEFAULT 0"),
+        ("retreat_host_requests","details_json","ALTER TABLE retreat_host_requests ADD COLUMN details_json TEXT DEFAULT '{}'"),
+        ("conscious_community_businesses","note","ALTER TABLE conscious_community_businesses ADD COLUMN note TEXT DEFAULT ''"),
         ("community_posts","source_gallery_media_id","ALTER TABLE community_posts ADD COLUMN source_gallery_media_id INTEGER"),
         ("community_posts","source_gift_id","ALTER TABLE community_posts ADD COLUMN source_gift_id INTEGER"),
         ("users","dob","ALTER TABLE users ADD COLUMN dob TEXT DEFAULT ''"),
@@ -7521,9 +7525,14 @@ def inbox():
     if category in {'All','Business'}:
         retreat_cards=[]
         for r in retreat_host_requests:
+            details=_safe_json(r['details_json'] if 'details_json' in r.keys() else '{}',{})
+            added_details=''.join(f'<br><b>{label}:</b> {html.escape(str(details.get(key)))}' for key,label in (
+                ('shared_experience','Who Will Share This Experience'),('story','Share Your Story'),('desired_feeling','Desired Feeling'),
+                ('energy','Energy'),('setting','Setting'),('duration','Retreat Length'),('budget','Accommodation Budget'),
+                ('phone','Phone Number'),('joining_group','Who Will Be Joining')) if details.get(key))
             save=(f'''<form method="post" action="{url_for('retreat_inbox_manage',request_id=r['id'],action='save')}" style="display:inline"><button class="out" type="submit">Save</button></form>''' if not saved_view else '')
             delete=f'''<form method="post" action="{url_for('retreat_inbox_manage',request_id=r['id'],action='delete')}" style="display:inline" onsubmit="return confirm('Remove this Retreat Interest from your inbox?')"><button class="out danger" type="submit">Delete</button></form>'''
-            retreat_cards.append(f'''<article class="card paid">{'<span class="badge gold">SAVED</span>' if saved_view else ''}<span class="badge heart">RETREAT INVITATION / RETREAT INTEREST</span><h2>{html.escape(r['business_name'])}</h2><p><b>{html.escape(r['requester_name'] or 'Someone')}</b> added this business to their Wellness Team and is interested in having it participate in a Retreat.</p><p><b>Chosen Season:</b> {html.escape(r['retreat_type'])}<br><b>Retreat Start Date:</b> {html.escape(r['start_date'])}<br><b>Retreat End Date:</b> {html.escape(r['end_date'])}<br><b>Retreat Time:</b> {html.escape(r['start_time'])} – {html.escape(r['end_time'])}<br><b>Number of Guests:</b> {html.escape(r['guests'] or 'Not provided')}<br><b>City:</b> {html.escape(r['city'] or 'Not provided')}<br><b>State:</b> {html.escape(r['state'] or 'Michigan')}<br><b>Selected Wellness Business / Hosted App:</b> {html.escape(r['business_name'])}</p>{f'<p><b>Requester Email:</b> {html.escape(r["requester_email"])}</p>' if r['requester_email'] and r['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''}<p class="muted small">Interest status: {html.escape(r['status'])} • This is a Retreat interest/invitation, not a confirmed booking.</p><div class="actions">{save}{delete}</div></article>''')
+            retreat_cards.append(f'''<article class="card paid">{'<span class="badge gold">SAVED</span>' if saved_view else ''}<span class="badge heart">RETREAT INVITATION / RETREAT INTEREST</span><h2>{html.escape(r['business_name'])}</h2><p><b>{html.escape(r['requester_name'] or 'Someone')}</b> added this business to their Wellness Team and is interested in having it participate in a Retreat.</p><p><b>Retreat Experience:</b> {html.escape(r['retreat_type'])}{added_details}<br><b>Retreat Start Date:</b> {html.escape(r['start_date'])}<br><b>Retreat End Date:</b> {html.escape(r['end_date'])}<br><b>Retreat Time:</b> {html.escape(r['start_time'])} – {html.escape(r['end_time'])}<br><b>Number of Guests:</b> {html.escape(r['guests'] or 'Not provided')}<br><b>City:</b> {html.escape(r['city'] or 'Not provided')}<br><b>State:</b> {html.escape(r['state'] or 'Michigan')}<br><b>Selected Wellness Business / Hosted App:</b> {html.escape(r['business_name'])}</p>{f'<p><b>Requester Email:</b> {html.escape(r["requester_email"])}</p>' if r['requester_email'] and r['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''}<p class="muted small">Interest status: {html.escape(r['status'])} • This is a Retreat interest/invitation, not a confirmed booking.</p><div class="actions">{save}{delete}</div></article>''')
         retreat_request_cards=''.join(retreat_cards)
     copy_link_script='''<script>(()=>{document.querySelectorAll('[data-copy-business-host-link]').forEach(button=>{button.addEventListener('click',async()=>{const card=button.closest('article'),input=card&&card.querySelector('[data-business-host-link]'),status=card&&card.querySelector('[data-copy-business-host-status]');if(!input)return;let copied=false;try{await navigator.clipboard.writeText(input.value);copied=true}catch(error){input.focus();input.select();copied=document.execCommand('copy')}if(status)status.textContent=copied?'Link copied.':'Select and copy the link above.';});});})();</script>''' if host_link_cards else ''
     return page('Journal Inbox',f'''<div class="hero"><span class="badge">PRIVATE MESSAGES</span><h1>Journal Inbox</h1><p class="muted">Incoming private conversations, requests and invitations are kept here.</p></div>{host_links_html}{retreat_request_cards}{request_notice}{invite_cards}{status}{filters}{cards_html}{copy_link_script}''','more')
@@ -7797,7 +7806,7 @@ def conscious_community():
     requests=conn.execute('''SELECT r.*,s.name,s.city,s.birth_region FROM conscious_community_requests r
                              JOIN users s ON s.id=r.sender_user_id
                              WHERE r.receiver_user_id=? AND r.status='Pending' ORDER BY r.id DESC''',(u['id'],)).fetchall(); conn.close()
-    conn=db(); saved_businesses=conn.execute('''SELECT b.* FROM conscious_community_businesses cb
+    conn=db(); saved_businesses=conn.execute('''SELECT b.*,cb.note community_note FROM conscious_community_businesses cb
         JOIN businesses b ON b.id=cb.business_id
         WHERE cb.user_id=? AND b.active=1 ORDER BY cb.created_at DESC''',(u['id'],)).fetchall(); conn.close()
     request_cards=[]
@@ -7806,10 +7815,11 @@ def conscious_community():
     member_cards=[]
     for m in members:
         location=' • '.join(x for x in [(m['city'] or '').strip(),(m['birth_region'] or '').strip()] if x) or 'Location not shared'
-        member_cards.append(f'''<article class="card conscious-community-card"><div class="post">{_conscious_member_photo(m['community_member_user_id'],m['name'])}<div class="conscious-community-member-details"><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)}</p><p><b>Community Connection:</b> {html.escape(m['connection_purposes'] or m['coordination_types'] or 'Conscious Community')}</p>{f'<p class="muted">{html.escape(m["note"])}</p>' if m['note'] else ''}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['community_member_user_id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['community_member_user_id'],origin='Conscious Community')}">Message</a><a class="out" href="{url_for('member_gallery',user_id=m['community_member_user_id'])}#send-gift">Send Gift</a><form method="post" action="{url_for('conscious_community_remove',user_id=m['community_member_user_id'])}"><button class="out danger">Remove from Community</button></form></div></div></div></article>''')
+        member_cards.append(f'''<article class="card conscious-community-card"><div class="post">{_conscious_member_photo(m['community_member_user_id'],m['name'])}<div class="conscious-community-member-details"><h3>{html.escape(m['name'])}</h3><p class="muted">{html.escape(location)}</p><p><b>Community Connection:</b> {html.escape(m['connection_purposes'] or m['coordination_types'] or 'Conscious Community')}</p>{f'<p class="muted">{html.escape(m["note"])}</p>' if m['note'] else ''}<div class="actions"><a class="btn" href="{url_for('connection_profile',user_id=m['community_member_user_id'])}">Conscious Coordination Profile</a><a class="out" href="{url_for('message_member',recipient_id=m['community_member_user_id'],origin='Conscious Community')}">Message</a><a class="out" href="{url_for('member_gallery',user_id=m['community_member_user_id'])}#send-gift">Send Gift</a><a class="out" href="{url_for('conscious_community_member_edit',user_id=m['community_member_user_id'])}">Edit My Entry</a><form method="post" action="{url_for('conscious_community_remove',user_id=m['community_member_user_id'])}"><button class="out danger">Remove from Community</button></form></div></div></div></article>''')
     current=''.join(member_cards) or '<div class="empty"><h3>Your Conscious Community is waiting to grow.</h3><p class="muted">Choose members intentionally and send a request when a connection feels aligned.</p><a class="btn" href="'+url_for('connections')+'">Discover Like-Minded Members</a></div>'
     pending=('<div class="topspace"><h2>Community Requests</h2></div>'+''.join(request_cards)) if request_cards else ''
-    business_cards=regular_business_cards(saved_businesses) if saved_businesses else '<div class="empty"><p class="muted">Business Apps you add from Retreats will appear here.</p></div>'
+    business_actions={b['id']:f'''{f'<span class="muted small" style="width:100%"><b>My note:</b> {html.escape(b["community_note"])}</span>' if b['community_note'] else ''}<a class="out" href="{url_for('conscious_community_business_edit',business_id=b['id'])}">Edit My Entry</a><form method="post" action="{url_for('conscious_community_business_remove',business_id=b['id'])}" onsubmit="return confirm('Remove this Business App from your Conscious Community?')"><button class="out danger" type="submit">Remove</button></form>''' for b in saved_businesses}
+    business_cards=regular_business_cards(saved_businesses,business_actions=business_actions) if saved_businesses else '<div class="empty"><p class="muted">Business Apps you add from Retreats will appear here.</p></div>'
     return page('My Conscious Community',f'''<style>.conscious-community-card .post{{grid-template-columns:84px minmax(0,1fr);align-items:start}}.conscious-community-card .avatar{{width:76px!important;height:76px!important}}.conscious-community-member-details{{min-width:0}}.conscious-community-member-details h3{{margin-top:4px;overflow-wrap:anywhere;word-break:normal}}@media(max-width:520px){{.conscious-community-card .post{{grid-template-columns:1fr;gap:12px}}.conscious-community-card .avatar{{width:88px!important;height:88px!important}}.conscious-community-member-details h3{{margin-top:0}}}}</style><div class="hero"><span class="badge heart">MY CONSCIOUS COMMUNITY</span><h1>My Conscious Community</h1><p class="muted">Confirmed connections you intentionally choose for friendship, collaboration, wellness, Retreats and shared projects.</p></div><div class="topspace"><h2>My Community Members</h2></div>{current}{pending}<div class="topspace"><h2>My Business Apps</h2><p class="muted small">Hosted Business Apps you personally saved from Retreats.</p></div><div class="grid">{business_cards}</div><div class="topspace"><h2>Discover More Like-Minded Members</h2></div><article class="card"><p class="muted">Continue through the existing Discover Members swipe experience and request the connections you want to build.</p><a class="btn" href="{url_for('connections')}">Discover Members</a></article>''','coordination')
 
 @app.route('/conscious-community/business/<int:business_id>/add',methods=['POST'])
@@ -7821,6 +7831,27 @@ def conscious_community_business_add(business_id):
         ON CONFLICT(user_id,business_id) DO NOTHING''',(u['id'],business_id,now())); added=bool(cur.rowcount); conn.commit(); conn.close()
     flash(f'{business["name"]} was added to My Conscious Community.' if added else 'This business is already in My Conscious Community.','success' if added else 'info')
     return redirect(url_for('retreats')+f'#business-app-{business_id}')
+
+@app.route('/conscious-community/business/<int:business_id>/edit',methods=['GET','POST'])
+@login_required
+def conscious_community_business_edit(business_id):
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT cb.note,b.name FROM conscious_community_businesses cb JOIN businesses b ON b.id=cb.business_id
+                        WHERE cb.user_id=? AND cb.business_id=?''',(u['id'],business_id)).fetchone()
+    if not row: conn.close(); abort(404)
+    if request.method=='POST':
+        conn.execute('UPDATE conscious_community_businesses SET note=? WHERE user_id=? AND business_id=?',(request.form.get('note','').strip()[:500],u['id'],business_id))
+        conn.commit(); conn.close(); flash('Your Business App community entry was updated.','success'); return redirect(url_for('conscious_community'))
+    conn.close()
+    return page('Edit My Community Entry',f'''<div class="hero"><span class="badge heart">MY CONSCIOUS COMMUNITY</span><h1>Edit {html.escape(row['name'])}</h1><p class="muted">This note belongs only to your saved community entry. It does not edit the Hosted Business App.</p></div><form class="card" method="post"><label><b>My note about this Business App</b><textarea class="input" name="note" maxlength="500">{html.escape(row['note'] or '')}</textarea></label><div class="actions"><button class="btn">Save My Entry</button><a class="out" href="{url_for('conscious_community')}">Cancel</a></div></form>''','coordination')
+
+@app.route('/conscious-community/business/<int:business_id>/remove',methods=['POST'])
+@login_required
+def conscious_community_business_remove(business_id):
+    u=current_user(); conn=db()
+    conn.execute('DELETE FROM conscious_community_businesses WHERE user_id=? AND business_id=?',(u['id'],business_id))
+    conn.commit(); conn.close(); flash('Business App removed from your Conscious Community only.','success')
+    return redirect(url_for('conscious_community'))
 
 @app.route('/conscious-community/request/<int:user_id>',methods=['GET','POST'])
 @login_required
@@ -7862,7 +7893,22 @@ def conscious_community_respond(request_id,decision):
 @app.route('/conscious-community/remove/<int:user_id>',methods=['POST'])
 @login_required
 def conscious_community_remove(user_id):
-    u=current_user(); conn=db(); conn.execute('DELETE FROM conscious_community_members WHERE (user_id=? AND community_member_user_id=?) OR (user_id=? AND community_member_user_id=?)',(u['id'],user_id,user_id,u['id'])); conn.commit(); conn.close(); flash('Community connection removed.','success'); return redirect(url_for('conscious_community'))
+    u=current_user(); conn=db(); conn.execute('DELETE FROM conscious_community_members WHERE user_id=? AND community_member_user_id=?',(u['id'],user_id)); conn.commit(); conn.close(); flash('Member removed from your Conscious Community only.','success'); return redirect(url_for('conscious_community'))
+
+@app.route('/conscious-community/member/<int:user_id>/edit',methods=['GET','POST'])
+@login_required
+def conscious_community_member_edit(user_id):
+    u=current_user(); conn=db()
+    row=conn.execute('''SELECT c.*,m.name FROM conscious_community_members c JOIN users m ON m.id=c.community_member_user_id
+                        WHERE c.user_id=? AND c.community_member_user_id=?''',(u['id'],user_id)).fetchone()
+    if not row: conn.close(); abort(404)
+    if request.method=='POST':
+        purposes=request.form.get('connection_purposes','').strip()[:300]
+        note=request.form.get('note','').strip()[:500]
+        conn.execute('UPDATE conscious_community_members SET connection_purposes=?,note=? WHERE user_id=? AND community_member_user_id=?',(purposes,note,u['id'],user_id))
+        conn.commit(); conn.close(); flash('Your community entry was updated.','success'); return redirect(url_for('conscious_community'))
+    conn.close()
+    return page('Edit My Community Entry',f'''<div class="hero"><span class="badge heart">MY CONSCIOUS COMMUNITY</span><h1>Edit My Entry for {html.escape(row['name'])}</h1><p class="muted">These changes apply only to the entry in your own Conscious Community.</p></div><form class="card" method="post"><label><b>Community Connection</b><input class="input" name="connection_purposes" maxlength="300" value="{html.escape(row['connection_purposes'] or '',quote=True)}"></label><label><b>My Note</b><textarea class="input" name="note" maxlength="500">{html.escape(row['note'] or '')}</textarea></label><div class="actions"><button class="btn">Save My Entry</button><a class="out" href="{url_for('conscious_community')}">Cancel</a></div></form>''','coordination')
 
 def _can_create_coordination_post(user):
     if not user:
@@ -13586,14 +13632,19 @@ def retreat_host_builder():
                               ORDER BY name''').fetchall()
     conn.close()
     draft=dict(session.get('retreat_host_builder') or {})
-    fields=('retreat_type','start_date','end_date','start_time','end_time','guests','city','state')
+    signed_in=current_user()
+    if signed_in:
+        draft.setdefault('requester_name',signed_in['name'] or '')
+        if (signed_in['email'] or '').strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower(): draft.setdefault('requester_email',signed_in['email'] or '')
+    fields=('retreat_type','shared_experience','story','desired_feeling','energy','setting','duration','budget',
+            'requester_name','requester_email','phone','joining_group','start_date','end_date','start_time','end_time','guests','city','state')
     if request.method=='POST':
         for field in fields:
             draft[field]=request.form.get(field,'').strip()
         selected_ids=[int(value) for value in request.form.getlist('business_ids') if value.isdigit()]
         valid_provider_ids={row['id'] for row in providers}
         draft['selected_business_ids']=[business_id for business_id in selected_ids if business_id in valid_provider_ids]
-        required_complete=all(draft.get(key) for key in ('retreat_type','start_date','end_date','start_time','end_time','guests','city','state'))
+        required_complete=all(draft.get(key) for key in fields)
         date_valid=bool(draft.get('start_date') and draft.get('end_date') and draft['end_date']>=draft['start_date'])
         time_valid=bool(draft.get('start_time') and draft.get('end_time') and draft['end_time']>draft['start_time'])
         add_id=request.form.get('add_business_id','')
@@ -13612,15 +13663,16 @@ def retreat_host_builder():
                 business=next(row for row in providers if row['id']==business_id)
                 requester=current_user()
                 requester_id=requester['id'] if requester else None
-                requester_name=requester['name'] if requester else ''
-                requester_email=requester['email'] if requester and requester['email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''
+                requester_name=draft['requester_name']
+                requester_email=draft['requester_email'] if draft['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''
+                retreat_details={key:draft.get(key,'') for key in ('shared_experience','story','desired_feeling','energy','setting','duration','budget','phone','joining_group')}
                 conn=db()
                 conn.execute('''INSERT INTO retreat_host_requests(
                     business_id,requester_user_id,requester_name,requester_email,retreat_type,
-                    start_date,end_date,start_time,end_time,guests,city,state,status,created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business_id,requester_id,requester_name,requester_email,
+                    start_date,end_date,start_time,end_time,guests,city,state,status,details_json,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(business_id,requester_id,requester_name,requester_email,
                     draft['retreat_type'],draft['start_date'],draft['end_date'],draft['start_time'],draft['end_time'],
-                    draft['guests'],draft['city'],draft['state'],'Interest',now()))
+                    draft['guests'],draft['city'],draft['state'],'Interest',json.dumps(retreat_details),now()))
                 conn.commit(); conn.close()
                 notify(business['owner_id'],'New Retreat Interest',f'{requester_name or "Someone"} added {business["name"]} to their Wellness Team for a Retreat from {draft["start_date"]} to {draft["end_date"]}. Open Business Journal Inbox to review the Retreat details.',url_for('inbox',category='Business'))
                 flash(f'{business["name"]} was added to your Wellness Team. The business received your Retreat Interest and details.','success')
@@ -13636,13 +13688,21 @@ def retreat_host_builder():
             else:
                 chosen=[row for row in providers if row['id'] in draft['selected_business_ids']]
                 requester=current_user()
-                requester_name=requester['name'] if requester else ''
-                requester_email=requester['email'] if requester and requester['email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''
+                requester_name=draft['requester_name']
+                requester_email=draft['requester_email'] if draft['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''
                 requester_contact=f'\nRequester Email: {requester_email}' if requester_email else ''
                 hosted_apps='\n'.join(f'- {row["name"]}: {(APP_BASE_URL or request.url_root.rstrip("/"))+url_for("business_app",business_id=row["id"])}' for row in chosen)
                 request_copy=f'''Build Your Retreat submission
 
-Chosen Season: {draft['retreat_type']}
+Retreat Experience: {draft['retreat_type']}
+Who Will Share This Experience: {draft['shared_experience']}
+Share Your Story: {draft['story']}
+Desired Feeling: {draft['desired_feeling']}
+Energy: {draft['energy']}
+Setting: {draft['setting']}
+Retreat Length: {draft['duration']}
+Accommodation Budget: {draft['budget']}
+Who Will Be Joining: {draft['joining_group']}
 Start Date: {draft['start_date']}
 End Date: {draft['end_date']}
 Time: {draft['start_time']} – {draft['end_time']}
@@ -13653,6 +13713,7 @@ Chosen Wellness Business / Hosted Business App:
 {hosted_apps}
 Requested By: {requester_name or 'Guest Retreat Builder'}
 {requester_contact}
+Phone Number: {draft['phone']}
 
 This is a Retreat Interest/Invitation submitted directly through The Seasons Within.
 '''
@@ -13675,8 +13736,23 @@ This is a Retreat Interest/Invitation submitted directly through The Seasons Wit
     host_html=''.join(host_cards) or '<div class="empty"><p class="muted">No participating Hosted Retreat Hosts are available yet.</p></div>'
     selected_inputs=''.join(f'<input type="hidden" name="business_ids" value="{business_id}">' for business_id in selected)
     swipe_controls=(f'''<div class="home-business-swipe-controls"><button class="out" type="button" data-retreat-host-prev>Previous</button><span class="muted small" data-retreat-host-status aria-live="polite"></span><button class="out" type="button" data-retreat-host-next>Next</button></div>''' if host_cards else '')
-    season_options=''.join(f'<option value="{season}" {"selected" if draft.get("retreat_type")==season else ""}>{season}</option>' for season in ('Spring','Summer','Autumn','Winter'))
-    return page('Design Your Own Retreat',f'''<div class="hero"><span class="badge heart">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">Enter your Retreat details, swipe through participating Hosted Business Apps, and add one or more businesses to your Wellness Team.</p></div><form method="post">{selected_inputs}<article class="card"><h2>Retreat Details</h2><label><b>Choose Your Season</b></label><select class="input" name="retreat_type" required><option value="">Choose a season</option>{season_options}</select><div class="grid"><div><label><b>Retreat Start Date</b></label><input class="input" type="date" name="start_date" value="{value('start_date')}" required></div><div><label><b>Retreat End Date</b></label><input class="input" type="date" name="end_date" value="{value('end_date')}" required></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}" required></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}" required><div class="grid"><div><label><b>City</b></label><input class="input" name="city" value="{value('city')}" placeholder="Michigan city" required></div><div><label><b>State</b></label><select class="input" name="state" required><option value="Michigan" selected>Michigan</option></select></div></div></article><div class="topspace"><div><span class="badge gold">HOSTED RETREAT HOSTS</span><h2>Choose Your Wellness Team</h2><p class="muted small">Swipe through the actual participating Hosted Business Apps and tap Add for each business you want on your Wellness Team.</p></div></div><section class="retreat-host-swipe" data-retreat-host-swipe><div class="retreat-host-swipe-deck">{host_html}</div>{swipe_controls}</section><article class="card paid"><h2>Submit Retreat Request</h2><p class="muted">Submitting completes the Retreat request inside The Seasons Within. Each selected business receives the Retreat Interest and details in its Business Journal Inbox. A private notification copy is also emailed.</p><button class="btn" type="submit" name="action" value="submit">Submit Retreat Request</button></article></form><style>.retreat-host-swipe{{max-width:760px;margin:0 auto}}.retreat-host-swipe-deck{{touch-action:pan-y}}.retreat-host-card{{display:none;margin:0}}.retreat-host-card.is-active{{display:block}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}</style><script>(()=>{{const root=document.querySelector('[data-retreat-host-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-retreat-host-card]')];if(!cards.length)return;let index=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-retreat-host-status]');function show(next){{index=(next+cards.length)%cards.length;cards.forEach((card,i)=>card.classList.toggle('is-active',i===index));if(status)status.textContent=(index+1)+' of '+cards.length;}}root.querySelector('[data-retreat-host-prev]').onclick=()=>show(index-1);root.querySelector('[data-retreat-host-next]').onclick=()=>show(index+1);root.addEventListener('touchstart',event=>{{startX=event.changedTouches[0].clientX;startY=event.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?index+1:index-1)}},{{passive:true}});root.addEventListener('click',event=>{{if(moved){{event.preventDefault();event.stopPropagation();moved=false}}}},true);show(0);}})();</script>''','retreats')
+    def radio_choices(name,choices):
+        return ''.join(f'''<label class="fact" style="display:block"><input type="radio" name="{name}" value="{html.escape(choice,quote=True)}" {'checked' if draft.get(name)==choice else ''} required> <b>{label}</b>{f'<br><span class="muted small"><em>{description}</em></span>' if description else ''}</label>''' for choice,label,description in choices)
+    experience_choices=radio_choices('retreat_type',[
+        ('Couples Retreat','❤️ Couples Retreat','Time to reconnect, slow down, and experience something meaningful together.'),
+        ('Women’s Self-Love Retreat','🌸 Women’s Self-Love Retreat','A nurturing space for rest, reflection, self-love, and renewal.'),
+        ('Men’s Renewal Retreat','🌲 Men’s Renewal Retreat','Space to step away, reset, reconnect, and restore.'),
+        ('Solo Renewal Retreat','🌙 Solo Renewal Retreat','A private journey centered completely around you.'),
+        ('Family Harmony Retreat','🏡 Family Harmony Retreat','Intentional time together to reconnect, create memories, and strengthen your bond.'),
+        ('Life Transitions Retreat','🦋 Life Transitions Retreat','A supportive retreat for honoring change, releasing what has passed, and welcoming what comes next.'),
+    ])
+    energy_choices=radio_choices('energy',[(x,x,'') for x in ('🌿 Earth — Grounding','🔥 Fire — Transformation','💧 Water — Flow','🌬️ Air — Clarity','✨ Spirit — Connection',"I'm not sure yet")])
+    setting_choices=radio_choices('setting',[(x,x,'') for x in ('Waterfront / Lakeside','Forest & Nature','Cozy & Peaceful','Luxury Retreat Home','Cabin / Cottage','Surprise me')])
+    duration_choices=radio_choices('duration',[(x,x,'') for x in ('Full-Day Experience','Overnight Escape','Weekend Retreat',"I'm not sure yet")])
+    budget_choices=radio_choices('budget',[(x,x,'') for x in ('Under $300','$300–$500','$500–$750','$750+',"Let's discuss this during my consultation")])
+    joining_choices=radio_choices('joining_group',[(x,x,'') for x in ('Just me','My partner','Family','Friends / Small Group')])
+    retreat_details_html=f'''<article class="card"><h2>Retreat Details</h2><h3>1. What type of retreat experience are you looking for?</h3>{experience_choices}<h3>2. ✨ Who Will Share This Experience?</h3><input class="input" name="shared_experience" value="{value('shared_experience')}" required><h3>3. 💜 Share Your Story</h3><p><b>What is calling you away right now?</b></p><p class="muted"><em>Maybe life has been moving too quickly. Perhaps you're celebrating something, moving through a transition, reconnecting with someone you love, healing from a difficult season, or simply realizing that it's time to make space for yourself.</em></p><p class="muted"><em>There is no right way to tell your story. Share only what feels comfortable.</em></p><textarea class="input" name="story" required>{html.escape(str(draft.get('story','') or ''))}</textarea><h3>4. When you leave your retreat, how would you love to feel?</h3><textarea class="input" name="desired_feeling" required>{html.escape(str(draft.get('desired_feeling','') or ''))}</textarea><h3>5. Which energy are you most drawn to right now?</h3>{energy_choices}<h3>6. Imagine Your Stay</h3><p><b>What kind of setting feels most inviting?</b></p>{setting_choices}<h3>7. How long would you like to retreat?</h3>{duration_choices}<h3>8. What accommodation budget feels comfortable?</h3>{budget_choices}<h3>9. Your Name</h3><input class="input" name="requester_name" value="{value('requester_name')}" required><h3>10. Email</h3><input class="input" type="email" name="requester_email" value="{value('requester_email')}" required><h3>11. Phone Number</h3><input class="input" type="tel" name="phone" value="{value('phone')}" required><h3>12. Who will be joining you?</h3>{joining_choices}<hr><h3>Retreat Schedule &amp; Location</h3><div class="grid"><div><label><b>Retreat Start Date</b></label><input class="input" type="date" name="start_date" value="{value('start_date')}" required></div><div><label><b>Retreat End Date</b></label><input class="input" type="date" name="end_date" value="{value('end_date')}" required></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}" required></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}" required><div class="grid"><div><label><b>City</b></label><input class="input" name="city" value="{value('city')}" placeholder="Michigan city" required></div><div><label><b>State</b></label><select class="input" name="state" required><option value="Michigan" selected>Michigan</option></select></div></div></article>'''
+    return page('Design Your Own Retreat',f'''<div class="hero"><span class="badge heart">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">Enter your Retreat details, swipe through participating Hosted Business Apps, and add one or more businesses to your Wellness Team.</p></div><form method="post">{selected_inputs}{retreat_details_html}<div class="topspace"><div><span class="badge gold">HOSTED RETREAT HOSTS</span><h2>Choose Your Wellness Team</h2><p class="muted small">Swipe through the actual participating Hosted Business Apps and tap Add for each business you want on your Wellness Team.</p></div></div><section class="retreat-host-swipe" data-retreat-host-swipe><div class="retreat-host-swipe-deck">{host_html}</div>{swipe_controls}</section><article class="card paid"><h2>Submit Retreat Request</h2><p class="muted">Submitting completes the Retreat request inside The Seasons Within. Each selected business receives the Retreat Interest and details in its Business Journal Inbox. A private notification copy is also emailed.</p><button class="btn" type="submit" name="action" value="submit">Submit Retreat Request</button></article></form><style>.retreat-host-swipe{{max-width:760px;margin:0 auto}}.retreat-host-swipe-deck{{touch-action:pan-y}}.retreat-host-card{{display:none;margin:0}}.retreat-host-card.is-active{{display:block}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}</style><script>(()=>{{const root=document.querySelector('[data-retreat-host-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-retreat-host-card]')];if(!cards.length)return;let index=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-retreat-host-status]');function show(next){{index=(next+cards.length)%cards.length;cards.forEach((card,i)=>card.classList.toggle('is-active',i===index));if(status)status.textContent=(index+1)+' of '+cards.length;}}root.querySelector('[data-retreat-host-prev]').onclick=()=>show(index-1);root.querySelector('[data-retreat-host-next]').onclick=()=>show(index+1);root.addEventListener('touchstart',event=>{{startX=event.changedTouches[0].clientX;startY=event.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?index+1:index-1)}},{{passive:true}});root.addEventListener('click',event=>{{if(moved){{event.preventDefault();event.stopPropagation();moved=false}}}},true);show(0);}})();</script>''','retreats')
 
 @app.route('/retreats')
 def retreats():
@@ -13694,7 +13770,7 @@ def retreats():
         for b in participating:
             business_actions[b['id']]=('<span class="out">✓ Added to My Conscious Community</span>' if b['id'] in saved_business_ids else f'''<form method="post" action="{url_for('conscious_community_business_add',business_id=b['id'])}"><button class="out" type="submit">＋ Add to My Conscious Community</button></form>''')
     participating_html=regular_business_cards(participating,home_swipe=True,module_map=_home_business_module_map(participating),business_actions=business_actions)
-    season_guide='''<div class="topspace"><div><span class="badge heart">SEASONAL RETREATS</span><h2>Choose the Season That Fits Your Retreat</h2></div></div><div class="grid"><article class="card"><h3>🌸 Spring Retreats</h3><p class="muted">Renewal, fresh beginnings, intention setting, mindful exploration and new possibilities.</p></article><article class="card"><h3>☀️ Summer Retreats</h3><p class="muted">Warmth, connection, lakeside moments, nature immersion, outdoor experiences and long evenings.</p></article><article class="card"><h3>🍂 Autumn Retreats</h3><p class="muted">Reflection, gratitude, boundaries, fire-circle experiences, release and creating room for what comes next.</p></article><article class="card"><h3>❄️ Winter Retreats</h3><p class="muted">Restoration, candlelit quiet, herbal tea rituals, Reiki reflection, deep rest and inner listening.</p></article></div>'''
+    season_guide='''<div class="topspace"><div><span class="badge heart">SEASONAL RETREATS</span><h2>Which season speaks to you?</h2></div></div><div class="grid"><article class="card"><h3>🌸 Spring — Renewal &amp; New Beginnings</h3><p class="muted">Renewal, fresh beginnings, intention setting, mindful exploration and new possibilities.</p></article><article class="card"><h3>☀️ Summer — Joy &amp; Expansion</h3><p class="muted">Warmth, connection, lakeside moments, nature immersion, outdoor experiences and long evenings.</p></article><article class="card"><h3>🍂 Autumn — Reflection &amp; Release</h3><p class="muted">Reflection, gratitude, boundaries, fire-circle experiences, release and creating room for what comes next.</p></article><article class="card"><h3>❄️ Winter — Rest &amp; Restoration</h3><p class="muted">Restoration, candlelit quiet, herbal tea rituals, Reiki reflection, deep rest and inner listening.</p></article></div>'''
     return page('Retreats',f'''<div class="hero" style="text-align:center"><span class="badge">THE SEASONS WITHIN • MICHIGAN</span><img src="{RETREAT_LOGO_DATA_URI}" alt="The Seasons Within Michigan Day Retreats" style="display:block;width:min(680px,92%);margin:10px auto 22px;border-radius:28px"><h1>Private Seasonal Wellness Retreats</h1><h3>All-Day • Overnight • Luxury Weekend</h3><p class="muted"><em>Take a slow, gentle breath.</em></p><h2>A Sacred Journey Created Just for You</h2><p class="muted">Return to Your</p><h1>Natural RHYTHM</h1></div>{season_guide}
     <article class="card paid"><span class="badge heart">🌿 DESIGN YOUR SEASONS WITHIN RETREAT</span><h2>Build a Retreat Around What May Support You</h2><div class="actions"><a class="btn" href="{url_for('retreat_host_builder')}">Design My Seasons Within Retreat</a></div></article>
     <article class="card"><span class="badge gold">PARTICIPATING HOSTED BUSINESS APPS</span><h2>Wellness Businesses Can Be Part of Retreats</h2><p class="muted">Only real active Hosted Business Apps that opt in can be recommended. Provider choice remains with the member, and final scheduling is coordinated through private inquiries.</p>{owner_action}</article><section class="home-business-swipe" data-home-business-swipe aria-label="Retreat Hosted Business Apps"><div class="home-business-swipe-deck">{participating_html}</div>{f'<div class="home-business-swipe-controls"><button class="out" type="button" data-business-prev aria-label="Previous business">Previous</button><span class="muted small" data-business-status aria-live="polite"></span><button class="out" type="button" data-business-next aria-label="Next business">Next</button></div>' if participating else ''}</section><style>.home-business-swipe{{max-width:760px;margin:0 auto}}.home-business-swipe-deck{{touch-action:pan-y}}.home-business-card{{display:none;margin:0}}.home-business-card.is-active{{display:block}}.home-business-card .chips{{margin:18px 0 12px;padding-top:14px;border-top:1px solid var(--line)}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}@media(max-width:640px){{.home-business-swipe{{width:100%}}.home-business-card{{width:100%;overflow:hidden}}}}</style><script>(()=>{{const root=document.querySelector('[data-home-business-swipe]');if(!root)return;const businessCards=[...root.querySelectorAll('[data-home-business-card]')];if(!businessCards.length)return;let i=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-business-status]');function show(n){{i=(n+businessCards.length)%businessCards.length;businessCards.forEach((card,x)=>card.classList.toggle('is-active',x===i));if(status)status.textContent=`${{i+1}} of ${{businessCards.length}}`;}}root.querySelector('[data-business-prev]').onclick=()=>show(i-1);root.querySelector('[data-business-next]').onclick=()=>show(i+1);root.addEventListener('touchstart',e=>{{startX=e.changedTouches[0].clientX;startY=e.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?i+1:i-1)}},{{passive:true}});root.addEventListener('click',e=>{{if(moved){{e.preventDefault();e.stopPropagation();moved=false;}}}},true);show(0);}})();</script>''','retreats')
