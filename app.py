@@ -7527,7 +7527,7 @@ def inbox():
         for r in retreat_host_requests:
             details=_safe_json(r['details_json'] if 'details_json' in r.keys() else '{}',{})
             added_details=''.join(f'<br><b>{label}:</b> {html.escape(str(details.get(key)))}' for key,label in (
-                ('shared_experience','Who Will Share This Experience'),('story','Share Your Story'),('desired_feeling','Desired Feeling'),
+                ('season_choice','Which Season Speaks to You'),('shared_experience','Who Will Share This Experience'),('story','Share Your Story'),('desired_feeling','Desired Feeling'),
                 ('energy','Energy'),('setting','Setting'),('duration','Retreat Length'),('budget','Accommodation Budget'),
                 ('phone','Phone Number'),('joining_group','Who Will Be Joining')) if details.get(key))
             save=(f'''<form method="post" action="{url_for('retreat_inbox_manage',request_id=r['id'],action='save')}" style="display:inline"><button class="out" type="submit">Save</button></form>''' if not saved_view else '')
@@ -13636,7 +13636,7 @@ def retreat_host_builder():
     if signed_in:
         draft.setdefault('requester_name',signed_in['name'] or '')
         if (signed_in['email'] or '').strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower(): draft.setdefault('requester_email',signed_in['email'] or '')
-    fields=('retreat_type','shared_experience','story','desired_feeling','energy','setting','duration','budget',
+    fields=('season_choice','retreat_type','shared_experience','story','desired_feeling','energy','setting','duration','budget',
             'requester_name','requester_email','phone','joining_group','start_date','end_date','start_time','end_time','guests','city','state')
     if request.method=='POST':
         for field in fields:
@@ -13644,14 +13644,14 @@ def retreat_host_builder():
         selected_ids=[int(value) for value in request.form.getlist('business_ids') if value.isdigit()]
         valid_provider_ids={row['id'] for row in providers}
         draft['selected_business_ids']=[business_id for business_id in selected_ids if business_id in valid_provider_ids]
-        required_complete=all(draft.get(key) for key in fields)
-        date_valid=bool(draft.get('start_date') and draft.get('end_date') and draft['end_date']>=draft['start_date'])
-        time_valid=bool(draft.get('start_time') and draft.get('end_time') and draft['end_time']>draft['start_time'])
+        required_complete=bool(draft.get('start_date') and draft.get('start_time'))
+        date_valid=bool(draft.get('start_date') and (not draft.get('end_date') or draft['end_date']>=draft['start_date']))
+        time_valid=bool(draft.get('start_time') and (not draft.get('end_time') or draft['end_time']>draft['start_time']))
         add_id=request.form.get('add_business_id','')
         if add_id.isdigit() and int(add_id) in valid_provider_ids:
             business_id=int(add_id)
             if not required_complete:
-                flash('Complete the Retreat details before adding a business to your Wellness Team.','info')
+                flash('Provide the Retreat Start Date and Desired Start Time before adding a business to your Wellness Team.','info')
             elif not date_valid:
                 flash('Retreat End Date must be on or after Retreat Start Date.','info')
             elif not time_valid:
@@ -13665,7 +13665,7 @@ def retreat_host_builder():
                 requester_id=requester['id'] if requester else None
                 requester_name=draft['requester_name']
                 requester_email=draft['requester_email'] if draft['requester_email'].strip().lower()!=RETREAT_BUILDER_COPY_EMAIL.lower() else ''
-                retreat_details={key:draft.get(key,'') for key in ('shared_experience','story','desired_feeling','energy','setting','duration','budget','phone','joining_group')}
+                retreat_details={key:draft.get(key,'') for key in ('season_choice','shared_experience','story','desired_feeling','energy','setting','duration','budget','phone','joining_group')}
                 conn=db()
                 conn.execute('''INSERT INTO retreat_host_requests(
                     business_id,requester_user_id,requester_name,requester_email,retreat_type,
@@ -13678,13 +13678,11 @@ def retreat_host_builder():
                 flash(f'{business["name"]} was added to your Wellness Team. The business received your Retreat Interest and details.','success')
         elif request.form.get('action')=='submit':
             if not required_complete:
-                flash('Complete all Retreat details before submitting.','info')
+                flash('Provide the Retreat Start Date and Desired Start Time before submitting.','info')
             elif not date_valid:
                 flash('Retreat End Date must be on or after Retreat Start Date.','info')
             elif not time_valid:
                 flash('The requested end time must be later than the start time.','info')
-            elif not draft['selected_business_ids']:
-                flash('Add at least one Hosted Business App to your Wellness Team before submitting.','info')
             else:
                 chosen=[row for row in providers if row['id'] in draft['selected_business_ids']]
                 requester=current_user()
@@ -13695,6 +13693,7 @@ def retreat_host_builder():
                 request_copy=f'''Build Your Retreat submission
 
 Retreat Experience: {draft['retreat_type']}
+Season: {draft['season_choice']}
 Who Will Share This Experience: {draft['shared_experience']}
 Share Your Story: {draft['story']}
 Desired Feeling: {draft['desired_feeling']}
@@ -13737,7 +13736,7 @@ This is a Retreat Interest/Invitation submitted directly through The Seasons Wit
     selected_inputs=''.join(f'<input type="hidden" name="business_ids" value="{business_id}">' for business_id in selected)
     swipe_controls=(f'''<div class="home-business-swipe-controls"><button class="out" type="button" data-retreat-host-prev>Previous</button><span class="muted small" data-retreat-host-status aria-live="polite"></span><button class="out" type="button" data-retreat-host-next>Next</button></div>''' if host_cards else '')
     def radio_choices(name,choices):
-        return ''.join(f'''<label class="fact" style="display:block"><input type="radio" name="{name}" value="{html.escape(choice,quote=True)}" {'checked' if draft.get(name)==choice else ''} required> <b>{label}</b>{f'<br><span class="muted small"><em>{description}</em></span>' if description else ''}</label>''' for choice,label,description in choices)
+        return ''.join(f'''<label class="fact" style="display:block"><input type="radio" name="{name}" value="{html.escape(choice,quote=True)}" {'checked' if draft.get(name)==choice else ''}> <b>{label}</b>{f'<br><span class="muted small"><em>{description}</em></span>' if description else ''}</label>''' for choice,label,description in choices)
     experience_choices=radio_choices('retreat_type',[
         ('Couples Retreat','❤️ Couples Retreat','Time to reconnect, slow down, and experience something meaningful together.'),
         ('Women’s Self-Love Retreat','🌸 Women’s Self-Love Retreat','A nurturing space for rest, reflection, self-love, and renewal.'),
@@ -13746,12 +13745,19 @@ This is a Retreat Interest/Invitation submitted directly through The Seasons Wit
         ('Family Harmony Retreat','🏡 Family Harmony Retreat','Intentional time together to reconnect, create memories, and strengthen your bond.'),
         ('Life Transitions Retreat','🦋 Life Transitions Retreat','A supportive retreat for honoring change, releasing what has passed, and welcoming what comes next.'),
     ])
+    season_choices=radio_choices('season_choice',[(x,x,'') for x in (
+        '🌸 Spring — Renewal & New Beginnings',
+        '☀️ Summer — Joy & Expansion',
+        '🍂 Autumn — Reflection & Release',
+        '❄️ Winter — Rest & Restoration',
+        "I'm open to what fits my journey",
+    )])
     energy_choices=radio_choices('energy',[(x,x,'') for x in ('🌿 Earth — Grounding','🔥 Fire — Transformation','💧 Water — Flow','🌬️ Air — Clarity','✨ Spirit — Connection',"I'm not sure yet")])
     setting_choices=radio_choices('setting',[(x,x,'') for x in ('Waterfront / Lakeside','Forest & Nature','Cozy & Peaceful','Luxury Retreat Home','Cabin / Cottage','Surprise me')])
     duration_choices=radio_choices('duration',[(x,x,'') for x in ('Full-Day Experience','Overnight Escape','Weekend Retreat',"I'm not sure yet")])
     budget_choices=radio_choices('budget',[(x,x,'') for x in ('Under $300','$300–$500','$500–$750','$750+',"Let's discuss this during my consultation")])
     joining_choices=radio_choices('joining_group',[(x,x,'') for x in ('Just me','My partner','Family','Friends / Small Group')])
-    retreat_details_html=f'''<article class="card"><h2>Retreat Details</h2><h3>1. What type of retreat experience are you looking for?</h3>{experience_choices}<h3>2. ✨ Who Will Share This Experience?</h3><input class="input" name="shared_experience" value="{value('shared_experience')}" required><h3>3. 💜 Share Your Story</h3><p><b>What is calling you away right now?</b></p><p class="muted"><em>Maybe life has been moving too quickly. Perhaps you're celebrating something, moving through a transition, reconnecting with someone you love, healing from a difficult season, or simply realizing that it's time to make space for yourself.</em></p><p class="muted"><em>There is no right way to tell your story. Share only what feels comfortable.</em></p><textarea class="input" name="story" required>{html.escape(str(draft.get('story','') or ''))}</textarea><h3>4. When you leave your retreat, how would you love to feel?</h3><textarea class="input" name="desired_feeling" required>{html.escape(str(draft.get('desired_feeling','') or ''))}</textarea><h3>5. Which energy are you most drawn to right now?</h3>{energy_choices}<h3>6. Imagine Your Stay</h3><p><b>What kind of setting feels most inviting?</b></p>{setting_choices}<h3>7. How long would you like to retreat?</h3>{duration_choices}<h3>8. What accommodation budget feels comfortable?</h3>{budget_choices}<h3>9. Your Name</h3><input class="input" name="requester_name" value="{value('requester_name')}" required><h3>10. Email</h3><input class="input" type="email" name="requester_email" value="{value('requester_email')}" required><h3>11. Phone Number</h3><input class="input" type="tel" name="phone" value="{value('phone')}" required><h3>12. Who will be joining you?</h3>{joining_choices}<hr><h3>Retreat Schedule &amp; Location</h3><div class="grid"><div><label><b>Retreat Start Date</b></label><input class="input" type="date" name="start_date" value="{value('start_date')}" required></div><div><label><b>Retreat End Date</b></label><input class="input" type="date" name="end_date" value="{value('end_date')}" required></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}" required></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}" required><div class="grid"><div><label><b>City</b></label><input class="input" name="city" value="{value('city')}" placeholder="Michigan city" required></div><div><label><b>State</b></label><select class="input" name="state" required><option value="Michigan" selected>Michigan</option></select></div></div></article>'''
+    retreat_details_html=f'''<article class="card"><h2>Retreat Details</h2><h3>Which season speaks to you?</h3>{season_choices}<h3>1. What type of retreat experience are you looking for?</h3>{experience_choices}<h3>2. ✨ Who Will Share This Experience?</h3><input class="input" name="shared_experience" value="{value('shared_experience')}"><h3>3. 💜 Share Your Story</h3><p><b>What is calling you away right now?</b></p><p class="muted"><em>Maybe life has been moving too quickly. Perhaps you're celebrating something, moving through a transition, reconnecting with someone you love, healing from a difficult season, or simply realizing that it's time to make space for yourself.</em></p><p class="muted"><em>There is no right way to tell your story. Share only what feels comfortable.</em></p><textarea class="input" name="story">{html.escape(str(draft.get('story','') or ''))}</textarea><h3>4. When you leave your retreat, how would you love to feel?</h3><textarea class="input" name="desired_feeling">{html.escape(str(draft.get('desired_feeling','') or ''))}</textarea><h3>5. Which energy are you most drawn to right now?</h3>{energy_choices}<h3>6. Imagine Your Stay</h3><p><b>What kind of setting feels most inviting?</b></p>{setting_choices}<h3>7. How long would you like to retreat?</h3>{duration_choices}<h3>8. What accommodation budget feels comfortable?</h3>{budget_choices}<h3>9. Your Name</h3><input class="input" name="requester_name" value="{value('requester_name')}"><h3>10. Email</h3><input class="input" type="email" name="requester_email" value="{value('requester_email')}"><h3>11. Phone Number</h3><input class="input" type="tel" name="phone" value="{value('phone')}"><h3>12. Who will be joining you?</h3>{joining_choices}<hr><h3>Retreat Schedule &amp; Location</h3><div class="grid"><div><label><b>Retreat Start Date</b></label><input class="input" type="date" name="start_date" value="{value('start_date')}" required></div><div><label><b>Retreat End Date</b></label><input class="input" type="date" name="end_date" value="{value('end_date')}"></div><div><label><b>Desired Start Time</b></label><input class="input" type="time" name="start_time" value="{value('start_time')}" required></div><div><label><b>Desired End Time</b></label><input class="input" type="time" name="end_time" value="{value('end_time')}"></div></div><label><b>Number of Guests</b></label><input class="input" type="number" min="1" name="guests" value="{value('guests','1')}"><div class="grid"><div><label><b>City</b></label><input class="input" name="city" value="{value('city')}" placeholder="Michigan city"></div><div><label><b>State</b></label><select class="input" name="state"><option value="Michigan" selected>Michigan</option></select></div></div></article>'''
     return page('Design Your Own Retreat',f'''<div class="hero"><span class="badge heart">DESIGN YOUR OWN RETREAT</span><h1>Build Your Retreat</h1><p class="muted">Enter your Retreat details, swipe through participating Hosted Business Apps, and add one or more businesses to your Wellness Team.</p></div><form method="post">{selected_inputs}{retreat_details_html}<div class="topspace"><div><span class="badge gold">HOSTED RETREAT HOSTS</span><h2>Choose Your Wellness Team</h2><p class="muted small">Swipe through the actual participating Hosted Business Apps and tap Add for each business you want on your Wellness Team.</p></div></div><section class="retreat-host-swipe" data-retreat-host-swipe><div class="retreat-host-swipe-deck">{host_html}</div>{swipe_controls}</section><article class="card paid"><h2>Submit Retreat Request</h2><p class="muted">Submitting completes the Retreat request inside The Seasons Within. Each selected business receives the Retreat Interest and details in its Business Journal Inbox. A private notification copy is also emailed.</p><button class="btn" type="submit" name="action" value="submit">Submit Retreat Request</button></article></form><style>.retreat-host-swipe{{max-width:760px;margin:0 auto}}.retreat-host-swipe-deck{{touch-action:pan-y}}.retreat-host-card{{display:none;margin:0}}.retreat-host-card.is-active{{display:block}}.home-business-swipe-controls{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}}</style><script>(()=>{{const root=document.querySelector('[data-retreat-host-swipe]');if(!root)return;const cards=[...root.querySelectorAll('[data-retreat-host-card]')];if(!cards.length)return;let index=0,startX=0,startY=0,moved=false;const status=root.querySelector('[data-retreat-host-status]');function show(next){{index=(next+cards.length)%cards.length;cards.forEach((card,i)=>card.classList.toggle('is-active',i===index));if(status)status.textContent=(index+1)+' of '+cards.length;}}root.querySelector('[data-retreat-host-prev]').onclick=()=>show(index-1);root.querySelector('[data-retreat-host-next]').onclick=()=>show(index+1);root.addEventListener('touchstart',event=>{{startX=event.changedTouches[0].clientX;startY=event.changedTouches[0].clientY;moved=false}},{{passive:true}});root.addEventListener('touchmove',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))moved=true}},{{passive:true}});root.addEventListener('touchend',event=>{{const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(dx<0?index+1:index-1)}},{{passive:true}});root.addEventListener('click',event=>{{if(moved){{event.preventDefault();event.stopPropagation();moved=false}}}},true);show(0);}})();</script>''','retreats')
 
 @app.route('/retreats')
